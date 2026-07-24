@@ -67,7 +67,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
     home: ['home'] as View[],
     operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage', 'supplies'] as View[],
     finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker'] as View[],
-    admin: ['companies', 'users', 'employee_tasks', 'ai_assistant', 'reports', 'master', 'log'] as View[],
+    admin: ['companies', 'users', 'employee_tasks', 'webmail', 'ai_assistant', 'reports', 'master', 'log'] as View[],
     help: ['help'] as View[],
   }), []);
 
@@ -197,6 +197,26 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                         <div>
                           <div className="leading-tight">Help & User Guide</div>
                           <div className="text-[10px] text-slate-400 font-normal">Component & App Manual</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] bg-[#8EBF45]/20 text-[#8EBF45] px-1.5 py-0.5 rounded font-black">NEW</span>
+                    </button>
+
+                    {/* Webmail */}
+                    <button
+                      onClick={() => {
+                        setView('webmail');
+                        setIsOtherOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center justify-between hover:bg-slate-800 transition-colors ${
+                        currentView === 'webmail' ? 'text-[#8EBF45] bg-slate-800/80 font-black' : 'text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">📧</span>
+                        <div>
+                          <div className="leading-tight">Cnergy Webmail</div>
+                          <div className="text-[10px] text-slate-400 font-normal">@cnergy.co.in Team Mailbox</div>
                         </div>
                       </div>
                       <span className="text-[10px] bg-[#8EBF45]/20 text-[#8EBF45] px-1.5 py-0.5 rounded font-black">NEW</span>
@@ -332,6 +352,9 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 )}
                 <SubNavButton isActive={currentView === 'employee_tasks'} onClick={() => setView('employee_tasks')}>
                   📋 Employee Tasks
+                </SubNavButton>
+                <SubNavButton isActive={currentView === 'webmail'} onClick={() => setView('webmail')}>
+                  📧 Webmail
                 </SubNavButton>
                 <div className="w-px h-6 bg-[#A8BF75]/40 mx-2"></div>
                 <SubNavButton isActive={currentView === 'ai_assistant'} onClick={() => setView('ai_assistant')} icon={<SparklesIcon className="h-3 w-3" />}>AI Assistant</SubNavButton>

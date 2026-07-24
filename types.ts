@@ -21,7 +21,47 @@ export type View =
   | 'finance_prices'
   | 'finance_maker'
   | 'supplies'
-  | 'help';
+  | 'help'
+  | 'webmail';
+
+export interface WebmailAccount {
+  id: string;
+  email: string;
+  senderName: string;
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  username: string;
+  password?: string;
+  isDefault?: boolean;
+}
+
+export interface EmailAttachment {
+  filename: string;
+  size: string;
+  type: string;
+  dataUrl?: string;
+}
+
+export interface EmailMessage {
+  id: string;
+  accountEmail: string;
+  folder: 'inbox' | 'sent' | 'drafts' | 'trash';
+  from: string;
+  to: string;
+  cc?: string;
+  subject: string;
+  date: string;
+  timestamp: number;
+  snippet: string;
+  bodyHtml: string;
+  bodyText?: string;
+  isUnread: boolean;
+  isStarred?: boolean;
+  hasAttachments?: boolean;
+  attachments?: EmailAttachment[];
+}
 
 export interface PriceListItem {
   id: string;
