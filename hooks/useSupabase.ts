@@ -14,6 +14,13 @@ const sanitizeForUpload = (tableName: string, item: any): any => {
   const fieldsToStrip = CLIENT_ONLY_FIELDS[tableName];
   if (!fieldsToStrip || fieldsToStrip.length === 0) return item;
   const cleaned = { ...item };
+
+  if (tableName === 'received_goods') {
+    if (typeof item.isIgnoredForAlerts === 'boolean') {
+      cleaned.is_ignored_for_alerts = item.isIgnoredForAlerts;
+    }
+  }
+
   for (const field of fieldsToStrip) {
     delete cleaned[field];
   }
@@ -29,19 +36,32 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
     }));
   }
   if (tableName === 'received_goods') {
+    let localIgnoredMap: Record<string, boolean> = {};
+    try {
+      localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+    } catch (e) {
+      localIgnoredMap = {};
+    }
+
     return items.map(item => {
       const currentQty = item.quantity || 0;
       const initialQty = item.initialQuantity || (item.serials && item.serials.length > 0 ? item.serials.length : currentQty) || 1;
       const lowStockThresholdPercent = typeof item.lowStockThresholdPercent === 'number'
         ? item.lowStockThresholdPercent
-        : 20;
+        : (typeof item.low_stock_threshold_percent === 'number' ? item.low_stock_threshold_percent : 20);
+
+      const dbIgnoredVal = typeof item.isIgnoredForAlerts === 'boolean'
+        ? item.isIgnoredForAlerts
+        : (typeof item.is_ignored_for_alerts === 'boolean' ? item.is_ignored_for_alerts : undefined);
+
+      const isIgnoredForAlerts = dbIgnoredVal !== undefined ? dbIgnoredVal : Boolean(localIgnoredMap[item.id]);
 
       return {
         ...item,
         quantity: currentQty,
         initialQuantity: initialQty,
         lowStockThresholdPercent,
-        isIgnoredForAlerts: Boolean(item.isIgnoredForAlerts),
+        isIgnoredForAlerts,
       };
     });
   }

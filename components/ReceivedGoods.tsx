@@ -237,6 +237,16 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
     const handleToggleIgnoreReplenish = (good: ReceivedGood) => {
         const updatedStatus = !good.isIgnoredForAlerts;
+        
+        // Update persistent localStorage map
+        try {
+            const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+            currentMap[good.id] = updatedStatus;
+            localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
+        } catch (e) {
+            console.warn('Failed to save ignored stock map to localStorage', e);
+        }
+
         setReceivedGoods(prev => prev.map(g => g.id === good.id ? { ...g, isIgnoredForAlerts: updatedStatus } : g));
         addLogEntry('Updated Replenish Policy', `${good.name}: ${updatedStatus ? 'Ignored (Do Not Replenish)' : 'Active Replenishment'}`);
     };
@@ -349,6 +359,15 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         const initialQty = editingGood 
             ? (editingGood.initialQuantity || editingGood.quantity || formData.quantity || 1)
             : (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (formData.quantity || 1));
+
+        // Sync to persistent localStorage map
+        try {
+            const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+            currentMap[goodId] = Boolean(formData.isIgnoredForAlerts);
+            localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
+        } catch (e) {
+            console.warn('Failed to save ignored stock map to localStorage', e);
+        }
 
         // Prepare Received Good
         const newGood: ReceivedGood = {
