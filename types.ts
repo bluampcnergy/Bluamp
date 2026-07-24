@@ -69,6 +69,8 @@ export interface ReceivedGood {
   makeModel: string;
   supplier: string;
   quantity: number;
+  initialQuantity?: number; // Initial batch size / entry quantity
+  lowStockThresholdPercent?: number; // Configured safety limit percentage (0 - 100%, default: 20%)
   status: ReceivedGoodStatus | string;
   damagedCount: number;
   invoiceNumber: string;

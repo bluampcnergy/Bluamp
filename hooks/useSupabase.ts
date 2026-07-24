@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 // These must be stripped before upsert to avoid PGRST204 ("column not found") errors.
 const CLIENT_ONLY_FIELDS: Record<string, string[]> = {
   finished_goods: ['isDTF'],
+  received_goods: ['initialQuantity', 'lowStockThresholdPercent'],
 };
 
 // Strip client-only fields before sending to Supabase
@@ -26,6 +27,22 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
       ...item,
       isDTF: typeof item.isDTF === 'boolean' ? item.isDTF : String(item.id || '').startsWith('fin-dtf-'),
     }));
+  }
+  if (tableName === 'received_goods') {
+    return items.map(item => {
+      const currentQty = item.quantity || 0;
+      const initialQty = item.initialQuantity || (item.serials && item.serials.length > 0 ? item.serials.length : currentQty) || 1;
+      const lowStockThresholdPercent = typeof item.lowStockThresholdPercent === 'number'
+        ? item.lowStockThresholdPercent
+        : 20;
+
+      return {
+        ...item,
+        quantity: currentQty,
+        initialQuantity: initialQty,
+        lowStockThresholdPercent,
+      };
+    });
   }
   return items;
 };

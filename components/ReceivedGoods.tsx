@@ -11,6 +11,7 @@ import { MergeIcon } from './icons/MergeIcon';
 import { RefreshCw, Trash2, Download } from './invoices/Icons';
 import { ImportIcon } from './icons/ImportIcon';
 import { SearchIcon } from './icons/SearchIcon';
+import { getItemStockAlertInfo } from '../utils/stockAlerts';
 
 interface ReceivedGoodsProps {
     receivedGoods: ReceivedGood[];
@@ -38,7 +39,7 @@ const statusInfo = {
 };
 
 const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { serials: string[] } = {
-    name: '', category: '', makeModel: '', supplier: '', quantity: 0, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
+    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, lowStockThresholdPercent: 20, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
 };
 
 const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
@@ -64,6 +65,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [filterNotes, setFilterNotes] = useState(false);
+    const [filterLowStock, setFilterLowStock] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [serialEntries, setSerialEntries] = useState<SerialGridRow[]>([]);
@@ -106,6 +108,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 makeModel: editingGood.makeModel,
                 supplier: editingGood.supplier,
                 quantity: editingGood.quantity,
+                initialQuantity: editingGood.initialQuantity ?? editingGood.quantity,
+                lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
                 status: editingGood.status as ReceivedGoodStatus,
                 damagedCount: editingGood.damagedCount,
                 invoiceNumber: editingGood.invoiceNumber,
@@ -217,7 +221,10 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
         const matchesNotes = !filterNotes || (good.notes && good.notes !== 'actual physical qty = ');
 
-        return matchesSearch && matchesCategory && matchesNotes;
+        const stockAlert = getItemStockAlertInfo(good);
+        const matchesLowStock = !filterLowStock || stockAlert.isLowStock;
+
+        return matchesSearch && matchesCategory && matchesNotes && matchesLowStock;
     }).sort((a, b) => b.timestamp - a.timestamp);
 
     const handleEditClick = (good: ReceivedGood) => {
@@ -330,10 +337,16 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             });
         }
 
+        const initialQty = editingGood 
+            ? (editingGood.initialQuantity || editingGood.quantity || formData.quantity || 1)
+            : (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (formData.quantity || 1));
+
         // Prepare Received Good
         const newGood: ReceivedGood = {
             ...formData,
             id: goodId,
+            initialQuantity: initialQty,
+            lowStockThresholdPercent: formData.lowStockThresholdPercent ?? 20,
             timestamp: editingGood ? editingGood.timestamp : Date.now(),
             serials: validSerials,
             serialIndexMap: isCell ? serialIndexMap : undefined
@@ -577,18 +590,42 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 >
                     📝 Has Notes
                 </button>
+                <button
+                    onClick={() => setFilterLowStock(!filterLowStock)}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all flex items-center gap-1.5 ${filterLowStock ? 'bg-amber-500 text-white border-amber-500 shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                    ⚠️ Low Stock Alerts
+                </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredGoods.map(good => {
                     const isTracked = isTrackedCategory(good.category);
                     const progress = isTracked && good.serials.length > 0 ? Math.min(100, Math.round((good.serials.length / good.quantity) * 100)) : 0;
+                    const stockAlert = getItemStockAlertInfo(good);
 
                     return (
-                        <div key={good.id} className="relative bg-white rounded-2xl shadow-sm hover:shadow-xl p-6 flex flex-col border border-slate-200 transition-all duration-300">
+                        <div key={good.id} className={`relative bg-white rounded-2xl shadow-sm hover:shadow-xl p-6 flex flex-col border transition-all duration-300 ${
+                            stockAlert.isOutOfStock 
+                                ? 'border-rose-300 bg-rose-50/10' 
+                                : stockAlert.isLowStock 
+                                    ? 'border-amber-300 bg-amber-50/10' 
+                                    : 'border-slate-200'
+                        }`}>
                             <div className="flex justify-between items-start mb-4">
-                                <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
-                                    {statusInfo[good.status].text}
+                                <div className="flex flex-col gap-1">
+                                    <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
+                                        {statusInfo[good.status].text}
+                                    </div>
+                                    {stockAlert.isLowStock && (
+                                        <div className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border w-fit ${
+                                            stockAlert.isOutOfStock 
+                                                ? 'bg-rose-100 text-rose-800 border-rose-200' 
+                                                : 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
+                                        }`}>
+                                            {stockAlert.isOutOfStock ? '🚫 OUT OF STOCK' : `⚠️ LOW STOCK (${stockAlert.thresholdPercent}%)`}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
@@ -739,6 +776,42 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             rows={2}
                             placeholder="actual physical qty = "
                         />
+                    </div>
+
+                    {/* Low Stock Alert Safety Threshold */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 mt-4">
+                        <div className="flex justify-between items-center">
+                            <label className="block text-xs font-bold text-[#205f64] uppercase tracking-wider font-brand">
+                                Low Stock Alert Safety Threshold (0% - 100%)
+                            </label>
+                            <span className="text-xs font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                {formData.lowStockThresholdPercent ?? 20}% of entry
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                value={formData.lowStockThresholdPercent ?? 20} 
+                                onChange={e => setFormData({ ...formData, lowStockThresholdPercent: parseInt(e.target.value) || 0 })} 
+                                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#205f64]"
+                            />
+                            <div className="flex items-center gap-1">
+                                <input 
+                                    type="number" 
+                                    min="0" 
+                                    max="100" 
+                                    value={formData.lowStockThresholdPercent ?? 20} 
+                                    onChange={e => setFormData({ ...formData, lowStockThresholdPercent: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} 
+                                    className="w-16 border border-slate-300 rounded-lg p-1.5 text-center text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                />
+                                <span className="text-xs font-bold text-slate-600">%</span>
+                            </div>
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-medium">
+                            Triggers alert on Home Dashboard when stock drops below <strong>{Math.round(((formData.initialQuantity || formData.quantity || 0) * (formData.lowStockThresholdPercent ?? 20)) / 100)}</strong> units ({formData.lowStockThresholdPercent ?? 20}% of original entry quantity).
+                        </p>
                     </div>
 
                     {/* Serial Number & Test Data Management - ONLY FOR CELLS */}
