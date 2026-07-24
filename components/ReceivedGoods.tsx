@@ -66,6 +66,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [filterNotes, setFilterNotes] = useState(false);
     const [filterLowStock, setFilterLowStock] = useState(false);
+    const [filterIgnored, setFilterIgnored] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [serialEntries, setSerialEntries] = useState<SerialGridRow[]>([]);
@@ -224,8 +225,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
         const stockAlert = getItemStockAlertInfo(good);
         const matchesLowStock = !filterLowStock || stockAlert.isLowStock;
+        const matchesIgnored = !filterIgnored || Boolean(good.isIgnoredForAlerts);
 
-        return matchesSearch && matchesCategory && matchesNotes && matchesLowStock;
+        return matchesSearch && matchesCategory && matchesNotes && matchesLowStock && matchesIgnored;
     }).sort((a, b) => b.timestamp - a.timestamp);
 
     const handleEditClick = (good: ReceivedGood) => {
@@ -603,6 +605,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all flex items-center gap-1.5 ${filterLowStock ? 'bg-amber-500 text-white border-amber-500 shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                 >
                     ⚠️ Low Stock Alerts
+                </button>
+                <button
+                    onClick={() => setFilterIgnored(!filterIgnored)}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all flex items-center gap-1.5 ${filterIgnored ? 'bg-slate-800 text-amber-300 border-slate-800 shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                    🔕 Ignored Items
                 </button>
             </div>
 
