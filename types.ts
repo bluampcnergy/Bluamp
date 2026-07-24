@@ -71,6 +71,7 @@ export interface ReceivedGood {
   quantity: number;
   initialQuantity?: number; // Initial batch size / entry quantity
   lowStockThresholdPercent?: number; // Configured safety limit percentage (0 - 100%, default: 20%)
+  isIgnoredForAlerts?: boolean; // Set true if item should not be replenished and low stock alerts are disabled
   status: ReceivedGoodStatus | string;
   damagedCount: number;
   invoiceNumber: string;

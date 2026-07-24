@@ -39,7 +39,7 @@ const statusInfo = {
 };
 
 const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { serials: string[] } = {
-    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, lowStockThresholdPercent: 20, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
+    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, lowStockThresholdPercent: 20, isIgnoredForAlerts: false, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
 };
 
 const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
@@ -110,6 +110,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 quantity: editingGood.quantity,
                 initialQuantity: editingGood.initialQuantity ?? editingGood.quantity,
                 lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
+                isIgnoredForAlerts: Boolean(editingGood.isIgnoredForAlerts),
                 status: editingGood.status as ReceivedGoodStatus,
                 damagedCount: editingGood.damagedCount,
                 invoiceNumber: editingGood.invoiceNumber,
@@ -232,6 +233,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         setIsModalOpen(true);
     };
 
+    const handleToggleIgnoreReplenish = (good: ReceivedGood) => {
+        const updatedStatus = !good.isIgnoredForAlerts;
+        setReceivedGoods(prev => prev.map(g => g.id === good.id ? { ...g, isIgnoredForAlerts: updatedStatus } : g));
+        addLogEntry('Updated Replenish Policy', `${good.name}: ${updatedStatus ? 'Ignored (Do Not Replenish)' : 'Active Replenishment'}`);
+    };
+
     const handleCreateNew = () => {
         setEditingGood(null);
         setFormData(initialFormState);
@@ -347,6 +354,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             id: goodId,
             initialQuantity: initialQty,
             lowStockThresholdPercent: formData.lowStockThresholdPercent ?? 20,
+            isIgnoredForAlerts: Boolean(formData.isIgnoredForAlerts),
             timestamp: editingGood ? editingGood.timestamp : Date.now(),
             serials: validSerials,
             serialIndexMap: isCell ? serialIndexMap : undefined
@@ -617,7 +625,11 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
                                         {statusInfo[good.status].text}
                                     </div>
-                                    {stockAlert.isLowStock && (
+                                    {good.isIgnoredForAlerts ? (
+                                        <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600 w-fit">
+                                            🚫 DO NOT REPLENISH
+                                        </div>
+                                    ) : stockAlert.isLowStock && (
                                         <div className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border w-fit ${
                                             stockAlert.isOutOfStock 
                                                 ? 'bg-rose-100 text-rose-800 border-rose-200' 
@@ -700,7 +712,18 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex gap-2 justify-end">
+                                <div className="flex gap-2 justify-end items-center">
+                                    <button 
+                                        onClick={() => handleToggleIgnoreReplenish(good)} 
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                            good.isIgnoredForAlerts
+                                                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                        title={good.isIgnoredForAlerts ? "Click to re-enable low stock alerts" : "Click to ignore / mark as do not replenish"}
+                                    >
+                                        {good.isIgnoredForAlerts ? '🚫 Ignored' : '🔔 Alert On'}
+                                    </button>
                                     <button onClick={() => handleEditClick(good)} className="p-2.5 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-xl transition-all"><PencilIcon /></button>
                                 </div>
                             </div>
@@ -812,6 +835,26 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         <p className="text-[11px] text-slate-500 font-medium">
                             Triggers alert on Home Dashboard when stock drops below <strong>{Math.round(((formData.initialQuantity || formData.quantity || 0) * (formData.lowStockThresholdPercent ?? 20)) / 100)}</strong> units ({formData.lowStockThresholdPercent ?? 20}% of original entry quantity).
                         </p>
+
+                        {/* Ignore / Do Not Replenish Toggle */}
+                        <div className="pt-2.5 border-t border-slate-200 mt-2 flex items-center justify-between">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(formData.isIgnoredForAlerts)}
+                                    onChange={e => setFormData({ ...formData, isIgnoredForAlerts: e.target.checked })}
+                                    className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-slate-800">
+                                    🚫 Do Not Replenish / Disable Stock Alerts
+                                </span>
+                            </label>
+                            {formData.isIgnoredForAlerts && (
+                                <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                                    Alerts Silenced
+                                </span>
+                            )}
+                        </div>
                     </div>
 
                     {/* Serial Number & Test Data Management - ONLY FOR CELLS */}

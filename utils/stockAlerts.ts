@@ -13,6 +13,7 @@ export interface StockAlertInfo {
     percentRemaining: number;
     isLowStock: boolean;
     isOutOfStock: boolean;
+    isIgnored: boolean;
 }
 
 /**
@@ -23,6 +24,7 @@ export const getItemStockAlertInfo = (
     overrideThresholdPercent?: number
 ): StockAlertInfo => {
     const currentQty = good.quantity || 0;
+    const isIgnored = Boolean(good.isIgnoredForAlerts);
     
     // Fallback baseline: initialQuantity, serials count, or current quantity
     const initialQty = good.initialQuantity && good.initialQuantity > 0
@@ -36,8 +38,9 @@ export const getItemStockAlertInfo = (
     const thresholdQty = Math.round((initialQty * thresholdPercent) / 100);
     const percentRemaining = Math.max(0, Math.round((currentQty / initialQty) * 100));
 
-    const isOutOfStock = currentQty <= 0;
-    const isLowStock = isOutOfStock || currentQty <= thresholdQty;
+    // If item is ignored, disable low stock / out of stock alert triggers
+    const isOutOfStock = !isIgnored && currentQty <= 0;
+    const isLowStock = !isIgnored && (isOutOfStock || currentQty <= thresholdQty);
 
     return {
         id: good.id,
@@ -52,6 +55,7 @@ export const getItemStockAlertInfo = (
         percentRemaining,
         isLowStock,
         isOutOfStock,
+        isIgnored,
     };
 };
 
