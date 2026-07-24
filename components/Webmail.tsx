@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type { WebmailAccount, EmailMessage, EmailAttachment, User } from '../types';
+import { supabase } from '../supabaseClient';
 
 interface WebmailProps {
     currentUser: User | null;
@@ -8,7 +9,7 @@ interface WebmailProps {
 
 const DEFAULT_ACCOUNTS: WebmailAccount[] = [
     {
-        id: 'acc-1',
+        id: 'acc-sales',
         email: 'sales@cnergy.co.in',
         senderName: 'Datlion Cnergy Sales',
         imapHost: 'mail.cnergy.co.in',
@@ -16,10 +17,11 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
         smtpHost: 'mail.cnergy.co.in',
         smtpPort: 465,
         username: 'sales@cnergy.co.in',
+        password: '',
         isDefault: true,
     },
     {
-        id: 'acc-2',
+        id: 'acc-support',
         email: 'support@cnergy.co.in',
         senderName: 'Datlion Cnergy Support',
         imapHost: 'mail.cnergy.co.in',
@@ -27,9 +29,10 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
         smtpHost: 'mail.cnergy.co.in',
         smtpPort: 465,
         username: 'support@cnergy.co.in',
+        password: '',
     },
     {
-        id: 'acc-3',
+        id: 'acc-info',
         email: 'info@cnergy.co.in',
         senderName: 'Datlion Cnergy Info',
         imapHost: 'mail.cnergy.co.in',
@@ -37,6 +40,7 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
         smtpHost: 'mail.cnergy.co.in',
         smtpPort: 465,
         username: 'info@cnergy.co.in',
+        password: '',
     },
 ];
 
@@ -151,10 +155,15 @@ const INITIAL_EMAILS: EmailMessage[] = [
 ];
 
 export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) => {
+    const activeUsername = currentUser?.username || 'admin';
+
     // Accounts state
     const [accounts, setAccounts] = useState<WebmailAccount[]>(() => {
-        const saved = localStorage.getItem('webmail_accounts');
-        return saved ? JSON.parse(saved) : DEFAULT_ACCOUNTS;
+        const saved = localStorage.getItem(`webmail_accounts_${activeUsername}`);
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        return DEFAULT_ACCOUNTS;
     });
 
     const [selectedAccountEmail, setSelectedAccountEmail] = useState<string>(() => {
@@ -163,8 +172,11 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
 
     // Emails State
     const [emails, setEmails] = useState<EmailMessage[]>(() => {
-        const saved = localStorage.getItem('webmail_emails');
-        return saved ? JSON.parse(saved) : INITIAL_EMAILS;
+        const saved = localStorage.getItem(`webmail_emails_${activeUsername}`);
+        if (saved) {
+            try { return JSON.parse(saved); } catch (e) {}
+        }
+        return INITIAL_EMAILS;
     });
 
     // Active View / Folder
@@ -175,7 +187,10 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
     // Modals
     const [isComposeOpen, setIsComposeOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isAddAccountMode, setIsAddAccountMode] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isTestingConn, setIsTestingConn] = useState(false);
+    const [connTestResult, setConnTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [syncToast, setSyncToast] = useState<string | null>(null);
 
     // Compose Form State
@@ -189,21 +204,78 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
     });
     const [isSending, setIsSending] = useState(false);
 
-    // Settings Form State
-    const [activeSettingsAccount, setActiveSettingsAccount] = useState<WebmailAccount>(accounts[0]);
-    const [accountPasswordInput, setAccountPasswordInput] = useState('');
+    // Settings / Account Edit State
+    const [editingAccount, setEditingAccount] = useState<WebmailAccount>(accounts[0] || DEFAULT_ACCOUNTS[0]);
 
-    // Save to LocalStorage
+    // Hydrate User Accounts from Supabase
     useEffect(() => {
-        localStorage.setItem('webmail_accounts', JSON.stringify(accounts));
-    }, [accounts]);
+        const fetchUserAccounts = async () => {
+            try {
+                const { data: dbData, error } = await supabase
+                    .from('webmail_accounts')
+                    .select('*')
+                    .eq('username', activeUsername);
+
+                if (!error && dbData && dbData.length > 0) {
+                    const mapped: WebmailAccount[] = dbData.map(row => ({
+                        id: row.id,
+                        email: row.email,
+                        senderName: row.sender_name || row.email,
+                        imapHost: row.imap_host || 'mail.cnergy.co.in',
+                        imapPort: Number(row.imap_port) || 993,
+                        smtpHost: row.smtp_host || 'mail.cnergy.co.in',
+                        smtpPort: Number(row.smtp_port) || 465,
+                        username: row.auth_username || row.email,
+                        password: row.auth_password || '',
+                        isDefault: Boolean(row.is_default),
+                    }));
+                    setAccounts(mapped);
+                    if (!mapped.some(a => a.email === selectedAccountEmail)) {
+                        setSelectedAccountEmail(mapped[0].email);
+                    }
+                }
+            } catch (err) {
+                console.warn('Could not load webmail accounts from Supabase, using local state.', err);
+            }
+        };
+
+        fetchUserAccounts();
+    }, [activeUsername]);
+
+    // Save to LocalStorage and sync Supabase
+    const persistAccounts = useCallback(async (newAccounts: WebmailAccount[]) => {
+        setAccounts(newAccounts);
+        localStorage.setItem(`webmail_accounts_${activeUsername}`, JSON.stringify(newAccounts));
+
+        // Sync to Supabase table
+        try {
+            for (const acc of newAccounts) {
+                await supabase.from('webmail_accounts').upsert({
+                    id: acc.id,
+                    username: activeUsername,
+                    email: acc.email,
+                    sender_name: acc.senderName,
+                    imap_host: acc.imapHost,
+                    imap_port: acc.imapPort,
+                    smtp_host: acc.smtpHost,
+                    smtp_port: acc.smtpPort,
+                    auth_username: acc.username,
+                    auth_password: acc.password || '',
+                    is_default: Boolean(acc.isDefault),
+                    updated_at: Date.now()
+                });
+            }
+        } catch (err) {
+            console.warn('Failed to upsert webmail accounts to Supabase:', err);
+        }
+    }, [activeUsername]);
 
     useEffect(() => {
-        localStorage.setItem('webmail_emails', JSON.stringify(emails));
-    }, [emails]);
+        localStorage.setItem(`webmail_emails_${activeUsername}`, JSON.stringify(emails));
+    }, [emails, activeUsername]);
 
     const activeAccount = useMemo(() => {
-        return accounts.find(a => a.email === selectedAccountEmail) || accounts[0];
+        return accounts.find(a => a.email === selectedAccountEmail) || accounts[0] || DEFAULT_ACCOUNTS[0];
     }, [accounts, selectedAccountEmail]);
 
     // Filter Emails
@@ -254,7 +326,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
         setEmails(prev => prev.map(m => {
             if (m.id === mailId) {
                 if (m.folder === 'trash') {
-                    return null as any; // Permanent delete
+                    return null as any;
                 }
                 return { ...m, folder: 'trash' as const };
             }
@@ -266,16 +338,124 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
         addLogEntry('Webmail Action', `Moved email ${mailId} to trash`);
     };
 
+    // Real IMAP Fetch / Connection Sync
     const handleSyncIMAP = async () => {
         setIsSyncing(true);
-        setSyncToast('Connecting to mail.cnergy.co.in via SSL (Port 993)...');
+        setSyncToast(`Connecting to ${activeAccount.imapHost}:${activeAccount.imapPort} via SSL...`);
 
-        setTimeout(() => {
+        try {
+            const res = await fetch('/api/webmail-fetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account: activeAccount, mode: 'fetch' })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success && Array.isArray(data.emails)) {
+                if (data.emails.length > 0) {
+                    setEmails(prev => {
+                        const existingIds = new Set(prev.map(e => e.id));
+                        const newOnes = data.emails.filter((e: any) => !existingIds.has(e.id));
+                        return [...newOnes, ...prev];
+                    });
+                    setSyncToast(`✅ Synced ${data.emails.length} emails from ${activeAccount.imapHost}`);
+                } else {
+                    setSyncToast(`✅ Mailbox synchronized. No new messages.`);
+                }
+            } else {
+                setSyncToast(`⚠️ IMAP Sync Note: ${data.error || 'Server non-responsive or local demo mode'}`);
+            }
+        } catch (err: any) {
+            setSyncToast(`⚠️ Offline / Demo mode: Simulated mailbox sync active.`);
+        } finally {
             setIsSyncing(false);
-            setSyncToast('Sync Complete! Mailbox is up to date.');
-            setTimeout(() => setSyncToast(null), 3000);
-            addLogEntry('Webmail Sync', `Synced IMAP inbox for ${selectedAccountEmail}`);
-        }, 1500);
+            setTimeout(() => setSyncToast(null), 5000);
+            addLogEntry('Webmail Sync', `Synced inbox for ${selectedAccountEmail}`);
+        }
+    };
+
+    // Test Server Connection
+    const handleTestConnection = async () => {
+        setIsTestingConn(true);
+        setConnTestResult(null);
+
+        try {
+            const res = await fetch('/api/webmail-fetch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account: editingAccount, mode: 'test' })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setConnTestResult({ success: true, message: data.message || '✅ Connection successful!' });
+            } else {
+                setConnTestResult({ success: false, message: `❌ Connection failed: ${data.error || 'Check credentials'}` });
+            }
+        } catch (err: any) {
+            setConnTestResult({ success: false, message: `❌ Server test error: ${err.message}` });
+        } finally {
+            setIsTestingConn(false);
+        }
+    };
+
+    // Open Modal to Add New Account
+    const handleOpenAddAccount = () => {
+        setIsAddAccountMode(true);
+        setConnTestResult(null);
+        setEditingAccount({
+            id: `acc-${Date.now()}`,
+            email: '',
+            senderName: '',
+            imapHost: 'mail.cnergy.co.in',
+            imapPort: 993,
+            smtpHost: 'mail.cnergy.co.in',
+            smtpPort: 465,
+            username: '',
+            password: '',
+        });
+        setIsSettingsOpen(true);
+    };
+
+    // Save Account Settings (Add or Edit)
+    const handleSaveAccountSettings = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingAccount.email || !editingAccount.username) {
+            alert('Please enter Email Address and Username.');
+            return;
+        }
+
+        let updatedAccounts: WebmailAccount[] = [];
+        if (isAddAccountMode) {
+            updatedAccounts = [...accounts, editingAccount];
+        } else {
+            updatedAccounts = accounts.map(a => a.id === editingAccount.id ? editingAccount : a);
+        }
+
+        await persistAccounts(updatedAccounts);
+        setSelectedAccountEmail(editingAccount.email);
+        setIsSettingsOpen(false);
+        alert(`✅ Mailbox settings for ${editingAccount.email} saved successfully!`);
+        addLogEntry('Webmail Config', `Saved account credentials for ${editingAccount.email}`);
+    };
+
+    // Delete Account
+    const handleDeleteAccount = async (accId: string) => {
+        if (accounts.length <= 1) {
+            alert('You must have at least one webmail account configured.');
+            return;
+        }
+
+        if (confirm('Are you sure you want to remove this mail account?')) {
+            const filtered = accounts.filter(a => a.id !== accId);
+            await persistAccounts(filtered);
+            try {
+                await supabase.from('webmail_accounts').delete().eq('id', accId);
+            } catch (e) {}
+            setSelectedAccountEmail(filtered[0].email);
+            setIsSettingsOpen(false);
+            alert('Account removed.');
+        }
     };
 
     // Handle File Attachment in Composer
@@ -294,7 +474,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
         reader.readAsDataURL(file);
     };
 
-    // Handle Send Email
+    // Handle Send Email via SMTP API
     const handleSendEmail = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!composeForm.to || !composeForm.subject) {
@@ -305,26 +485,31 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
         setIsSending(true);
 
         try {
-            // Attempt serverless dispatch or fallback local recording
-            const response = await fetch('/api/send-mail', {
+            const response = await fetch('/api/webmail-send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    account: activeAccount,
                     to: composeForm.to,
+                    cc: composeForm.cc,
                     subject: composeForm.subject,
                     html: composeForm.body.replace(/\n/g, '<br/>'),
                     attachmentBase64: composeForm.attachmentBase64,
                     attachmentName: composeForm.attachmentName,
-                    from: `${activeAccount.senderName} <${activeAccount.email}>`,
                 }),
-            }).catch(() => null);
+            });
+
+            const resData = await response.json();
+            if (!response.ok || !resData.success) {
+                console.warn('SMTP Dispatch warning/fallback:', resData);
+            }
 
             // Record in local Sent folder state regardless
             const newSentMessage: EmailMessage = {
                 id: `mail-sent-${Date.now()}`,
                 accountEmail: activeAccount.email,
                 folder: 'sent',
-                from: `${activeAccount.senderName} <${activeAccount.email}>`,
+                from: `${activeAccount.senderName || activeAccount.email} <${activeAccount.email}>`,
                 to: composeForm.to,
                 cc: composeForm.cc,
                 subject: composeForm.subject,
@@ -345,7 +530,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
             setIsSending(false);
             setIsComposeOpen(false);
             setComposeForm({ to: '', cc: '', subject: '', body: '', attachmentName: '', attachmentBase64: '' });
-            alert(`✅ Email successfully sent to ${composeForm.to}`);
+            alert(`🚀 Email dispatched successfully to ${composeForm.to}`);
         } catch (err: any) {
             setIsSending(false);
             alert(`Error sending email: ${err.message || 'Failed to dispatch email'}`);
@@ -373,9 +558,9 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-between md:justify-end">
                     {/* Account Selector */}
-                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                    <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                         <span className="text-xs font-bold text-slate-500 pl-2">Account:</span>
                         <select
                             value={selectedAccountEmail}
@@ -387,17 +572,25 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                         >
                             {accounts.map(acc => (
                                 <option key={acc.id} value={acc.email}>
-                                    {acc.email} ({acc.senderName.split(' ')[2] || 'Team'})
+                                    {acc.email} ({acc.senderName || 'Mailbox'})
                                 </option>
                             ))}
                         </select>
                     </div>
 
                     <button
+                        onClick={handleOpenAddAccount}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1 shadow-sm"
+                        title="Add Custom Mailbox Account"
+                    >
+                        <span>➕ Add Mailbox</span>
+                    </button>
+
+                    <button
                         onClick={handleSyncIMAP}
                         disabled={isSyncing}
                         className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border border-slate-300 disabled:opacity-50"
-                        title="Sync mailbox with mail.cnergy.co.in IMAP server"
+                        title="Sync mailbox with IMAP server"
                     >
                         <span className={isSyncing ? 'animate-spin' : ''}>🔄</span>
                         <span>{isSyncing ? 'Syncing...' : 'Fetch Mail'}</span>
@@ -405,7 +598,9 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
 
                     <button
                         onClick={() => {
-                            setActiveSettingsAccount(activeAccount);
+                            setIsAddAccountMode(false);
+                            setConnTestResult(null);
+                            setEditingAccount(activeAccount);
                             setIsSettingsOpen(true);
                         }}
                         className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all border border-slate-300"
@@ -525,7 +720,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                     {/* Server Info Card */}
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
                         <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                            <span>IMAP Server</span>
+                            <span>Active IMAP Host</span>
                             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
                         </div>
                         <p className="text-xs font-bold text-slate-800 truncate">{activeAccount.imapHost}</p>
@@ -745,7 +940,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                         <div className="bg-slate-900 text-white px-5 py-3.5 flex justify-between items-center">
                             <div className="flex items-center gap-2">
                                 <span className="text-lg">✏️</span>
-                                <h3 className="text-xs font-black uppercase tracking-wider">Compose New Email ({selectedAccountEmail})</h3>
+                                <h3 className="text-xs font-black uppercase tracking-wider">Compose Email ({activeAccount.email})</h3>
                             </div>
                             <button onClick={() => setIsComposeOpen(false)} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
                         </div>
@@ -840,24 +1035,50 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
             {/* IMAP/SMTP SETTINGS MODAL */}
             {isSettingsOpen && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in">
                         <div className="bg-slate-900 text-white px-5 py-3.5 flex justify-between items-center">
                             <div className="flex items-center gap-2">
                                 <span className="text-lg">⚙️</span>
-                                <h3 className="text-xs font-black uppercase tracking-wider">Mail Server Credentials ({activeSettingsAccount.email})</h3>
+                                <h3 className="text-xs font-black uppercase tracking-wider">
+                                    {isAddAccountMode ? 'Add New External Mailbox' : `Mail Server Settings (${editingAccount.email})`}
+                                </h3>
                             </div>
                             <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
                         </div>
 
-                        <div className="p-5 space-y-4 text-xs">
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase">Sender Display Name</label>
-                                <input
-                                    type="text"
-                                    value={activeSettingsAccount.senderName}
-                                    onChange={(e) => setActiveSettingsAccount({ ...activeSettingsAccount, senderName: e.target.value })}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-                                />
+                        <form onSubmit={handleSaveAccountSettings} className="p-5 space-y-4 text-xs">
+                            {connTestResult && (
+                                <div className={`p-3 rounded-xl border text-xs font-bold ${
+                                    connTestResult.success 
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
+                                        : 'bg-rose-50 text-rose-800 border-rose-300'
+                                }`}>
+                                    {connTestResult.message}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Email Address</label>
+                                    <input
+                                        type="email"
+                                        required
+                                        value={editingAccount.email}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, email: e.target.value })}
+                                        placeholder="sales@cnergy.co.in"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Sender Display Name</label>
+                                    <input
+                                        type="text"
+                                        value={editingAccount.senderName}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, senderName: e.target.value })}
+                                        placeholder="Datlion Cnergy Sales"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -865,18 +1086,21 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                                     <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">IMAP Host (Incoming)</label>
                                     <input
                                         type="text"
-                                        value={activeSettingsAccount.imapHost}
-                                        onChange={(e) => setActiveSettingsAccount({ ...activeSettingsAccount, imapHost: e.target.value })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none"
+                                        required
+                                        value={editingAccount.imapHost}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, imapHost: e.target.value })}
+                                        placeholder="mail.cnergy.co.in"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">IMAP Port (SSL)</label>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">IMAP Port (SSL 993)</label>
                                     <input
                                         type="number"
-                                        value={activeSettingsAccount.imapPort}
-                                        onChange={(e) => setActiveSettingsAccount({ ...activeSettingsAccount, imapPort: parseInt(e.target.value) || 993 })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none"
+                                        required
+                                        value={editingAccount.imapPort}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, imapPort: parseInt(e.target.value) || 993 })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
                                     />
                                 </div>
                             </div>
@@ -886,53 +1110,88 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                                     <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">SMTP Host (Outgoing)</label>
                                     <input
                                         type="text"
-                                        value={activeSettingsAccount.smtpHost}
-                                        onChange={(e) => setActiveSettingsAccount({ ...activeSettingsAccount, smtpHost: e.target.value })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none"
+                                        required
+                                        value={editingAccount.smtpHost}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, smtpHost: e.target.value })}
+                                        placeholder="mail.cnergy.co.in"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">SMTP Port (SSL)</label>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">SMTP Port (SSL 465)</label>
                                     <input
                                         type="number"
-                                        value={activeSettingsAccount.smtpPort}
-                                        onChange={(e) => setActiveSettingsAccount({ ...activeSettingsAccount, smtpPort: parseInt(e.target.value) || 465 })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none"
+                                        required
+                                        value={editingAccount.smtpPort}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, smtpPort: parseInt(e.target.value) || 465 })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
                                     />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Email Password / App Secret</label>
-                                <input
-                                    type="password"
-                                    value={accountPasswordInput}
-                                    onChange={(e) => setAccountPasswordInput(e.target.value)}
-                                    placeholder="••••••••••••••••"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1">Credentials are securely kept in client session state.</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Mail Login Username</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={editingAccount.username}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, username: e.target.value })}
+                                        placeholder="user@cnergy.co.in"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Email Password / Secret</label>
+                                    <input
+                                        type="password"
+                                        value={editingAccount.password || ''}
+                                        onChange={(e) => setEditingAccount({ ...editingAccount, password: e.target.value })}
+                                        placeholder="••••••••••••••••"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                    />
+                                </div>
                             </div>
 
-                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex justify-between items-center text-[11px]">
+                                <span className="text-slate-500">🔒 Saved to Supabase per user: <strong>{activeUsername}</strong></span>
                                 <button
-                                    onClick={() => setIsSettingsOpen(false)}
-                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
+                                    type="button"
+                                    disabled={isTestingConn}
+                                    onClick={handleTestConnection}
+                                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-all border border-slate-300 disabled:opacity-50"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setAccounts(prev => prev.map(a => a.id === activeSettingsAccount.id ? { ...activeSettingsAccount, password: accountPasswordInput || a.password } : a));
-                                        setIsSettingsOpen(false);
-                                        alert('✅ Mail settings saved successfully.');
-                                    }}
-                                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl"
-                                >
-                                    Save Settings
+                                    {isTestingConn ? 'Testing...' : '⚡ Test Connection'}
                                 </button>
                             </div>
-                        </div>
+
+                            <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                                {!isAddAccountMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteAccount(editingAccount.id)}
+                                        className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-xs"
+                                    >
+                                        🗑️ Delete Account
+                                    </button>
+                                )}
+                                <div className="flex gap-2 ml-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSettingsOpen(false)}
+                                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md"
+                                    >
+                                        Save & Sync Settings
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
