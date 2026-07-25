@@ -197,13 +197,21 @@ const App: React.FC = () => {
     });
   }, [setUsers, users]); 
 
-  // Seamless migration from localStorage to Supabase Auth
+  // Seamless migration from localStorage to Supabase Auth (runs max once per session load)
+  const hasMigratedAuthRef = useRef(false);
   useEffect(() => {
+    if (hasMigratedAuthRef.current) return;
     const migrateExistingSession = async () => {
+      if (!currentUser || !currentUser.password || currentUser.password === 'migrated_to_supabase') {
+        hasMigratedAuthRef.current = true;
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       
       // If user has local storage session but no Supabase session, try to migrate them
-      if (currentUser && currentUser.password && currentUser.password !== 'migrated_to_supabase' && !session) {
+      if (!session) {
+        hasMigratedAuthRef.current = true;
         const { error } = await supabase.auth.signInWithPassword({
           email: currentUser.username,
           password: currentUser.password
@@ -230,6 +238,8 @@ const App: React.FC = () => {
             // Remove plaintext password from local storage
             setCurrentUser(prev => prev ? { ...prev, password: 'migrated_to_supabase' } : null);
         }
+      } else {
+        hasMigratedAuthRef.current = true;
       }
     };
     

@@ -324,12 +324,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                 query = query.lte('invoice_metadata->>invoice_date', filterEnd);
             }
 
-            if (searchTerm) {
-                const searchQ = `invoice_metadata->>invoice_number.ilike.%${searchTerm}%,issuer_details->>name.ilike.%${searchTerm}%,receiver_details->>name.ilike.%${searchTerm}%`;
-                query = query.or(searchQ);
-            } else {
-                query = query.limit(100);
-            }
+            query = query.limit(200);
 
             const { data, error } = await query;
 
@@ -346,9 +341,20 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
     useEffect(() => {
         const timer = setTimeout(() => {
             fetchInvoices();
-        }, 500);
+        }, 300);
         return () => clearTimeout(timer);
-    }, [searchTerm, filterStart, filterEnd, invoiceType, documentCategory]);
+    }, [filterStart, filterEnd, invoiceType, documentCategory]);
+
+    const filteredInvoices = React.useMemo(() => {
+        if (!searchTerm.trim()) return invoices;
+        const term = searchTerm.toLowerCase();
+        return invoices.filter(inv => {
+            const invNo = String(inv.invoice_metadata?.invoice_number || '').toLowerCase();
+            const issuer = String(inv.issuer_details?.name || '').toLowerCase();
+            const receiver = String(inv.receiver_details?.name || '').toLowerCase();
+            return invNo.includes(term) || issuer.includes(term) || receiver.includes(term);
+        });
+    }, [invoices, searchTerm]);
 
     const handleExport = (format: 'csv' | 'json') => {
         setExporting(true);
@@ -623,10 +629,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                 <tr><td colSpan={9} className="p-8 text-center text-slate-400"><Loader2 className="animate-spin mx-auto mb-2 text-[#8EBF45]" /> Loading data...</td></tr>
                             ) : errorMsg ? (
                                 <tr><td colSpan={9} className="p-8 text-center text-red-500">Error: {errorMsg}</td></tr>
-                            ) : invoices.length === 0 ? (
+                            ) : filteredInvoices.length === 0 ? (
                                 <tr><td colSpan={9} className="p-8 text-center text-slate-400">No {invoiceType} invoices found matching filters.</td></tr>
                             ) : (
-                                invoices.map((inv) => (
+                                filteredInvoices.map((inv) => (
                                     <React.Fragment key={inv.id}>
                                         <tr className={`hover:bg-slate-50 transition-colors group cursor-pointer ${expandedRowId === inv.id ? 'bg-[#8EBF45]/5' : ''} ${selectedIds.has(inv.id as string) ? 'bg-indigo-50/50' : ''}`} onClick={() => toggleRow(inv.id)}>
                                             <td className="p-4" onClick={(e) => { e.stopPropagation(); toggleSelect(inv.id as string); }}>

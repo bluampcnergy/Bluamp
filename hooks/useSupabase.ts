@@ -69,10 +69,37 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
 };
 
 // ============================================================
+// GLOBAL IN-MEMORY CACHE WITH TTL (5 MINUTES)
+// Prevents duplicate DB queries during navigation or tab switching
+// ============================================================
+interface CacheEntry {
+  data: any[];
+  timestamp: number;
+}
+const MEMORY_CACHE: Record<string, CacheEntry> = {};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes fresh data window
+
+// Helper to check if cache is valid
+const getValidCache = (tableName: string): any[] | null => {
+  const entry = MEMORY_CACHE[tableName];
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  return null;
+};
+
+// Helper to update cache
+const setCache = (tableName: string, data: any[]) => {
+  MEMORY_CACHE[tableName] = {
+    data,
+    timestamp: Date.now(),
+  };
+};
+
+// ============================================================
 // GLOBAL FETCH QUEUE — Prevents connection pool exhaustion
 // Supabase Free Plan allows ~15 concurrent Postgres connections.
-// Without this, all 14 useSupabase hooks fire SELECT * simultaneously.
-// This semaphore limits concurrent fetches to MAX_CONCURRENT.
+// Semaphore limits concurrent fetches to MAX_CONCURRENT.
 // ============================================================
 const MAX_CONCURRENT_FETCHES = 3;
 let activeFetches = 0;
@@ -100,49 +127,62 @@ const releaseFetchSlot = () => {
   }
 };
 
-// Tables that can grow very large — cap initial fetch to prevent unbounded pagination
+// Tables that can grow very large — cap initial fetch to prevent unbounded pagination & memory bloat
 const LARGE_TABLE_ROW_LIMIT: Record<string, number> = {
-  logs: 500,
-  test_results: 500,
+  logs: 300,
+  test_results: 300,
+  supplies_records: 500,
 };
 
 // Visibility re-fetch cooldown — prevents tab-switch storms
-const VISIBILITY_COOLDOWN_MS = 30_000; // 30 seconds
+const VISIBILITY_COOLDOWN_MS = 60_000; // 60 seconds
 
 export function useSupabase<T>(
   tableName: string,
   initialValue: T[],
   idKey: string = 'id'
 ): [T[], React.Dispatch<React.SetStateAction<T[]>>] {
-  const [data, setData] = useState<T[]>(initialValue);
-  // Track the data that is currently known to be in the DB (or scheduled to be)
-  const lastSyncedData = useRef<T[]>(initialValue);
-  // Ref to track if sync is allowed. We disable it if the table doesn't exist or network fails.
-  const syncEnabled = useRef<boolean>(true);
-  // Ref to track if initial fetch is complete — prevents syncing dummy/initial data
-  const initialFetchDone = useRef<boolean>(false);
-  // Debounce timer ref — ensures only ONE sync fires after all rapid mutations settle
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Ref to always access the latest data without stale closures
-  const dataRef = useRef<T[]>(initialValue);
-  // Track last successful fetch timestamp for visibility cooldown
-  const lastFetchTimestamp = useRef<number>(0);
+  // Initialize from cache if fresh, otherwise initialValue
+  const [data, setData] = useState<T[]>(() => {
+    const cached = getValidCache(tableName);
+    return cached ? (cached as unknown as T[]) : initialValue;
+  });
 
-  // Keep dataRef always in sync with the latest state
+  const lastSyncedData = useRef<T[]>(data);
+  const syncEnabled = useRef<boolean>(true);
+  const initialFetchDone = useRef<boolean>(!!getValidCache(tableName));
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dataRef = useRef<T[]>(data);
+  const lastFetchTimestamp = useRef<number>(getValidCache(tableName) ? Date.now() : 0);
+
+  // Keep dataRef and global cache in sync with state
   useEffect(() => {
     dataRef.current = data;
-  }, [data]);
+    if (initialFetchDone.current) {
+      setCache(tableName, data);
+    }
+  }, [data, tableName]);
 
-  // Fetch initial data — PAGINATED to bypass Supabase max_rows limit (default 1000)
-  // Now uses the global fetch queue to limit concurrent connections.
+  // Fetch initial data with concurrency queue & memory caching
   useEffect(() => {
-    const fetchAll = async () => {
-      // Acquire a slot from the global queue (waits if pool is full)
+    const fetchAll = async (force: boolean = false) => {
+      // Check cache first if not forcing
+      if (!force) {
+        const cached = getValidCache(tableName);
+        if (cached) {
+          setData(cached as unknown as T[]);
+          lastSyncedData.current = cached as unknown as T[];
+          dataRef.current = cached as unknown as T[];
+          initialFetchDone.current = true;
+          return;
+        }
+      }
+
       await acquireFetchSlot();
 
       try {
-        const PAGE_SIZE = 1000;
-        const maxRows = LARGE_TABLE_ROW_LIMIT[tableName]; // undefined = unlimited
+        const PAGE_SIZE = 500;
+        const maxRows = LARGE_TABLE_ROW_LIMIT[tableName];
         let allData: any[] = [];
         let page = 0;
         let hasMore = true;
@@ -150,9 +190,6 @@ export function useSupabase<T>(
         while (hasMore) {
           let query = supabase.from(tableName).select('*');
 
-          // Stable sort: timestamp DESC + id ASC as tiebreaker
-          // Without the secondary sort, same-timestamp rows have non-deterministic order
-          // across pages, causing rows to be skipped or duplicated
           if (tableName === 'test_results' || tableName === 'logs' || tableName === 'received_goods' || tableName === 'finished_goods') {
             query = query.order('timestamp', { ascending: false }).order(idKey, { ascending: true });
           }
@@ -171,14 +208,12 @@ export function useSupabase<T>(
             }
           } else if (dbData) {
             allData = allData.concat(dbData);
-            // If we got fewer rows than PAGE_SIZE, we've reached the end
             if (dbData.length < PAGE_SIZE) {
               hasMore = false;
             } else {
               page++;
             }
 
-            // Enforce row limit for large tables to prevent unbounded pagination
             if (maxRows && allData.length >= maxRows) {
               allData = allData.slice(0, maxRows);
               hasMore = false;
@@ -188,7 +223,6 @@ export function useSupabase<T>(
           }
         }
 
-        // Deduplicate by id — safety net against any overlap between pages
         if (allData.length > 0) {
           const seen = new Set<string>();
           allData = allData.filter((item: any) => {
@@ -197,38 +231,36 @@ export function useSupabase<T>(
             seen.add(id);
             return true;
           });
-          console.log(`[useSupabase] Loaded ${allData.length} unique rows from '${tableName}'`);
           const hydrated = rehydrateFromDb(tableName, allData) as unknown as T[];
           setData(hydrated);
           lastSyncedData.current = hydrated;
           dataRef.current = hydrated;
+          setCache(tableName, hydrated);
         }
         initialFetchDone.current = true;
         lastFetchTimestamp.current = Date.now();
       } catch (error: any) {
-        console.warn(`[Offline Mode] Could not sync '${tableName}' with Supabase. Using local data. Error: ${error.message || 'Network request failed'}`);
+        console.warn(`[Offline/Cache Fallback] Could not sync '${tableName}' with Supabase. Using current data.`);
         syncEnabled.current = false;
         initialFetchDone.current = true;
       } finally {
-        // Always release the fetch slot, even on error
         releaseFetchSlot();
       }
     };
+
     fetchAll();
 
-    // Re-fetch when the browser tab becomes visible again (fixes stale sessions)
-    // Now includes a cooldown to prevent re-fetch storms on rapid tab switching
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && initialFetchDone.current && syncEnabled.current) {
         const elapsed = Date.now() - lastFetchTimestamp.current;
         if (elapsed >= VISIBILITY_COOLDOWN_MS) {
-          fetchAll();
+          fetchAll(true); // Soft refresh after 60s
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [tableName]);
+  }, [tableName, idKey]);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -245,14 +277,12 @@ export function useSupabase<T>(
     const oldMap = new Map(oldData.map((item: any) => [String(item[idKey]), item]));
     const newIds = new Set(newData.map((item: any) => String(item[idKey])));
 
-    // Find items to insert or update
     const toUpsert = newData.filter((item: any) => {
       const id = String(item[idKey]);
       const oldItem = oldMap.get(id);
       return !oldItem || JSON.stringify(item) !== JSON.stringify(oldItem);
     });
 
-    // Find items to delete
     const toDeleteIds = oldData
       .filter((item: any) => !newIds.has(String(item[idKey])))
       .map((item: any) => String(item[idKey]));
@@ -267,8 +297,6 @@ export function useSupabase<T>(
 
     try {
       if (toDeleteIds.length > 0) {
-        // Safety: log what we're about to delete
-        console.log(`[useSupabase:${tableName}] Deleting ${toDeleteIds.length} item(s)`);
         const chunks = chunkArray(toDeleteIds, CHUNK_SIZE);
         for (const chunk of chunks) {
           const { error } = await supabase.from(tableName).delete().in(idKey, chunk);
@@ -292,25 +320,23 @@ export function useSupabase<T>(
     }
   };
 
-  // Schedule a debounced sync — waits for mutations to settle before diffing
   const scheduleDebouncedSync = useCallback(() => {
     if (!syncEnabled.current || !initialFetchDone.current) return;
 
-    // Clear any pending sync — only the latest state matters
     if (syncTimer.current) {
       clearTimeout(syncTimer.current);
     }
 
     syncTimer.current = setTimeout(() => {
-      // Read the LATEST state from the ref (avoids stale closures entirely)
       const currentData = dataRef.current;
       const baseline = lastSyncedData.current;
 
       if (currentData !== baseline) {
         syncToSupabase(currentData, baseline);
         lastSyncedData.current = currentData;
+        setCache(tableName, currentData);
       }
-    }, 1500); // 1.5s debounce — allows rapid typing/mutations to accumulate
+    }, 1500);
   }, [tableName, idKey]);
 
   const setSupabaseData = useCallback((action: React.SetStateAction<T[]>) => {
@@ -318,7 +344,6 @@ export function useSupabase<T>(
       const newData = typeof action === 'function' ? (action as any)(prev) : action;
       return newData;
     });
-    // Schedule a debounced sync instead of immediate Promise.resolve sync
     scheduleDebouncedSync();
   }, [scheduleDebouncedSync]);
 

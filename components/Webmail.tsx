@@ -247,24 +247,23 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
         setAccounts(newAccounts);
         localStorage.setItem(`webmail_accounts_${activeUsername}`, JSON.stringify(newAccounts));
 
-        // Sync to Supabase table
+        // Sync to Supabase table (Batch upsert)
         try {
-            for (const acc of newAccounts) {
-                await supabase.from('webmail_accounts').upsert({
-                    id: acc.id,
-                    username: activeUsername,
-                    email: acc.email,
-                    sender_name: acc.senderName,
-                    imap_host: acc.imapHost,
-                    imap_port: acc.imapPort,
-                    smtp_host: acc.smtpHost,
-                    smtp_port: acc.smtpPort,
-                    auth_username: acc.username,
-                    auth_password: acc.password || '',
-                    is_default: Boolean(acc.isDefault),
-                    updated_at: Date.now()
-                });
-            }
+            const rows = newAccounts.map(acc => ({
+                id: acc.id,
+                username: activeUsername,
+                email: acc.email,
+                sender_name: acc.senderName,
+                imap_host: acc.imapHost,
+                imap_port: acc.imapPort,
+                smtp_host: acc.smtpHost,
+                smtp_port: acc.smtpPort,
+                auth_username: acc.username,
+                auth_password: acc.password || '',
+                is_default: Boolean(acc.isDefault),
+                updated_at: Date.now()
+            }));
+            await supabase.from('webmail_accounts').upsert(rows);
         } catch (err) {
             console.warn('Failed to upsert webmail accounts to Supabase:', err);
         }
