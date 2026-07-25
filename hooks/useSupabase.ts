@@ -68,6 +68,47 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
   return items;
 };
 
+// ============================================================
+// GLOBAL FETCH QUEUE — Prevents connection pool exhaustion
+// Supabase Free Plan allows ~15 concurrent Postgres connections.
+// Without this, all 14 useSupabase hooks fire SELECT * simultaneously.
+// This semaphore limits concurrent fetches to MAX_CONCURRENT.
+// ============================================================
+const MAX_CONCURRENT_FETCHES = 3;
+let activeFetches = 0;
+const fetchQueue: Array<() => void> = [];
+
+const acquireFetchSlot = (): Promise<void> => {
+  return new Promise((resolve) => {
+    if (activeFetches < MAX_CONCURRENT_FETCHES) {
+      activeFetches++;
+      resolve();
+    } else {
+      fetchQueue.push(() => {
+        activeFetches++;
+        resolve();
+      });
+    }
+  });
+};
+
+const releaseFetchSlot = () => {
+  activeFetches--;
+  if (fetchQueue.length > 0 && activeFetches < MAX_CONCURRENT_FETCHES) {
+    const next = fetchQueue.shift();
+    if (next) next();
+  }
+};
+
+// Tables that can grow very large — cap initial fetch to prevent unbounded pagination
+const LARGE_TABLE_ROW_LIMIT: Record<string, number> = {
+  logs: 500,
+  test_results: 500,
+};
+
+// Visibility re-fetch cooldown — prevents tab-switch storms
+const VISIBILITY_COOLDOWN_MS = 30_000; // 30 seconds
+
 export function useSupabase<T>(
   tableName: string,
   initialValue: T[],
@@ -84,6 +125,8 @@ export function useSupabase<T>(
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Ref to always access the latest data without stale closures
   const dataRef = useRef<T[]>(initialValue);
+  // Track last successful fetch timestamp for visibility cooldown
+  const lastFetchTimestamp = useRef<number>(0);
 
   // Keep dataRef always in sync with the latest state
   useEffect(() => {
@@ -91,10 +134,15 @@ export function useSupabase<T>(
   }, [data]);
 
   // Fetch initial data — PAGINATED to bypass Supabase max_rows limit (default 1000)
+  // Now uses the global fetch queue to limit concurrent connections.
   useEffect(() => {
     const fetchAll = async () => {
+      // Acquire a slot from the global queue (waits if pool is full)
+      await acquireFetchSlot();
+
       try {
         const PAGE_SIZE = 1000;
+        const maxRows = LARGE_TABLE_ROW_LIMIT[tableName]; // undefined = unlimited
         let allData: any[] = [];
         let page = 0;
         let hasMore = true;
@@ -129,6 +177,12 @@ export function useSupabase<T>(
             } else {
               page++;
             }
+
+            // Enforce row limit for large tables to prevent unbounded pagination
+            if (maxRows && allData.length >= maxRows) {
+              allData = allData.slice(0, maxRows);
+              hasMore = false;
+            }
           } else {
             hasMore = false;
           }
@@ -150,18 +204,26 @@ export function useSupabase<T>(
           dataRef.current = hydrated;
         }
         initialFetchDone.current = true;
+        lastFetchTimestamp.current = Date.now();
       } catch (error: any) {
         console.warn(`[Offline Mode] Could not sync '${tableName}' with Supabase. Using local data. Error: ${error.message || 'Network request failed'}`);
         syncEnabled.current = false;
         initialFetchDone.current = true;
+      } finally {
+        // Always release the fetch slot, even on error
+        releaseFetchSlot();
       }
     };
     fetchAll();
 
     // Re-fetch when the browser tab becomes visible again (fixes stale sessions)
+    // Now includes a cooldown to prevent re-fetch storms on rapid tab switching
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && initialFetchDone.current && syncEnabled.current) {
-        fetchAll();
+        const elapsed = Date.now() - lastFetchTimestamp.current;
+        if (elapsed >= VISIBILITY_COOLDOWN_MS) {
+          fetchAll();
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
