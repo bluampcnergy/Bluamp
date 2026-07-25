@@ -5,6 +5,7 @@ import Modal from './Modal';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshCw, Printer, ChevronUp, ChevronDown } from './invoices/Icons';
+import { PencilIcon } from './icons/PencilIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { ArrowRightIcon } from './icons/ArrowRightIcon';
 import { SpannerIcon } from './icons/SpannerIcon';
@@ -110,6 +111,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
     const [isReplacementModalOpen, setIsReplacementModalOpen] = useState(false);
     const [replacementTarget, setReplacementTarget] = useState<{ wipItemId: string; goodId: string; damagedSerial: string } | null>(null);
     const [replacementSearchTerm, setReplacementSearchTerm] = useState('');
+    const [swapMode, setSwapMode] = useState<'same' | 'category'>('same');
 
     // Manage Serials State
     const [isManageSerialsModalOpen, setIsManageSerialsModalOpen] = useState(false);
@@ -117,6 +119,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
 
     // Recipe Management
     const [isRecipeModalOpen, setRecipeModalOpen] = useState(false);
+    const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
     const [newRecipeName, setNewRecipeName] = useState('');
     const [newRecipeComponents, setNewRecipeComponents] = useState<{ masterItemName?: string; receivedGoodId?: string; quantityPerUnit: number }[]>([{ masterItemName: '', quantityPerUnit: 1 }]);
 
@@ -150,8 +153,12 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
         }
     }, [productionDraft, recipes, receivedGoods, setProductionDraft]);
 
-    // Helpers
-    const getRecipeName = (id: string) => recipes.find(r => r.id === id)?.name || 'Unknown SKU';
+    const getRecipeName = (id: string) => {
+        const found = recipes.find(r => r.id === id);
+        if (found) return found.name;
+        if (id && !id.startsWith('recipe-')) return id;
+        return `Archived SKU (${id ? id.slice(-6) : 'Unknown'})`;
+    };
     const getGoodName = (id: string) => receivedGoods.find(g => g.id === id)?.name || 'Unknown Item';
 
     const getAvailableSerialsForBatch = (good: ReceivedGood) => {
@@ -612,25 +619,35 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
         const good = receivedGoods.find(g => g.id === goodId);
         if (!good) return;
 
-        // Find all alternative batches of same item
-        const alternativeBatches = receivedGoods.filter(g => g.name === good.name);
-        const totalAvailable = alternativeBatches.reduce((acc, b) => acc + getAvailableSerialsForBatch(b).length, 0);
+        // Check availability across same item OR same category
+        const catLower = (good.category || '').trim().toLowerCase();
+        const categoryBatches = receivedGoods.filter(g => (g.category || '').trim().toLowerCase() === catLower);
+        const totalAvailable = categoryBatches.reduce((acc, b) => acc + getAvailableSerialsForBatch(b).length, 0);
 
         if (totalAvailable === 0) {
-            alert(`No available replacements in storage for item ${good.name}. Please add tested inventory.`);
+            alert(`No available replacements in storage for item '${good.name}' (Category: ${good.category || 'N/A'}). Please add tested inventory.`);
             return;
         }
 
         setReplacementTarget({ wipItemId, goodId, damagedSerial });
         setReplacementSearchTerm('');
+        setSwapMode('same');
         setIsReplacementModalOpen(true);
     };
 
     const handleConfirmReplacement = (replacementSerial: string, replacementBatchId: string) => {
         if (!replacementTarget) return;
-        const { wipItemId, damagedSerial } = replacementTarget;
+        const { wipItemId, damagedSerial, goodId } = replacementTarget;
 
-        if (!confirm(`Confirm replacement of damaged unit ${damagedSerial} with ${replacementSerial}?`)) return;
+        const originalGood = receivedGoods.find(og => og.id === goodId);
+        const replacementGood = receivedGoods.find(rg => rg.id === replacementBatchId);
+        const isCrossSwap = originalGood && replacementGood && (originalGood.name.trim().toLowerCase() !== replacementGood.name.trim().toLowerCase());
+
+        const swapLabel = isCrossSwap
+            ? `Cross-Swap (${originalGood?.name || 'Orig'} ➔ ${replacementGood?.name || 'Replacement'})`
+            : `Swap (${replacementGood?.name || 'Replacement'})`;
+
+        if (!confirm(`Confirm ${swapLabel} of damaged unit ${damagedSerial} with ${replacementSerial}?`)) return;
 
         // Check if it's a normal WIP item
         const isWip = wipItems.some(w => w.id === wipItemId);
@@ -742,7 +759,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                 const restoredBatch: ReceivedGood = {
                     id: parentGoodId,
                     name: `Restored Batch (${parentGoodId.substring(0, 12)})`,
-                    category: 'Cell',
+                    category: originalGood?.category || 'Cell',
                     makeModel: 'Restored Component',
                     supplier: 'Restored Inventory',
                     invoiceNumber: 'RESTORED-INV',
@@ -759,7 +776,11 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             return updated;
         });
 
-        addLogEntry('WIP Replacement', `Damaged serial ${damagedSerial} replaced by ${replacementSerial} in ${isWip ? 'production' : 'repair'} batch. Damaged serial returned to raw material stock.`);
+        if (isCrossSwap) {
+            addLogEntry('Cross Swap Serial', `Damaged serial ${damagedSerial} (${originalGood?.name}) cross-swapped with ${replacementSerial} (${replacementGood?.name}, Category: ${originalGood?.category}) in ${isWip ? 'production' : 'repair'} batch.`);
+        } else {
+            addLogEntry('WIP Replacement', `Damaged serial ${damagedSerial} replaced by ${replacementSerial} in ${isWip ? 'production' : 'repair'} batch. Damaged serial returned to raw material stock.`);
+        }
 
         // Update local review state if open
         setActiveWipItem(prev => {
@@ -781,11 +802,30 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             const good = receivedGoods.find(g => g.id === productionDraft.receivedGoodId);
             if (good) targetName = good.name;
         }
+        setEditingRecipeId(null);
+        setNewRecipeName('');
         setNewRecipeComponents([{ masterItemName: targetName, quantityPerUnit: 1 }]);
         setRecipeModalOpen(true);
     };
 
+    const handleEditRecipe = (recipe: Recipe) => {
+        setEditingRecipeId(recipe.id);
+        setNewRecipeName(recipe.name);
+        setNewRecipeComponents(recipe.components.length > 0 ? recipe.components : [{ masterItemName: '', quantityPerUnit: 1 }]);
+    };
+
+    const handleCancelEditRecipe = () => {
+        setEditingRecipeId(null);
+        setNewRecipeName('');
+        setNewRecipeComponents([{ masterItemName: '', quantityPerUnit: 1 }]);
+    };
+
     const handleSaveRecipe = () => {
+        if (!newRecipeName.trim()) {
+            alert("Please enter an SKU Name.");
+            return;
+        }
+
         // Validate components to avoid ghost/empty items
         const validComponents = newRecipeComponents.filter(c => c.masterItemName && c.masterItemName.trim() !== '' && c.quantityPerUnit > 0);
 
@@ -794,16 +834,43 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             return;
         }
 
-        const newRecipe: Recipe = {
-            id: `recipe-${Date.now()}`,
-            name: newRecipeName,
-            components: validComponents,
-        };
-        setRecipes(prev => [...prev, newRecipe]);
+        if (editingRecipeId) {
+            setRecipes(prev => prev.map(r => r.id === editingRecipeId ? { ...r, name: newRecipeName.trim(), components: validComponents } : r));
+            addLogEntry('Updated SKU', `Updated SKU '${newRecipeName.trim()}' (ID: ${editingRecipeId}).`);
+            setEditingRecipeId(null);
+        } else {
+            const newRecipe: Recipe = {
+                id: `recipe-${Date.now()}`,
+                name: newRecipeName.trim(),
+                components: validComponents,
+            };
+            setRecipes(prev => [...prev, newRecipe]);
+            addLogEntry('Created SKU', `Created new SKU '${newRecipeName.trim()}'.`);
+            setSelectedRecipe(newRecipe.id);
+        }
+
         setNewRecipeName('');
         setNewRecipeComponents([{ masterItemName: '', quantityPerUnit: 1 }]);
-        setSelectedRecipe(newRecipe.id);
         setRecipeModalOpen(false);
+    };
+
+    const handleDeleteRecipe = (recipe: Recipe) => {
+        const isUsedInWip = wipItems.some(w => w.recipeId === recipe.id);
+        const isUsedInFG = finishedGoods.some(fg => fg.recipeId === recipe.id);
+        const isUsedInRepair = repairItems.some(r => r.recipeId === recipe.id);
+
+        let warningMsg = `Are you sure you want to delete SKU '${recipe.name}'?`;
+        if (isUsedInWip || isUsedInFG || isUsedInRepair) {
+            warningMsg = `SKU '${recipe.name}' is referenced in active/historical production or finished goods. Deleting this SKU removes it from future production templates, but existing batch serial traceability will remain fully intact. Proceed with deletion?`;
+        }
+
+        if (!confirm(warningMsg)) return;
+
+        setRecipes(prev => prev.filter(r => r.id !== recipe.id));
+        if (editingRecipeId === recipe.id) {
+            handleCancelEditRecipe();
+        }
+        addLogEntry('Deleted SKU', `Deleted SKU '${recipe.name}'.`);
     };
 
     const openFinishModal = (wipItem: WIPItem) => {
@@ -1036,15 +1103,41 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                                 Select a tested unit from inventory to swap into production.
                             </p>
                         </div>
+
+                        {/* Swap Mode Selector */}
+                        {(() => {
+                            const originalGood = receivedGoods.find(og => og.id === replacementTarget.goodId);
+                            const category = originalGood?.category || 'Component';
+                            return (
+                                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg border border-slate-200 text-xs font-bold mb-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSwapMode('same')}
+                                        className={`flex-1 py-1.5 px-3 rounded-md transition-all ${swapMode === 'same' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                                    >
+                                        Same Item ({originalGood?.name || 'Exact Match'})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSwapMode('category')}
+                                        className={`flex-1 py-1.5 px-3 rounded-md transition-all ${swapMode === 'category' ? 'bg-[#8EBF45] text-[#0D0D0D] shadow-sm font-black' : 'text-slate-500 hover:text-slate-800'}`}
+                                    >
+                                        ⚡ Cross Swap (Same Category: {category})
+                                    </button>
+                                </div>
+                            );
+                        })()}
+
                         <div className="relative mb-3">
                             <SearchIcon className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                            <input type="text" placeholder="Search replacement serial..." className="w-full border rounded-lg py-2 pl-9 text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]" value={replacementSearchTerm} onChange={(e) => setReplacementSearchTerm(e.target.value)} />
+                            <input type="text" placeholder="Search replacement serial or item name..." className="w-full border rounded-lg py-2 pl-9 text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]" value={replacementSearchTerm} onChange={(e) => setReplacementSearchTerm(e.target.value)} />
                         </div>
                         <div className="border rounded-lg overflow-hidden max-h-[50vh] overflow-y-auto">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-gray-100 sticky top-0 font-semibold text-gray-700">
                                     <tr>
-                                        <th className="p-3 border-b">Serial Number</th>
+                                        <th className="p-3 border-b">Item & Serial</th>
+                                        <th className="p-3 border-b">Category / Make</th>
                                         <th className="p-3 border-b">Batch / Invoice</th>
                                         <th className="p-3 border-b text-right">Action</th>
                                     </tr>
@@ -1052,19 +1145,46 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                                 <tbody className="divide-y divide-gray-100">
                                     {(() => {
                                         const originalGood = receivedGoods.find(og => og.id === replacementTarget.goodId);
-                                        const alternativeBatches = receivedGoods.filter(g => g.name === originalGood?.name);
+                                        if (!originalGood) return <tr><td colSpan={4} className="p-4 text-center text-gray-500">Original item not found.</td></tr>;
 
-                                        const availableList = alternativeBatches.flatMap(batch => {
+                                        let candidateBatches: ReceivedGood[] = [];
+                                        if (swapMode === 'same') {
+                                            candidateBatches = receivedGoods.filter(g => g.name.trim().toLowerCase() === originalGood.name.trim().toLowerCase());
+                                        } else {
+                                            const origCat = (originalGood.category || '').trim().toLowerCase();
+                                            candidateBatches = receivedGoods.filter(g => (g.category || '').trim().toLowerCase() === origCat);
+                                        }
+
+                                        const searchLower = replacementSearchTerm.toLowerCase();
+                                        const availableList = candidateBatches.flatMap(batch => {
                                             return getAvailableSerialsForBatch(batch)
-                                                .filter(s => s.toLowerCase().includes(replacementSearchTerm.toLowerCase()))
-                                                .map(sn => ({ sn, batchId: batch.id, invoice: batch.invoiceNumber }));
+                                                .filter(s => s.toLowerCase().includes(searchLower) || batch.name.toLowerCase().includes(searchLower) || (batch.makeModel || '').toLowerCase().includes(searchLower))
+                                                .map(sn => ({
+                                                    sn,
+                                                    batchId: batch.id,
+                                                    itemName: batch.name,
+                                                    category: batch.category,
+                                                    makeModel: batch.makeModel,
+                                                    invoice: batch.invoiceNumber,
+                                                    isCross: batch.name.trim().toLowerCase() !== originalGood.name.trim().toLowerCase()
+                                                }));
                                         });
 
-                                        if (availableList.length === 0) return <tr><td colSpan={3} className="p-4 text-center text-gray-500">No matching serials found in inventory.</td></tr>;
+                                        if (availableList.length === 0) return <tr><td colSpan={4} className="p-4 text-center text-gray-500">No matching replacement serials found in inventory.</td></tr>;
 
-                                        return availableList.map(({ sn, batchId, invoice }) => (
-                                            <tr key={`${batchId}-${sn}`} className="hover:bg-blue-50 transition-colors">
-                                                <td className="p-3 font-mono text-slate-800">{sn}</td>
+                                        return availableList.map(({ sn, batchId, itemName, category, makeModel, invoice, isCross }) => (
+                                            <tr key={`${batchId}-${sn}`} className={`hover:bg-blue-50 transition-colors ${isCross ? 'bg-amber-50/40' : ''}`}>
+                                                <td className="p-3">
+                                                    <div className="font-mono font-bold text-slate-800 text-xs">{sn}</div>
+                                                    <div className="text-[11px] text-slate-600 flex items-center gap-1 mt-0.5">
+                                                        {itemName}
+                                                        {isCross && <span className="text-[9px] bg-amber-200 text-amber-900 px-1 py-0.2 rounded font-bold uppercase">Cross Swap</span>}
+                                                    </div>
+                                                </td>
+                                                <td className="p-3 text-xs text-gray-500">
+                                                    <div>{category}</div>
+                                                    {makeModel && <div className="text-[10px] text-indigo-600 font-medium">{makeModel}</div>}
+                                                </td>
                                                 <td className="p-3 text-xs text-gray-500">{invoice || 'N/A'}</td>
                                                 <td className="p-3 text-right">
                                                     <button onClick={() => handleConfirmReplacement(sn, batchId)} className="bg-[#8EBF45] text-[#0D0D0D] hover:bg-[#658C3E] hover:text-white px-3 py-1 rounded text-xs font-bold shadow-sm transition-colors">Select</button>
@@ -1204,10 +1324,12 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             </Modal>
 
             {/* Manage Recipes Modal */}
-            <Modal isOpen={isRecipeModalOpen} onClose={() => setRecipeModalOpen(false)} title="Manage Product SKUs (Recipes)" size="lg">
+            <Modal isOpen={isRecipeModalOpen} onClose={() => { setRecipeModalOpen(false); handleCancelEditRecipe(); }} title="Manage Product SKUs (Recipes)" size="lg">
                 <div className="space-y-6">
                     <div className="p-4 border rounded-lg bg-slate-50 border-slate-200">
-                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><PlusIcon /> Create New SKU</h3>
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            {editingRecipeId ? <><PencilIcon className="h-4 w-4 text-[#8EBF45]" /> Edit SKU Pattern</> : <><PlusIcon /> Create New SKU</>}
+                        </h3>
                         <div className="space-y-4">
                             <input type="text" placeholder="SKU Name (e.g. 12V 100Ah Battery Pack)" value={newRecipeName} onChange={e => setNewRecipeName(e.target.value)} className="w-full p-2.5 border rounded-md shadow-sm outline-none focus:ring-2 focus:ring-[#8EBF45]" />
                             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Components List</h4>
@@ -1231,24 +1353,49 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                                 </div>
                             ))}
                             <button onClick={() => setNewRecipeComponents([...newRecipeComponents, { masterItemName: '', quantityPerUnit: 1 }])} className="text-[#658C3E] text-xs font-bold hover:underline py-1">+ Add Component Item</button>
-                            <div className="flex justify-end pt-2 border-t mt-2"><button onClick={handleSaveRecipe} className="bg-[#8EBF45] text-[#0D0D0D] px-6 py-2 rounded-lg font-bold shadow-md hover:bg-[#658C3E] hover:text-white transition-colors uppercase tracking-wide text-xs">Save Product SKU</button></div>
+                            <div className="flex justify-end gap-2 pt-2 border-t mt-2">
+                                {editingRecipeId && (
+                                    <button onClick={handleCancelEditRecipe} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-bold hover:bg-gray-300 transition-colors text-xs uppercase">Cancel Edit</button>
+                                )}
+                                <button onClick={handleSaveRecipe} className="bg-[#8EBF45] text-[#0D0D0D] px-6 py-2 rounded-lg font-bold shadow-md hover:bg-[#658C3E] hover:text-white transition-colors uppercase tracking-wide text-xs">
+                                    {editingRecipeId ? 'Update SKU' : 'Save Product SKU'}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div>
-                        <h3 className="font-bold text-slate-800 mb-3 px-1">Registered SKUs</h3>
+                        <h3 className="font-bold text-slate-800 mb-3 px-1">Registered SKUs ({recipes.length})</h3>
                         <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
                             {recipes.map(r => (
-                                <div key={r.id} className="p-3 bg-white border rounded-lg flex justify-between items-center hover:shadow-md transition-shadow group">
+                                <div key={r.id} className={`p-3 border rounded-lg flex justify-between items-center transition-all ${editingRecipeId === r.id ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-200' : 'bg-white hover:shadow-md'}`}>
                                     <div>
-                                        <p className="font-bold text-sm text-slate-800">{r.name}</p>
+                                        <p className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                                            {r.name}
+                                            {editingRecipeId === r.id && <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold uppercase">Editing</span>}
+                                        </p>
                                         <div className="flex gap-2 mt-1">
                                             <p className="text-[10px] text-gray-400 uppercase font-bold">{r.components.filter(c => c.masterItemName || c.receivedGoodId).length} components</p>
                                             <span className="text-[10px] text-gray-300">|</span>
                                             <p className="text-[10px] text-gray-400 font-mono">{r.id}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setRecipes(recipes.filter(re => re.id !== r.id))} className="p-2 text-red-100 group-hover:text-red-400 hover:bg-red-50 rounded-full transition-colors"><TrashIcon /></button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => handleEditRecipe(r)}
+                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                            title="Edit SKU Details & Components"
+                                        >
+                                            <PencilIcon className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteRecipe(r)}
+                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Delete SKU Pattern"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {recipes.length === 0 && <p className="text-center py-6 text-gray-400 italic text-sm">No recipes defined yet.</p>}

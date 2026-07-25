@@ -48,7 +48,12 @@ const FinishedGoods: React.FC<FinishedGoodsProps> = ({ finishedGoods, setFinishe
     const [bulkLabels, setBulkLabels] = useState<any[]>([]);
     const bulkPrintRef = useRef<HTMLDivElement>(null);
 
-    const getRecipeName = (id: string) => recipes.find(r => r.id === id)?.name || 'Unknown Recipe';
+    const getRecipeName = (id: string) => {
+        const found = recipes.find(r => r.id === id);
+        if (found) return found.name;
+        if (id && !id.startsWith('recipe-')) return id;
+        return `Archived SKU (${id ? id.slice(-6) : 'Unknown'})`;
+    };
     const getGoodName = (id: string) => receivedGoods.find(g => g.id === id)?.name || 'Unknown Item';
     const getGoodMakeModel = (id: string) => receivedGoods.find(g => g.id === id)?.makeModel || '';
 

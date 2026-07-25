@@ -51,7 +51,12 @@ const MasterData: React.FC<MasterDataProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
-    const getRecipeName = (id: string) => recipes.find(r => r.id === id)?.name || 'Unknown Recipe';
+    const getRecipeName = (id: string) => {
+        const found = recipes.find(r => r.id === id);
+        if (found) return found.name;
+        if (id && !id.startsWith('recipe-')) return id;
+        return `Archived SKU (${id ? id.slice(-6) : 'Unknown'})`;
+    };
     const getRoomName = (id: string) => rooms.find(r => r.id === id)?.name || 'Unknown Room';
 
     // --- SKU Migration Utility ---
