@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { ReceivedGood, TestResult, User } from '../types';
+import { supabase } from '../supabaseClient';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 import { PencilIcon } from './icons/PencilIcon';
@@ -38,6 +39,7 @@ const toRoman = (num: number): string => {
 
 const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestResults, addLogEntry, currentUser, setReceivedGoods, onSendToProduction }) => {
     const [selectedBatch, setSelectedBatch] = useState<ReceivedGood | null>(null);
+    const [isLoadingBatchData, setIsLoadingBatchData] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [serialSearchTerm, setSerialSearchTerm] = useState('');
 
@@ -116,7 +118,7 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
 
     }, [gradingConfig]);
 
-    const handleOpenBatch = (good: ReceivedGood) => {
+    const handleOpenBatch = async (good: ReceivedGood) => {
         setSelectedBatch(good);
         setSerialSearchTerm('');
         setSortConfig({ key: 'index', direction: 'asc' });
@@ -124,6 +126,26 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         setBatchLocation('');
         setShowGrading(true); // Default open
         setSelectedSerials(new Set()); // Reset selection
+        setIsLoadingBatchData(true);
+
+        // Fetch full testing data specifically for this batch from database
+        try {
+            const { data, error } = await supabase
+                .from('test_results')
+                .select('*')
+                .eq('receivedGoodId', good.id);
+
+            if (!error && data) {
+                setTestResults(prev => {
+                    const otherBatches = prev.filter(r => r.receivedGoodId !== good.id);
+                    return [...otherBatches, ...data];
+                });
+            }
+        } catch (err) {
+            console.error('Failed to fetch complete test results for batch:', err);
+        } finally {
+            setIsLoadingBatchData(false);
+        }
 
         // Check if grading config already exists on the batch
         const savedConfig = good.gradingConfig || (good as any).gradingconfig;
@@ -797,6 +819,12 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                             </div>
                         </div>
                     </div>
+
+                    {isLoadingBatchData && (
+                        <div className="mb-4 bg-indigo-50 border border-indigo-200 text-indigo-800 px-4 py-3 rounded-lg flex items-center justify-between text-xs font-bold animate-pulse">
+                            <span>🔄 Syncing full database testing data for all cells in this batch...</span>
+                        </div>
+                    )}
 
                     {/* Redesigned Grading Control Panel */}
                     {(selectedBatch.category || '').toLowerCase().includes('cell') && (
