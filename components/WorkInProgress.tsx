@@ -1265,9 +1265,9 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                         {componentsForModal.map(comp => (
                             <div key={comp.itemName} className="bg-gray-50 p-3 rounded-md border border-slate-200">
                                 <div className="flex justify-between items-center mb-2">
-                                    <label className="text-sm font-bold text-slate-800">{comp.itemName} <span className="text-gray-400 font-normal">(x{comp.quantityPerUnit}/unit)</span></label>
+                                    <label className="text-sm font-bold text-slate-800">{comp.itemName} <span className="text-gray-400 font-normal">(x{comp.quantityPerUnit} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'}/unit)</span></label>
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${comp.totalAvailableCount >= comp.requiredSerialsCount ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
-                                        Needs: {comp.requiredSerialsCount} | Stock: {comp.totalAvailableCount}
+                                        Needs: {comp.requiredSerialsCount} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'} | Stock: {comp.totalAvailableCount} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'}
                                     </span>
                                 </div>
 

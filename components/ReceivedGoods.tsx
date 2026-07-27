@@ -39,7 +39,7 @@ const statusInfo = {
 };
 
 const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { serials: string[] } = {
-    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, lowStockThresholdPercent: 20, isIgnoredForAlerts: false, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
+    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, uom: 'qty', lowStockThresholdPercent: 20, isIgnoredForAlerts: false, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
 };
 
 const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
@@ -110,6 +110,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 supplier: editingGood.supplier,
                 quantity: editingGood.quantity,
                 initialQuantity: editingGood.initialQuantity ?? editingGood.quantity,
+                uom: editingGood.uom || 'qty',
                 lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
                 isIgnoredForAlerts: Boolean(editingGood.isIgnoredForAlerts),
                 status: editingGood.status as ReceivedGoodStatus,
@@ -508,11 +509,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
     // CSV EXPORT: Export all inventory data with test results
     const handleExportCsv = () => {
-        const headers = ['Name', 'Category', 'Make/Model', 'Supplier', 'Invoice #', 'Quantity', 'Status', 'Date', 'Serial Number', '#', 'Voltage', 'Resistance (mΩ)', 'Capacity (Ah)', 'Grade', 'Location', 'Notes'];
+        const headers = ['Name', 'Category', 'Make/Model', 'Supplier', 'Invoice #', 'Quantity', 'UOM', 'Status', 'Date', 'Serial Number', '#', 'Voltage', 'Resistance (mΩ)', 'Capacity (Ah)', 'Grade', 'Location', 'Notes'];
         const rows: string[][] = [];
 
         receivedGoods.forEach(good => {
             const isTracked = isTrackedCategory(good.category);
+            const uomStr = good.uom || 'qty';
             if (isTracked && good.serials.length > 0) {
                 good.serials.forEach((serial, idx) => {
                     const tr = testResults.find(r => r.receivedGoodId === good.id && r.serialNumber === serial);
@@ -524,6 +526,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         `"${good.supplier || ''}"`,
                         `"${good.invoiceNumber || ''}"`,
                         String(good.quantity),
+                        `"${uomStr}"`,
                         `"${good.status}"`,
                         new Date(good.timestamp).toLocaleDateString(),
                         `"${serial}"`,
@@ -543,6 +546,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     `"${good.supplier || ''}"`,
                     `"${good.invoiceNumber || ''}"`,
                     String(good.quantity),
+                    `"${uomStr}"`,
                     `"${good.status}"`,
                     new Date(good.timestamp).toLocaleDateString(),
                     '', '', '', '', '', '', '', ''
@@ -717,7 +721,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Available</p>
-                                        <p className={`text-2xl font-black ${good.quantity === 0 ? 'text-red-500' : 'text-[#8EBF45]'}`}>{good.quantity}</p>
+                                        <p className={`text-2xl font-black ${good.quantity === 0 ? 'text-red-500' : 'text-[#8EBF45]'}`}>
+                                            {good.quantity} <span className="text-xs font-bold text-slate-500 uppercase">{good.uom || 'qty'}</span>
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -726,7 +732,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                 <div>
                                     <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
                                         <span>{isTracked ? 'Tracked Serials' : 'Stock Level'}</span>
-                                        <span className="text-[#658C3E]">{isTracked ? `${good.serials.length} / ${good.quantity}` : `${good.quantity} units`}</span>
+                                        <span className="text-[#658C3E]">{isTracked ? `${good.serials.length} / ${good.quantity} ${good.uom || 'qty'}` : `${good.quantity} ${good.uom || 'qty'}`}</span>
                                     </div>
                                     {isTracked && (
                                         <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
@@ -804,6 +810,19 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Quantity</label>
                             <input type="number" min="0" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: parseInt(e.target.value) })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm font-bold" required />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Unit of Measurement (UOM)</label>
+                            <select 
+                                value={formData.uom || 'qty'} 
+                                onChange={e => setFormData({ ...formData, uom: e.target.value })} 
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold text-slate-800"
+                            >
+                                <option value="qty">qty (Quantity / Pcs)</option>
+                                <option value="grams">grams (g)</option>
+                                <option value="cm">cm (Centimeters)</option>
+                            </select>
                         </div>
 
                         <div>

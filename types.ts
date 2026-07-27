@@ -110,6 +110,7 @@ export interface ReceivedGood {
   supplier: string;
   quantity: number;
   initialQuantity?: number; // Initial batch size / entry quantity
+  uom?: 'qty' | 'grams' | 'cm' | string; // Unit of Measurement (default: 'qty')
   lowStockThresholdPercent?: number; // Configured safety limit percentage (0 - 100%, default: 20%)
   isIgnoredForAlerts?: boolean; // Set true if item should not be replenished and low stock alerts are disabled
   status: ReceivedGoodStatus | string;
@@ -147,6 +148,7 @@ export interface RecipeComponent {
   masterItemName?: string;
   receivedGoodId?: string;
   quantityPerUnit: number;
+  uom?: string;
 }
 
 export interface Recipe {

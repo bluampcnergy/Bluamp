@@ -55,6 +55,7 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
         : (typeof item.is_ignored_for_alerts === 'boolean' ? item.is_ignored_for_alerts : undefined);
 
       const isIgnoredForAlerts = dbIgnoredVal !== undefined ? dbIgnoredVal : Boolean(localIgnoredMap[item.id]);
+      const uom = item.uom || item.unit || 'qty';
 
       return {
         ...item,
@@ -62,6 +63,7 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
         initialQuantity: initialQty,
         lowStockThresholdPercent,
         isIgnoredForAlerts,
+        uom,
       };
     });
   }
