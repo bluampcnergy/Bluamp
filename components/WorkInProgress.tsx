@@ -300,11 +300,12 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             else if (makes.length > 1) makeDisplay = ` (${makes.join(', ')})`;
 
             const category = items[0]?.category;
+            const uom = items[0]?.uom || 'qty';
 
             return {
                 id: name,
                 label: `${name}${makeDisplay}`,
-                subLabel: `${category} • Stock: ${totalStock}`
+                subLabel: `${category} • Stock: ${totalStock} ${uom}`
             };
         });
     }, [receivedGoods]);
@@ -1342,12 +1343,15 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                                             setNewRecipeComponents(updated);
                                         }} placeholder="Search Master Item Name..." />
                                     </div>
-                                    <div className="w-20">
+                                    <div className="w-28 flex items-center gap-1">
                                         <input type="number" placeholder="Qty" value={comp.quantityPerUnit} onChange={e => {
                                             const updated = [...newRecipeComponents];
                                             updated[index].quantityPerUnit = Number(e.target.value);
                                             setNewRecipeComponents(updated);
-                                        }} className="w-full border rounded-md p-2 text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]" />
+                                        }} className="w-16 border rounded-md p-2 text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]" />
+                                        <span className="text-xs font-bold text-slate-500 font-mono">
+                                            {comp.uom || receivedGoods.find(g => g.name === comp.masterItemName || g.id === comp.receivedGoodId)?.uom || 'qty'}
+                                        </span>
                                     </div>
                                     <button onClick={() => setNewRecipeComponents(newRecipeComponents.filter((_, i) => i !== index))} className="p-2 text-gray-300 hover:text-red-500 transition-colors"><TrashIcon /></button>
                                 </div>
@@ -1374,8 +1378,17 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                                             {r.name}
                                             {editingRecipeId === r.id && <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold uppercase">Editing</span>}
                                         </p>
-                                        <div className="flex gap-2 mt-1">
-                                            <p className="text-[10px] text-gray-400 uppercase font-bold">{r.components.filter(c => c.masterItemName || c.receivedGoodId).length} components</p>
+                                        <div className="flex gap-1.5 mt-1.5 items-center flex-wrap">
+                                            {r.components.filter(c => c.masterItemName || c.receivedGoodId).map((c, idx) => {
+                                                const name = c.masterItemName || (c.receivedGoodId ? getGoodName(c.receivedGoodId) : 'Item');
+                                                const matchedGood = receivedGoods.find(g => g.name === c.masterItemName || g.id === c.receivedGoodId);
+                                                const uom = c.uom || matchedGood?.uom || 'qty';
+                                                return (
+                                                    <span key={idx} className="text-[9px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
+                                                        {name} (x{c.quantityPerUnit} {uom})
+                                                    </span>
+                                                );
+                                            })}
                                             <span className="text-[10px] text-gray-300">|</span>
                                             <p className="text-[10px] text-gray-400 font-mono">{r.id}</p>
                                         </div>

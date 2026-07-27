@@ -653,8 +653,13 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         }`}>
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex flex-col gap-1">
-                                    <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
-                                        {statusInfo[good.status].text}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
+                                            {statusInfo[good.status].text}
+                                        </div>
+                                        <div className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                                            Unit: {good.uom || 'qty'}
+                                        </div>
                                     </div>
                                     {good.isIgnoredForAlerts ? (
                                         <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600 w-fit">
@@ -712,7 +717,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             )}
 
                             <div className="flex-1">
-                                <h3 className="font-bold text-xl text-[#0D0D0D] leading-tight mb-1">{good.name}</h3>
+                                <h3 className="font-bold text-xl text-[#0D0D0D] leading-tight mb-1 flex items-center justify-between">
+                                    <span>{good.name}</span>
+                                    <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200 font-mono">
+                                        {good.uom || 'qty'}
+                                    </span>
+                                </h3>
                                 <p className="text-xs text-[#658C3E] font-black uppercase tracking-widest">{good.makeModel}</p>
                                 <div className="mt-4 flex justify-between items-end border-t border-slate-50 pt-4">
                                     <div>
@@ -722,7 +732,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     <div className="text-right">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Available</p>
                                         <p className={`text-2xl font-black ${good.quantity === 0 ? 'text-red-500' : 'text-[#8EBF45]'}`}>
-                                            {good.quantity} <span className="text-xs font-bold text-slate-500 uppercase">{good.uom || 'qty'}</span>
+                                            {good.quantity} <span className="text-xs font-bold text-slate-600 uppercase font-mono">{good.uom || 'qty'}</span>
                                         </p>
                                     </div>
                                 </div>
