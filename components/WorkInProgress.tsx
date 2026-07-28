@@ -162,7 +162,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
     const getGoodName = (id: string) => receivedGoods.find(g => g.id === id)?.name || 'Unknown Item';
 
     const getAvailableSerialsForBatch = (good: ReceivedGood) => {
-        // Non-qty UOM items (grams, cm) NEVER track serial numbers
+        // Non-qty UOM items (grams, cm) NEVER track serial numbers or unit tokens
         if (good.uom && good.uom !== 'qty') {
             return [];
         }
@@ -170,25 +170,19 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
         const category = (good.category || '').trim().toLowerCase();
         const name = (good.name || '').trim().toLowerCase();
 
-        // Explicitly identify Bulk types based on common naming conventions
         const isBms = category.includes('bms') || name.includes('bms') || name.includes('pcm') || name.includes('pcb');
-
         const isAccessory =
             name.includes('holder') || name.includes('spacer') || name.includes('strip') ||
             name.includes('tape') || name.includes('bracket') || name.includes('screw') ||
             name.includes('wire') || name.includes('connector') || name.includes('cabinet') ||
             name.includes('sleeve') || name.includes('epoxy') || name.includes('busbar');
 
-        // Strict Cell Definition: 
-        // 1. Must NOT be a BMS or Accessory
-        // 2. Must either be in 'cell' category OR have 'cell' in the name
-        // 3. Must have 'qty' UOM
         const isCellName = name.includes('cell') || category.includes('cell');
-        const isTracked = isCellName && !isBms && !isAccessory && (!good.uom || good.uom === 'qty');
+        const isCell = isCellName && !isBms && !isAccessory;
 
-        // Case 1: Tracked Items (Cells Only)
-        if (isTracked) {
-            if (!good.serials || good.serials.length === 0) return []; // Must have serials
+        // Case 1: Cells with tested serial numbers
+        if (isCell) {
+            if (!good.serials || good.serials.length === 0) return [];
 
             return good.serials.filter(serial => {
                 const result = testResults.find(tr => tr.receivedGoodId === good.id && tr.serialNumber === serial);
@@ -202,10 +196,17 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             });
         }
 
-        // Case 2: Bulk / Non-tracked Items with 'qty' UOM
-        // Only return explicit serials if they were manually added
+        // Case 2: BMS and other discrete qty items
+        // If explicit serials exist (e.g. scanned BMS serials), use them
         if (good.serials && good.serials.length > 0) {
             return good.serials;
+        }
+
+        // If no explicit serials registered, but quantity > 0, generate in-memory unit tokens
+        // so brand/batch options (makeModel) appear in the modal for selection
+        if (good.quantity > 0) {
+            const brandLabel = good.makeModel ? good.makeModel : 'Unit';
+            return Array.from({ length: good.quantity }).map((_, i) => `${brandLabel} #${i + 1}`);
         }
 
         return [];
@@ -266,8 +267,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
 
             const firstBatch = batches[0];
             const uom = comp.uom || firstBatch?.uom || 'qty';
-            const isCellCat = (firstBatch?.category || '').toLowerCase() === 'cell';
-            const isTracked = uom === 'qty' && (isCellCat || Boolean(firstBatch?.serials && firstBatch.serials.length > 0));
+            const isTracked = (uom === 'qty');
 
             if (isTracked) {
                 const pooledAvailable: { good: ReceivedGood; serials: string[] }[] = batches.map(b => ({
@@ -426,8 +426,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
 
             const firstBatch = batches[0];
             const uom = comp.uom || firstBatch?.uom || 'qty';
-            const isCellCat = (firstBatch?.category || '').toLowerCase() === 'cell';
-            const isTracked = uom === 'qty' && (isCellCat || Boolean(firstBatch?.serials && firstBatch.serials.length > 0));
+            const isTracked = (uom === 'qty');
 
             if (isTracked) {
                 const selectedForThisItem = batches.flatMap(b => {
