@@ -39,6 +39,22 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const [bulkRfqTexts, setBulkRfqTexts] = useState<Record<string, string>>({});
   const [isAddCompanyModalOpen, setIsAddCompanyModalOpen] = useState(false);
 
+  const [webmailIframeModal, setWebmailIframeModal] = useState<{
+    isOpen: boolean;
+    to: string;
+    subject: string;
+    body: string;
+  } | null>(null);
+
+  const handleOpenWebmailIframe = (to: string, subject: string, body?: string) => {
+    setWebmailIframeModal({
+      isOpen: true,
+      to: to || '',
+      subject: subject || 'RFQ Inquiry - Datlion Cnergy',
+      body: body || ''
+    });
+  };
+
   // File Ref for CSV Import
   const csvFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1078,29 +1094,25 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                             </a>
                           ) : null}
 
-                          {/* ✉️ Direct Mailto Trigger */}
+                          {/* ✉️ Direct Webmail Trigger */}
                           {record.contact_email ? (
-                            <a
-                              href={getMailtoLink(record.contact_email, `RFQ: ${record.item_name} Quotation Inquiry`, record.rfq_text)}
+                            <button
+                              onClick={() => handleOpenWebmailIframe(record.contact_email || '', `RFQ: ${record.item_name} Quotation Inquiry`, record.rfq_text || `Dear ${record.contact_name || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`)}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all"
-                              title="Launch direct mailto: email client"
+                              title="Send direct email via internal Webmail dispatcher iframe"
                             >
                               <span>✉️ Direct Mail</span>
-                            </a>
+                            </button>
                           ) : null}
 
                           {/* 📧 Cnergy Webmail RFQ */}
-                          {setView && (
-                            <button
-                              onClick={() => {
-                                setView('webmail');
-                              }}
-                              className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all"
-                              title="Open Cnergy Webmail Portal"
-                            >
-                              <span>📧 Webmail</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleOpenWebmailIframe(record.contact_email || '', `RFQ: ${record.item_name} - Datlion Cnergy`, record.rfq_text || `Dear ${record.contact_name || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`)}
+                            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all"
+                            title="Open Internal Webmail Dispatcher"
+                          >
+                            <span>📧 Webmail</span>
+                          </button>
 
                           {/* ⚡ AI RFQ Generator */}
                           <button
@@ -1412,12 +1424,18 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                 </button>
 
                 {rfqModalItem.contact_email && (
-                  <a
-                    href={getMailtoLink(rfqModalItem.contact_email, `RFQ: ${rfqModalItem.item_name} - Datlion Cnergy`, generatedRfqText)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  <button
+                    onClick={() => {
+                      const targetEmail = rfqModalItem.contact_email || '';
+                      const targetSubject = `RFQ: ${rfqModalItem.item_name} - Datlion Cnergy`;
+                      const bodyText = generatedRfqText;
+                      setRfqModalItem(null);
+                      handleOpenWebmailIframe(targetEmail, targetSubject, bodyText);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
                   >
-                    ✉️ Open Mailto:
-                  </a>
+                    <span>✉️ Send via Webmail</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -1451,12 +1469,12 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                         <span className="text-slate-400 text-[11px] ml-2">({item.from_company || 'Supplier'} — {item.contact_email || 'No email'})</span>
                       </div>
                       {item.contact_email ? (
-                        <a
-                          href={getMailtoLink(item.contact_email, `RFQ: ${item.item_name}`, bulkRfqTexts[item.id] || item.rfq_text)}
-                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg shadow-xs"
+                        <button
+                          onClick={() => handleOpenWebmailIframe(item.contact_email || '', `RFQ: ${item.item_name} - Datlion Cnergy`, bulkRfqTexts[item.id] || item.rfq_text)}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg shadow-xs flex items-center gap-1"
                         >
-                          ✉️ Send Mailto
-                        </a>
+                          <span>✉️ Send via Webmail</span>
+                        </button>
                       ) : (
                         <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">No Email Address</span>
                       )}
@@ -1481,17 +1499,22 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                 Close
               </button>
 
-              {setView && (
-                <button
-                  onClick={() => {
-                    setIsBulkMailModalOpen(false);
-                    setView('webmail');
-                  }}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
-                >
-                  <span>📧 Open Cnergy Webmail Portal</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setIsBulkMailModalOpen(false);
+                  const firstSelectedWithEmail = suppliesRecords.find(r => selectedIds.includes(r.id) && r.contact_email);
+                  if (firstSelectedWithEmail) {
+                    handleOpenWebmailIframe(
+                      firstSelectedWithEmail.contact_email || '',
+                      `RFQ: ${firstSelectedWithEmail.item_name} - Datlion Cnergy`,
+                      bulkRfqTexts[firstSelectedWithEmail.id] || firstSelectedWithEmail.rfq_text
+                    );
+                  }
+                }}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5"
+              >
+                <span>📧 Launch Webmail Dispatcher</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1510,6 +1533,38 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                 src="/?mode=add_company" 
                 className="w-full h-full border-none"
                 title="Add Company"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: 📧 INTERNAL WEBMAIL DISPATCHER IFRAME */}
+      {webmailIframeModal?.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden border border-slate-700">
+            <div className="p-3.5 bg-slate-900 text-white border-b border-slate-800 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📧</span>
+                <div>
+                  <h2 className="text-sm font-black text-slate-100">Datlion Cnergy Internal Webmail Dispatcher</h2>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Review & confirm email before sending directly via configured webmail without leaving Supplies.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWebmailIframeModal(null)}
+                className="text-slate-400 hover:text-white p-1.5 text-lg font-bold transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 bg-white">
+              <iframe
+                src={`/?mode=webmail_compose&to=${encodeURIComponent(webmailIframeModal.to)}&subject=${encodeURIComponent(webmailIframeModal.subject)}&body=${encodeURIComponent(webmailIframeModal.body)}`}
+                className="w-full h-full border-none"
+                title="Internal Webmail Dispatcher"
               />
             </div>
           </div>

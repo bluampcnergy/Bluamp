@@ -616,6 +616,32 @@ const App: React.FC = () => {
     }
   }, [view, receivedGoods, recipes, wipItems, finishedGoods, repairItems, logs, users, currentUser, addLogEntry, setReceivedGoods, setWipItems, setFinishedGoods, setRepairItems, setRecipes, testResults, setTestResults, companyProfiles, setCompanyProfiles, invoiceDraft, productionDraft, rooms, storageUnits, storageItems, setRooms, setStorageUnits, setStorageItems, suppliesRecords, setSuppliesRecords, employeeTasks, handleAddEmployeeTask, handleToggleEmployeeTask, handleDeleteEmployeeTask, handleEditEmployeeTask]);
 
+  // --- WEBMAIL COMPOSE IFRAME ROUTE ---
+  if (mode === 'webmail_compose' || mode === 'webmail') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const to = urlParams.get('to') || '';
+      const cc = urlParams.get('cc') || '';
+      const subject = urlParams.get('subject') || '';
+      const body = urlParams.get('body') || '';
+
+      return (
+        <div className="min-h-screen bg-slate-900 p-2 sm:p-4">
+           <Webmail 
+              currentUser={currentUser}
+              addLogEntry={addLogEntry}
+              isIframe={true}
+              initialCompose={{
+                to,
+                cc,
+                subject,
+                body,
+                isOpen: true
+              }}
+           />
+        </div>
+      );
+  }
+
   // --- COMPANY PROFILES IFRAME ROUTE ---
   if (mode === 'add_company') {
       return (

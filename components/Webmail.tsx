@@ -1,11 +1,21 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type { WebmailAccount, EmailMessage, EmailAttachment, User } from '../types';
 import { supabase } from '../supabaseClient';
+import { CNERGY_EMAIL_SIGNATURE_URL, CNERGY_EMAIL_SIGNATURE_HTML } from '../services/openrouterService';
 
 interface WebmailProps {
     currentUser: User | null;
     addLogEntry: (action: string, details: string) => void;
+    isIframe?: boolean;
+    initialCompose?: {
+        to?: string;
+        cc?: string;
+        subject?: string;
+        body?: string;
+        isOpen?: boolean;
+    };
 }
+
 
 const DEFAULT_ACCOUNTS: WebmailAccount[] = [
     {
@@ -154,7 +164,7 @@ const INITIAL_EMAILS: EmailMessage[] = [
     }
 ];
 
-export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) => {
+export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIframe, initialCompose }) => {
     const activeUsername = currentUser?.username || 'admin';
 
     // Accounts state
@@ -206,6 +216,29 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
 
     // Settings / Account Edit State
     const [editingAccount, setEditingAccount] = useState<WebmailAccount>(accounts[0] || DEFAULT_ACCOUNTS[0]);
+
+    // Pre-populate compose form from initialCompose props or URL query params
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const toParam = initialCompose?.to || urlParams.get('to') || '';
+        const ccParam = initialCompose?.cc || urlParams.get('cc') || '';
+        const subjectParam = initialCompose?.subject || urlParams.get('subject') || '';
+        const bodyParam = initialCompose?.body || urlParams.get('body') || '';
+        const openParam = initialCompose?.isOpen || urlParams.get('mode') === 'webmail_compose' || Boolean(toParam || subjectParam || bodyParam);
+
+        if (openParam) {
+            setIsComposeOpen(true);
+            setComposeForm({
+                to: toParam,
+                cc: ccParam,
+                subject: subjectParam,
+                body: bodyParam,
+                attachmentName: '',
+                attachmentBase64: '',
+            });
+        }
+    }, [initialCompose]);
+
 
     // Hydrate User Accounts from Supabase
     useEffect(() => {
@@ -440,20 +473,30 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
 
     // Delete Account
     const handleDeleteAccount = async (accId: string) => {
-        if (accounts.length <= 1) {
-            alert('You must have at least one webmail account configured.');
-            return;
-        }
+        const accToDelete = accounts.find(a => a.id === accId);
+        if (!accToDelete) return;
 
-        if (confirm('Are you sure you want to remove this mail account?')) {
+        if (confirm(`Are you sure you want to delete configured email address "${accToDelete.email}"?`)) {
             const filtered = accounts.filter(a => a.id !== accId);
+            setAccounts(filtered);
             await persistAccounts(filtered);
+
             try {
                 await supabase.from('webmail_accounts').delete().eq('id', accId);
-            } catch (e) {}
-            setSelectedAccountEmail(filtered[0].email);
+            } catch (e) {
+                console.warn('Could not delete account from Supabase DB:', e);
+            }
+
+            if (filtered.length > 0) {
+                setSelectedAccountEmail(filtered[0].email);
+                setEditingAccount(filtered[0]);
+            } else {
+                setSelectedAccountEmail('');
+            }
+
             setIsSettingsOpen(false);
-            alert('Account removed.');
+            addLogEntry('Webmail Config', `Deleted email account ${accToDelete.email}`);
+            alert(`✅ Email address ${accToDelete.email} removed successfully.`);
         }
     };
 
@@ -483,6 +526,12 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
 
         setIsSending(true);
 
+        // Ensure mandatory Corporate Email Signature is appended
+        let formattedBodyHtml = composeForm.body.replace(/\n/g, '<br/>');
+        if (!formattedBodyHtml.includes('Email_signature_3') && !formattedBodyHtml.includes(CNERGY_EMAIL_SIGNATURE_URL)) {
+            formattedBodyHtml += CNERGY_EMAIL_SIGNATURE_HTML;
+        }
+
         try {
             const response = await fetch('/api/webmail-send', {
                 method: 'POST',
@@ -492,7 +541,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                     to: composeForm.to,
                     cc: composeForm.cc,
                     subject: composeForm.subject,
-                    html: composeForm.body.replace(/\n/g, '<br/>'),
+                    html: formattedBodyHtml,
                     attachmentBase64: composeForm.attachmentBase64,
                     attachmentName: composeForm.attachmentName,
                 }),
@@ -515,7 +564,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                 date: new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
                 timestamp: Date.now(),
                 snippet: composeForm.body.slice(0, 100) + '...',
-                bodyHtml: `<div style="font-family: Arial; font-size: 14px;">${composeForm.body.replace(/\n/g, '<br/>')}</div>`,
+                bodyHtml: `<div style="font-family: Arial; font-size: 14px;">${formattedBodyHtml}</div>`,
                 isUnread: false,
                 hasAttachments: Boolean(composeForm.attachmentName),
                 attachments: composeForm.attachmentName ? [
@@ -575,6 +624,15 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                                 </option>
                             ))}
                         </select>
+                        {activeAccount && (
+                            <button
+                                onClick={() => handleDeleteAccount(activeAccount.id)}
+                                className="p-1.5 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors border border-rose-200 text-xs font-bold flex items-center gap-1"
+                                title={`Delete configured email address ${activeAccount.email}`}
+                            >
+                                <span>🗑️</span>
+                            </button>
+                        )}
                     </div>
 
                     <button
@@ -991,6 +1049,21 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry }) =>
                                     placeholder="Type your message here..."
                                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45] resize-none"
                                 />
+                            </div>
+
+                            {/* Auto Appended Corporate Signature Banner */}
+                            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Corporate Email Signature (Auto-Appended)</span>
+                                    <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">✓ Verified Branding</span>
+                                </div>
+                                <div className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-center">
+                                    <img
+                                        src={CNERGY_EMAIL_SIGNATURE_URL}
+                                        alt="Datlion Cnergy Email Signature"
+                                        className="max-h-24 max-w-full object-contain rounded"
+                                    />
+                                </div>
                             </div>
 
                             {/* Attachment Upload */}
