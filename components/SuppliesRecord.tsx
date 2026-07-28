@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { SupplyRecord, CompanyProfile, ReceivedGood, User, View } from '../types';
 import { Plus, Trash2, Search, RefreshCw } from './invoices/Icons';
 import { generateRFQTextOpenRouter } from '../services/openrouterService';
@@ -38,6 +38,9 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const [isBulkMailModalOpen, setIsBulkMailModalOpen] = useState(false);
   const [bulkRfqTexts, setBulkRfqTexts] = useState<Record<string, string>>({});
   const [isAddCompanyModalOpen, setIsAddCompanyModalOpen] = useState(false);
+
+  // File Ref for CSV Import
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
 
   // Form State
   const [formData, setFormData] = useState<Partial<SupplyRecord>>({
@@ -166,6 +169,196 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       autoSeedFromInventory();
     }
   }, [suppliesRecords.length, receivedGoods.length, autoSeedFromInventory]);
+
+  // CSV Import Handlers
+  const handleCSVImportClick = () => {
+    csvFileInputRef.current?.click();
+  };
+
+  const downloadCSVTemplate = () => {
+    const headers = [
+      'Product Name',
+      'Specification',
+      'Supplier',
+      'Website',
+      'Contact Name',
+      'Contact Number',
+      'Contact Email',
+      'Status',
+      'Target Quantity',
+      'UOM'
+    ];
+    const sampleRows = [
+      [
+        'Grade-A 3.2V 280Ah LFP Cell',
+        'M6 Terminals 6000 Cycles @ 80% DOD',
+        'EVE Energy Co.',
+        'https://www.evebattery.com',
+        'Li Wei',
+        '+86 13800138000',
+        'sales@evebattery.com',
+        'to_be_ordered',
+        '200',
+        'qty'
+      ],
+      [
+        'Smart BMS 16S 200A Bluetooth',
+        'CANbus RS485 Active Balancer',
+        'JBD JK BMS Tech',
+        'https://www.jbd-bms.com',
+        'Sales Manager',
+        '+86 13900139000',
+        'info@jbd-bms.com',
+        'ordered',
+        '50',
+        'qty'
+      ]
+    ];
+    const csvString = [headers.join(','), ...sampleRows.map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `procurement_items_template.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result;
+      if (typeof text === 'string') {
+        parseAndImportProcurementCSV(text);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const parseAndImportProcurementCSV = (csvText: string) => {
+    const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) {
+      alert('CSV file is empty.');
+      return;
+    }
+
+    const parseCSVLine = (line: string): string[] => {
+      const result: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(cur.trim());
+          cur = '';
+        } else {
+          cur += char;
+        }
+      }
+      result.push(cur.trim());
+      return result;
+    };
+
+    const firstLineValues = parseCSVLine(lines[0]);
+    const isHeaderRow = firstLineValues.some(val => 
+      ['product', 'item', 'particulars', 'specification', 'supplier', 'website', 'contact', 'status', 'quantity', 'uom'].some(h => val.toLowerCase().includes(h))
+    );
+
+    const dataLines = isHeaderRow ? lines.slice(1) : lines;
+    if (dataLines.length === 0) {
+      alert('No data rows found in CSV.');
+      return;
+    }
+
+    let nameIdx = 0;
+    let specIdx = 1;
+    let supplierIdx = 2;
+    let webIdx = 3;
+    let contactNameIdx = 4;
+    let contactPhoneIdx = 5;
+    let contactEmailIdx = 6;
+    let statusIdx = 7;
+    let qtyIdx = 8;
+    let uomIdx = 9;
+
+    if (isHeaderRow) {
+      firstLineValues.forEach((header, idx) => {
+        const h = header.toLowerCase();
+        if (h.includes('product') || h.includes('item') || h.includes('particular')) nameIdx = idx;
+        else if (h.includes('spec') || h.includes('detail')) specIdx = idx;
+        else if (h.includes('supplier') || h.includes('company') || h.includes('vendor')) supplierIdx = idx;
+        else if (h.includes('web') || h.includes('url') || h.includes('link')) webIdx = idx;
+        else if (h.includes('contact name') || h.includes('contact person') || h.includes('person')) contactNameIdx = idx;
+        else if (h.includes('number') || h.includes('phone') || h.includes('mobile') || h.includes('whatsapp')) contactPhoneIdx = idx;
+        else if (h.includes('email') || h.includes('mail')) contactEmailIdx = idx;
+        else if (h.includes('status')) statusIdx = idx;
+        else if (h.includes('qty') || h.includes('quantity') || h.includes('target')) qtyIdx = idx;
+        else if (h.includes('uom') || h.includes('unit')) uomIdx = idx;
+      });
+    }
+
+    const newRecords: SupplyRecord[] = [];
+    dataLines.forEach((line) => {
+      const vals = parseCSVLine(line);
+      const itemName = vals[nameIdx] || vals[0];
+      if (!itemName) return;
+
+      const spec = vals[specIdx] || '';
+      const supplierName = vals[supplierIdx] || 'Vendor';
+      const webUrl = vals[webIdx] || '';
+      const contactName = vals[contactNameIdx] || '';
+      const contactPhone = vals[contactPhoneIdx] || '';
+      const contactEmail = vals[contactEmailIdx] || '';
+
+      const rawStatus = (vals[statusIdx] || 'to_be_ordered').toLowerCase().trim();
+      let status: 'to_be_ordered' | 'ordered' | 'delivered' = 'to_be_ordered';
+      if (rawStatus.includes('delivered') || rawStatus.includes('green') || rawStatus.includes('received')) {
+        status = 'delivered';
+      } else if (rawStatus.includes('ordered') || rawStatus.includes('blue') || rawStatus.includes('transit')) {
+        status = 'ordered';
+      }
+
+      const qty = parseInt(vals[qtyIdx] || '100', 10) || 100;
+      const uom = vals[uomIdx] || 'qty';
+
+      newRecords.push({
+        id: crypto.randomUUID(),
+        item_name: itemName,
+        specification: spec,
+        from_company: supplierName,
+        to_company: 'Datlion Cnergy Plant',
+        website_url: webUrl,
+        contact_name: contactName,
+        contact_number: contactPhone,
+        contact_email: contactEmail,
+        status: status,
+        target_quantity: qty,
+        uom: uom,
+        rfq_text: '',
+        timestamp: Date.now(),
+        created_by: currentUser?.username || 'CSV Import'
+      });
+    });
+
+    if (newRecords.length > 0) {
+      setSuppliesRecords(prev => [...newRecords, ...prev]);
+      addLogEntry('Imported Procurement CSV', `Imported ${newRecords.length} items into Procurement Dashboard.`);
+      alert(`✅ Successfully imported ${newRecords.length} procurement items!`);
+    } else {
+      alert('Failed to parse any valid procurement items from the file.');
+    }
+  };
 
   // Toggle Ignore Notification Option (syncs across Supplies, Raw Materials, LocalStorage, and Supabase DB)
   const handleToggleIgnoreAlert = (record: SupplyRecord) => {
@@ -463,6 +656,15 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Hidden File Input for CSV Import */}
+      <input
+        type="file"
+        ref={csvFileInputRef}
+        onChange={handleCSVFileChange}
+        className="hidden"
+        accept=".csv,text/csv"
+      />
+
       {/* TOP DASHBOARD HEADER */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
@@ -484,16 +686,27 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* CSV Import Button */}
+          <button
+            onClick={handleCSVImportClick}
+            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-all border border-emerald-300 flex items-center gap-1.5 shadow-2xs"
+            title="Import procurement items from CSV file"
+          >
+            <span>📥 Import CSV</span>
+          </button>
+
+          {/* Sync Inventory Button */}
           <button
             onClick={autoSeedFromInventory}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all border border-slate-300 flex items-center gap-1.5"
             title="Sync inventory stock level alerts & supplier profiles with Supabase DB"
           >
             <RefreshCw size={14} className="text-slate-500" />
-            <span>Sync Inventory & Database</span>
+            <span>Sync Inventory</span>
           </button>
 
+          {/* Add Item Button */}
           <button
             onClick={() => {
               setEditingRecord(null);
@@ -517,7 +730,39 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
             className="px-4 py-2.5 bg-gradient-to-r from-[#8EBF45] to-[#658C3E] hover:opacity-95 text-slate-950 text-xs font-black rounded-xl shadow-sm transition-all flex items-center gap-2"
           >
             <Plus size={16} />
-            <span>+ Add Procurement Item</span>
+            <span>+ Add Item</span>
+          </button>
+        </div>
+      </div>
+
+      {/* CSV HEADER FORMAT NOTE & TEMPLATE DOWNLOAD BAR */}
+      <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">📄</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-amber-400 uppercase tracking-wider">CSV Header Format Note:</span>
+            </div>
+            <p className="text-[11px] font-mono text-slate-300 mt-0.5 leading-relaxed">
+              <span className="text-emerald-400 font-bold">Product Name</span>, <span className="text-emerald-400 font-bold">Specification</span>, <span className="text-emerald-400 font-bold">Supplier</span>, <span className="text-emerald-400 font-bold">Website</span>, <span className="text-emerald-400 font-bold">Contact Name</span>, <span className="text-emerald-400 font-bold">Contact Number</span>, <span className="text-emerald-400 font-bold">Contact Email</span>, <span className="text-emerald-400 font-bold">Status</span>, <span className="text-emerald-400 font-bold">Target Quantity</span>, <span className="text-emerald-400 font-bold">UOM</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-end md:self-auto">
+          <button
+            onClick={downloadCSVTemplate}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1 shadow-2xs whitespace-nowrap"
+            title="Download CSV sample file with proper headers"
+          >
+            <span>💾 Download Sample CSV Template</span>
+          </button>
+
+          <button
+            onClick={handleCSVImportClick}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap"
+          >
+            <span>📥 Choose CSV File</span>
           </button>
         </div>
       </div>
@@ -705,7 +950,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-4xl opacity-30">🔍</span>
                       <p className="font-bold text-slate-600">No procurement items found</p>
-                      <p className="text-xs text-slate-400">Click "Sync Inventory & Database" to auto-seed from Raw Materials, or add items manually.</p>
+                      <p className="text-xs text-slate-400">Click "📥 Import CSV" or "Sync Inventory" to add items.</p>
                     </div>
                   </td>
                 </tr>
