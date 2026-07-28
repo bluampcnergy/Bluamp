@@ -539,7 +539,7 @@ const FinishedGoods: React.FC<FinishedGoodsProps> = ({ finishedGoods, setFinishe
             return Object.entries(mapping).map(([rgId, serials]) => ({
                 goodName: getGoodName(rgId),
                 makeModel: getGoodMakeModel(rgId),
-                serials: serials
+                serials: (serials || []).filter(s => !s.startsWith('BULK-'))
             }));
         }
 
@@ -553,7 +553,7 @@ const FinishedGoods: React.FC<FinishedGoodsProps> = ({ finishedGoods, setFinishe
             const allSerialsForComp = (good.consumedSerials || {})[comp.receivedGoodId] || [];
             const start = unitIndex * comp.quantityPerUnit;
             const end = start + comp.quantityPerUnit;
-            const unitSerials = allSerialsForComp.slice(start, end);
+            const unitSerials = allSerialsForComp.slice(start, end).filter(s => !s.startsWith('BULK-'));
 
             if (unitSerials.length > 0) {
                 componentsSerials.push({

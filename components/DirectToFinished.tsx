@@ -50,7 +50,7 @@ const DirectToFinished: React.FC<DirectToFinishedProps> = ({
         e.preventDefault();
         if (!selectedGood) return;
 
-        const isTracked = selectedGood.serials && selectedGood.serials.length > 0;
+        const isTracked = selectedGood.serials && selectedGood.serials.length > 0 && (!selectedGood.uom || selectedGood.uom === 'qty');
         
         if (isTracked && selectedSerials.length !== transferQuantity) {
             alert(`Please select exactly ${transferQuantity} serials.`);

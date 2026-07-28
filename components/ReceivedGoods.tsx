@@ -97,8 +97,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         }
     };
 
-    // Helper to determine if category requires serial tracking
-    const isTrackedCategory = (cat: string) => (cat || '').toLowerCase() === 'cell';
+    // Helper to determine if category requires serial tracking (Only Cells with 'qty' UOM)
+    const isTrackedCategory = (cat: string, uom?: string) => (cat || '').toLowerCase() === 'cell' && (!uom || uom === 'qty');
 
     // Populate form when editing
     useEffect(() => {
@@ -121,7 +121,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             });
 
             // Merge Serials with Test Results
-            if (isTrackedCategory(editingGood.category)) {
+            if (isTrackedCategory(editingGood.category, editingGood.uom)) {
                 const entries: SerialGridRow[] = editingGood.serials.map(s => {
                     const tr = testResults.find(r => r.receivedGoodId === editingGood.id && r.serialNumber === s);
                     return {
@@ -149,9 +149,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         }
     }, [editingGood]);  // FIX #4: Only re-populate when opening a different batch, not on every testResults change
 
-    // Adjust serial entries when quantity changes (Only for Cell)
+    // Adjust serial entries when quantity changes (Only for Cell with 'qty' UOM)
     useEffect(() => {
-        if (!isTrackedCategory(formData.category)) return;
+        if (!isTrackedCategory(formData.category, formData.uom)) return;
 
         const qty = Number(formData.quantity) || 0;
         setSerialEntries(prev => {
@@ -163,7 +163,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 return [...prev, ...Array(diff).fill(null).map(() => ({ serial: '', voltage: '', resistance: '', capacity: '', grade: '', location: '' }))];
             }
         });
-    }, [formData.quantity, formData.category]);
+    }, [formData.quantity, formData.category, formData.uom]);
 
     // Handle Inventory Import
     useEffect(() => {
@@ -329,9 +329,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const goodId = editingGood ? editingGood.id : `rec-${Date.now()}`;
-        const isCell = isTrackedCategory(formData.category);
+        const isCell = isTrackedCategory(formData.category, formData.uom);
 
-        // Only capture serials if category is Cell
+        // Only capture serials if category is Cell and UOM is 'qty'
         const validSerials = isCell
             ? serialEntries.map(e => e.serial.trim()).filter(s => s !== '')
             : [];

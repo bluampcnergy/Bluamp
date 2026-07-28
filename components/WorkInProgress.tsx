@@ -162,6 +162,11 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
     const getGoodName = (id: string) => receivedGoods.find(g => g.id === id)?.name || 'Unknown Item';
 
     const getAvailableSerialsForBatch = (good: ReceivedGood) => {
+        // Non-qty UOM items (grams, cm) NEVER track serial numbers
+        if (good.uom && good.uom !== 'qty') {
+            return [];
+        }
+
         const category = (good.category || '').trim().toLowerCase();
         const name = (good.name || '').trim().toLowerCase();
 
@@ -177,9 +182,9 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
         // Strict Cell Definition: 
         // 1. Must NOT be a BMS or Accessory
         // 2. Must either be in 'cell' category OR have 'cell' in the name
-        // This prevents "BMS for LFP Cell" from being treated as a Cell.
+        // 3. Must have 'qty' UOM
         const isCellName = name.includes('cell') || category.includes('cell');
-        const isTracked = isCellName && !isBms && !isAccessory;
+        const isTracked = isCellName && !isBms && !isAccessory && (!good.uom || good.uom === 'qty');
 
         // Case 1: Tracked Items (Cells Only)
         if (isTracked) {
@@ -187,32 +192,20 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
 
             return good.serials.filter(serial => {
                 const result = testResults.find(tr => tr.receivedGoodId === good.id && tr.serialNumber === serial);
+                if (!result) return false;
 
-                if (isTracked) {
-                    // Cells MUST have test data for matching criteria (Voltage/IR/Cap)
-                    if (!result) return false;
+                const v = result.voltage;
+                const r = result.resistance;
 
-                    const v = result.voltage;
-                    const r = result.resistance;
-
-                    // Basic logic: if tested, it's available. 
-                    if (v === undefined || r === undefined) return false;
-
-                    return true;
-                }
+                if (v === undefined || r === undefined) return false;
                 return true;
             });
         }
 
-        // Case 2: Bulk Items (BMS, Screws, Wires, Cell Holders, etc.)
-        // If real serials exist (manually added), use them.
+        // Case 2: Bulk / Non-tracked Items with 'qty' UOM
+        // Only return explicit serials if they were manually added
         if (good.serials && good.serials.length > 0) {
             return good.serials;
-        }
-
-        // If no serials but quantity > 0, generate synthetic serials for tracking consumption
-        if (good.quantity > 0) {
-            return Array.from({ length: good.quantity }).map((_, i) => `BULK-${good.id.slice(-6)}-${i + 1}`);
         }
 
         return [];
@@ -271,22 +264,85 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                 return nameMatch || idMatch;
             }).sort((a, b) => a.timestamp - b.timestamp); // FIFO Order
 
-            const pooledAvailable: { good: ReceivedGood; serials: string[] }[] = batches.map(b => ({
-                good: b,
-                serials: getAvailableSerialsForBatch(b)
-            })).filter(p => p.serials.length > 0);
+            const firstBatch = batches[0];
+            const uom = comp.uom || firstBatch?.uom || 'qty';
+            const isCellCat = (firstBatch?.category || '').toLowerCase() === 'cell';
+            const isTracked = uom === 'qty' && (isCellCat || Boolean(firstBatch?.serials && firstBatch.serials.length > 0));
 
-            const totalAvailableCount = pooledAvailable.reduce((acc, p) => acc + p.serials.length, 0);
+            if (isTracked) {
+                const pooledAvailable: { good: ReceivedGood; serials: string[] }[] = batches.map(b => ({
+                    good: b,
+                    serials: getAvailableSerialsForBatch(b)
+                })).filter(p => p.serials.length > 0);
 
-            return {
-                ...comp,
-                itemName,
-                totalAvailableCount,
-                pooledAvailable,
-                requiredSerialsCount: comp.quantityPerUnit * quantity
-            };
+                const totalAvailableCount = pooledAvailable.reduce((acc, p) => acc + p.serials.length, 0);
+
+                return {
+                    ...comp,
+                    itemName,
+                    uom,
+                    isTracked: true,
+                    totalAvailableCount,
+                    pooledAvailable,
+                    requiredSerialsCount: comp.quantityPerUnit * quantity
+                };
+            } else {
+                const totalAvailableStock = batches.reduce((acc, b) => acc + b.quantity, 0);
+                return {
+                    ...comp,
+                    itemName,
+                    uom,
+                    isTracked: false,
+                    totalAvailableCount: totalAvailableStock,
+                    pooledAvailable: batches.map(b => ({ good: b, serials: [] })),
+                    requiredSerialsCount: comp.quantityPerUnit * quantity
+                };
+            }
         });
     }, [selectedRecipe, quantity, recipes, receivedGoods, testResults]);
+
+    // Auto-select FIFO by default for all tracked components EXCEPT Cells and BMS
+    useEffect(() => {
+        if (!isWipModalOpen || componentsForModal.length === 0) return;
+
+        setConsumedSerials(prev => {
+            let changed = false;
+            const nextSelections = { ...prev };
+
+            componentsForModal.forEach(comp => {
+                if (!comp.isTracked) return;
+
+                const itemName = comp.itemName.toLowerCase();
+                const firstBatchCat = (comp.pooledAvailable[0]?.good?.category || '').toLowerCase();
+
+                const isCellOrBms =
+                    firstBatchCat.includes('cell') || firstBatchCat.includes('bms') ||
+                    itemName.includes('cell') || itemName.includes('bms') ||
+                    itemName.includes('pcm') || itemName.includes('pcb');
+
+                // If NOT Cell or BMS, auto-select FIFO by default
+                if (!isCellOrBms) {
+                    const currentSelectedCount = comp.pooledAvailable.reduce((acc, p) => acc + (nextSelections[p.good.id]?.length || 0), 0);
+                    if (currentSelectedCount !== comp.requiredSerialsCount) {
+                        changed = true;
+                        let remaining = comp.requiredSerialsCount;
+                        comp.pooledAvailable.forEach(p => {
+                            delete nextSelections[p.good.id];
+                        });
+
+                        for (const pool of comp.pooledAvailable) {
+                            if (remaining <= 0) break;
+                            const take = Math.min(remaining, pool.serials.length);
+                            nextSelections[pool.good.id] = pool.serials.slice(0, take);
+                            remaining -= take;
+                        }
+                    }
+                }
+            });
+
+            return changed ? nextSelections : prev;
+        });
+    }, [isWipModalOpen, selectedRecipe, quantity, componentsForModal]);
 
     const masterItemOptions = useMemo(() => {
         const uniqueNames = Array.from(new Set(receivedGoods.map(g => g.name)));
@@ -324,9 +380,6 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                 if (originalFG.unitComponentMap && originalFG.unitComponentMap[item.unitId]) {
                     consumedSerials = originalFG.unitComponentMap[item.unitId];
                 }
-                // Legacy/Fallback: If no strict map, we can't accurately know which components belong to this unit vs others in the batch.
-                // We leave consumedSerials empty or partial to avoid showing misleading data.
-                // New repairs on newly produced items will show correctly.
             }
 
             return {
@@ -364,26 +417,49 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             const required = comp.quantityPerUnit * quantity;
             const itemName = comp.masterItemName || (comp.receivedGoodId ? getGoodName(comp.receivedGoodId) : '');
 
-            // Find all serials selected for this master item across all batches
-            // FIX: Use robust name matching (trim/lowercase) to handle minor discrepancies
+            // Find all batches for this master item
             const batches = receivedGoods.filter(g => {
                 const nameMatch = g.name.trim().toLowerCase() === itemName.trim().toLowerCase();
                 const idMatch = g.id === comp.receivedGoodId;
                 return nameMatch || idMatch;
-            });
+            }).sort((a, b) => a.timestamp - b.timestamp);
 
-            const selectedForThisItem = batches.flatMap(b => {
-                const sns = consumedSerials[b.id] || [];
-                if (sns.length > 0) {
-                    stockDeductions[b.id] = { count: sns.length, serials: sns };
+            const firstBatch = batches[0];
+            const uom = comp.uom || firstBatch?.uom || 'qty';
+            const isCellCat = (firstBatch?.category || '').toLowerCase() === 'cell';
+            const isTracked = uom === 'qty' && (isCellCat || Boolean(firstBatch?.serials && firstBatch.serials.length > 0));
+
+            if (isTracked) {
+                const selectedForThisItem = batches.flatMap(b => {
+                    const sns = consumedSerials[b.id] || [];
+                    if (sns.length > 0) {
+                        stockDeductions[b.id] = { count: sns.length, serials: sns };
+                    }
+                    return sns;
+                });
+
+                if (selectedForThisItem.length !== required) {
+                    setError(`Insufficient serials selected for ${itemName || 'component'}. Required: ${required}, Selected: ${selectedForThisItem.length}`);
+                    return false;
                 }
-                return sns;
-            });
+            } else {
+                const totalStock = batches.reduce((acc, b) => acc + b.quantity, 0);
+                if (totalStock < required) {
+                    setError(`Insufficient stock for ${itemName || 'component'}. Required: ${required} ${uom}, Available: ${totalStock} ${uom}`);
+                    return false;
+                }
 
-            if (selectedForThisItem.length !== required) {
-                setError(`Insufficient serials selected for ${itemName || 'component'}. Required: ${required}, Selected: ${selectedForThisItem.length}`);
-                return false;
+                let remainingToDeduct = required;
+                for (const b of batches) {
+                    if (remainingToDeduct <= 0) break;
+                    const take = Math.min(remainingToDeduct, b.quantity);
+                    if (take > 0) {
+                        stockDeductions[b.id] = { count: take, serials: [] };
+                        remainingToDeduct -= take;
+                    }
+                }
             }
+
             return true;
         });
 
@@ -551,7 +627,8 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
             if (!serialsHtml && allSelected.length > 0) {
                 serialsHtml = allSelected.map(a => a.serial).join(', '); // Fallback if simple list
             } else if (!serialsHtml) {
-                serialsHtml = '<span style="color:red; font-style:italic;">No specific serials allocated</span>';
+                const itemUom = comp.uom || (batches[0]?.uom) || 'qty';
+                serialsHtml = `<span style="color:#475569; font-style:italic; font-weight:600;">Quantity Tracked (${required} ${itemUom})</span>`;
             }
 
             return `
@@ -1266,48 +1343,61 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
                         {componentsForModal.map(comp => (
                             <div key={comp.itemName} className="bg-gray-50 p-3 rounded-md border border-slate-200">
                                 <div className="flex justify-between items-center mb-2">
-                                    <label className="text-sm font-bold text-slate-800">{comp.itemName} <span className="text-gray-400 font-normal">(x{comp.quantityPerUnit} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'}/unit)</span></label>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${comp.totalAvailableCount >= comp.requiredSerialsCount ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
-                                        Needs: {comp.requiredSerialsCount} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'} | Stock: {comp.totalAvailableCount} {comp.pooledAvailable?.[0]?.good?.uom || 'qty'}
+                                    <label className="text-sm font-bold text-slate-800">{comp.itemName} <span className="text-gray-400 font-normal">(x{comp.quantityPerUnit} {comp.uom}/unit)</span></label>
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${comp.totalAvailableCount >= comp.requiredSerialsCount ? 'text-green-700 bg-green-50 border border-green-200' : 'text-red-700 bg-red-50 border border-red-200'}`}>
+                                        Needs: {comp.requiredSerialsCount} {comp.uom} | Stock: {comp.totalAvailableCount} {comp.uom}
                                     </span>
                                 </div>
 
-                                <div className="flex gap-2 mb-2">
-                                    <button
-                                        onClick={() => handleAutoSelectAcrossBatches(comp.itemName, comp.requiredSerialsCount, comp.pooledAvailable)}
-                                        className="text-[10px] bg-[#8EBF45]/20 text-[#0D0D0D] px-2 py-1 rounded hover:bg-[#8EBF45] font-bold disabled:opacity-50"
-                                        disabled={comp.totalAvailableCount < comp.requiredSerialsCount}
-                                    >
-                                        Auto-Select FIFO
-                                    </button>
-                                    <button onClick={() => {
-                                        const cleared = { ...consumedSerials };
-                                        comp.pooledAvailable.forEach(b => delete cleared[b.good.id]);
-                                        setConsumedSerials(cleared);
-                                    }} className="text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded hover:bg-gray-300 font-bold">Clear</button>
-                                </div>
-
-                                <div className="space-y-2">
-                                    {comp.pooledAvailable.map(batch => (
-                                        <div key={batch.good.id} className="bg-white p-2 border rounded text-xs shadow-sm">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <div>
-                                                    <p className="font-bold text-[10px] text-gray-400 uppercase">Invoice: {batch.good.invoiceNumber || 'Manual'}</p>
-                                                    {batch.good.makeModel && <p className="text-[10px] text-indigo-600 font-bold">{batch.good.makeModel}</p>}
-                                                </div>
-                                                <span className="text-[9px] text-slate-400">{new Date(batch.good.timestamp).toLocaleDateString()}</span>
-                                            </div>
-                                            <select
-                                                multiple
-                                                className="w-full border rounded h-24 font-mono text-[10px] p-1 focus:ring-1 focus:ring-[#8EBF45] outline-none"
-                                                value={consumedSerials[batch.good.id] || []}
-                                                onChange={(e) => handleConsumedSerialsChange(batch.good.id, e.target.selectedOptions)}
+                                {comp.isTracked ? (
+                                    <>
+                                        <div className="flex gap-2 mb-2">
+                                            <button
+                                                onClick={() => handleAutoSelectAcrossBatches(comp.itemName, comp.requiredSerialsCount, comp.pooledAvailable)}
+                                                className="text-[10px] bg-[#8EBF45]/20 text-[#0D0D0D] px-2 py-1 rounded hover:bg-[#8EBF45] font-bold disabled:opacity-50"
+                                                disabled={comp.totalAvailableCount < comp.requiredSerialsCount}
                                             >
-                                                {batch.serials.map(sn => <option key={sn} value={sn}>{sn}</option>)}
-                                            </select>
+                                                Auto-Select FIFO
+                                            </button>
+                                            <button onClick={() => {
+                                                const cleared = { ...consumedSerials };
+                                                comp.pooledAvailable.forEach(b => delete cleared[b.good.id]);
+                                                setConsumedSerials(cleared);
+                                            }} className="text-[10px] bg-gray-200 text-gray-600 px-2 py-1 rounded hover:bg-gray-300 font-bold">Clear</button>
                                         </div>
-                                    ))}
-                                </div>
+
+                                        <div className="space-y-2">
+                                            {comp.pooledAvailable.map(batch => (
+                                                <div key={batch.good.id} className="bg-white p-2 border rounded text-xs shadow-sm">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <div>
+                                                            <p className="font-bold text-[10px] text-gray-400 uppercase">Invoice: {batch.good.invoiceNumber || 'Manual'}</p>
+                                                            {batch.good.makeModel && <p className="text-[10px] text-indigo-600 font-bold">{batch.good.makeModel}</p>}
+                                                        </div>
+                                                        <span className="text-[9px] text-slate-400">{new Date(batch.good.timestamp).toLocaleDateString()}</span>
+                                                    </div>
+                                                    <select
+                                                        multiple
+                                                        className="w-full border rounded h-24 font-mono text-[10px] p-1 focus:ring-1 focus:ring-[#8EBF45] outline-none"
+                                                        value={consumedSerials[batch.good.id] || []}
+                                                        onChange={(e) => handleConsumedSerialsChange(batch.good.id, e.target.selectedOptions)}
+                                                    >
+                                                        {batch.serials.map(sn => <option key={sn} value={sn}>{sn}</option>)}
+                                                    </select>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="bg-white p-2.5 rounded border border-slate-200 text-xs flex items-center justify-between mt-1">
+                                        <span className="text-slate-600 font-medium italic">
+                                            Quantity-based item ({comp.uom}) — Stock will be deducted automatically upon confirmation.
+                                        </span>
+                                        <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${comp.totalAvailableCount >= comp.requiredSerialsCount ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                            {comp.totalAvailableCount >= comp.requiredSerialsCount ? 'Stock Ready' : 'Insufficient Stock'}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
