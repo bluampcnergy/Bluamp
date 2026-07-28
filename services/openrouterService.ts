@@ -261,3 +261,50 @@ export const generateTextResponseOpenRouter = async (
     throw error;
   }
 };
+
+export const generateRFQTextOpenRouter = async (params: {
+  product: string;
+  specification?: string;
+  supplierName?: string;
+  contactName?: string;
+  quantity?: number;
+  uom?: string;
+}): Promise<string> => {
+  const prompt = `Write a professional, polite Request for Quotation (RFQ) email body from Datlion Cnergy to vendor "${params.supplierName || 'Vendor'}" (Attention: ${params.contactName || 'Sales/Procurement Team'}).
+Product: ${params.product}
+Specification / Particulars: ${params.specification || 'Standard Datasheet Spec'}
+Quantity Required: ${params.quantity ? `${params.quantity} ${params.uom || 'qty'}` : 'Bulk Procurement Quantity'}
+
+Request formal unit pricing (excl & incl GST), bulk tier discounts, lead time/delivery timeline to our Pune facility, payment terms, and warranty period. Keep the tone professional, clear, and ready to send.`;
+
+  try {
+    const aiText = await generateTextResponseOpenRouter(prompt);
+    if (aiText && aiText !== "No response.") {
+      return aiText.trim();
+    }
+  } catch (err) {
+    console.warn("AI RFQ generation fallback activated:", err);
+  }
+
+  // Robust Fallback Template
+  return `Dear ${params.contactName || 'Sales Team'} (${params.supplierName || 'Supplier'}),
+
+We at Datlion Cnergy would like to request an official Request for Quotation (RFQ) for the following item:
+
+• Product: ${params.product}
+• Specification / Particulars: ${params.specification || 'As per standard specification'}
+• Quantity Required: ${params.quantity ? `${params.quantity} ${params.uom || 'qty'}` : 'Bulk requirement'}
+
+Could you please share:
+1. Official unit rate (excl. and incl. GST)
+2. Lead time & delivery schedule for Pune plant
+3. Applicable bulk discounts
+4. Warranty & payment terms
+
+Looking forward to your prompt response.
+
+Best regards,
+Procurement Team
+Datlion Cnergy`;
+};
+

@@ -65,7 +65,8 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
 
   const categories = useMemo(() => ({
     home: ['home'] as View[],
-    operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage', 'supplies'] as View[],
+    supplies: ['supplies'] as View[],
+    operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage'] as View[],
     finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker'] as View[],
     admin: ['companies', 'users', 'employee_tasks', 'webmail', 'ai_assistant', 'reports', 'master', 'log'] as View[],
     help: ['help'] as View[],
@@ -73,6 +74,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
 
   const currentCategory = useMemo(() => {
     if (currentView === 'home') return 'home';
+    if (currentView === 'supplies') return 'supplies';
     if (categories.operations.includes(currentView)) return 'operations';
     if (categories.finance.includes(currentView)) return 'finance';
     if (categories.admin.includes(currentView)) return 'admin';
@@ -117,7 +119,20 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 Home
               </TopNavButton>
 
-              {/* 2. OPERATIONS */}
+              {/* 2. SUPPLIES / PROCUREMENT */}
+              <TopNavButton
+                isActive={currentCategory === 'supplies'}
+                onClick={() => setView('supplies')}
+                icon={
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                  </svg>
+                }
+              >
+                Supplies
+              </TopNavButton>
+
+              {/* 3. OPERATIONS */}
               <TopNavButton
                 isActive={currentCategory === 'operations'}
                 onClick={() => setView('received')}
@@ -126,7 +141,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 Operations
               </TopNavButton>
 
-              {/* 3. FINANCE */}
+              {/* 4. FINANCE */}
               <TopNavButton
                 isActive={currentCategory === 'finance'}
                 onClick={() => setView(userRole === 'admin' ? 'finance_dashboard' : 'finance_maker')}
@@ -135,7 +150,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 Finance
               </TopNavButton>
 
-              {/* 4. ADMIN (Combines Analytics: AI Assistant, Exports, Traceability, Logs) */}
+              {/* 5. ADMIN (Combines Analytics: AI Assistant, Exports, Traceability, Logs) */}
               <TopNavButton
                 isActive={currentCategory === 'admin'}
                 onClick={() => setView('companies')}
@@ -310,6 +325,14 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
               </>
             )}
 
+            {/* SUPPLIES SUB-NAV */}
+            {currentCategory === 'supplies' && (
+              <>
+                <div className="flex items-center gap-1 text-[10px] font-black text-[#404040]/50 uppercase tracking-widest mr-2">Procurement:</div>
+                <SubNavButton isActive={currentView === 'supplies'} onClick={() => setView('supplies')}>Procurement & Supplies Dashboard</SubNavButton>
+              </>
+            )}
+
             {/* OPERATIONS SUB-NAV */}
             {currentCategory === 'operations' && (
               <>
@@ -319,7 +342,6 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 <SubNavButton isActive={currentView === 'dtf'} onClick={() => setView('dtf')}>Direct-To-Finished</SubNavButton>
                 <SubNavButton isActive={currentView === 'finished'} onClick={() => setView('finished')}>Finished Goods</SubNavButton>
                 <SubNavButton isActive={currentView === 'storage'} onClick={() => setView('storage')}>Storage Rack Map</SubNavButton>
-                <SubNavButton isActive={currentView === 'supplies'} onClick={() => setView('supplies')}>Supplies</SubNavButton>
               </>
             )}
 

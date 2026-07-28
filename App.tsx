@@ -531,8 +531,10 @@ const App: React.FC = () => {
             suppliesRecords={suppliesRecords}
             setSuppliesRecords={setSuppliesRecords}
             companyProfiles={companyProfiles}
+            receivedGoods={receivedGoods}
             addLogEntry={addLogEntry}
             currentUser={currentUser}
+            setView={setView}
         />;
 
       case 'reports':

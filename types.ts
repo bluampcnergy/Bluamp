@@ -335,12 +335,22 @@ export interface InvoiceItem {
 export interface SupplyRecord {
   id: string;
   item_name: string;
-  direction: 'inward' | 'outward';
+  specification?: string;
+  direction?: 'inward' | 'outward';
   from_company?: string;
   to_company?: string;
-  is_ordered: boolean;
-  is_received: boolean;
-  is_shipped: boolean;
+  supplier_id?: string;
+  website_url?: string;
+  contact_name?: string;
+  contact_number?: string;
+  contact_email?: string;
+  status?: 'to_be_ordered' | 'ordered' | 'delivered';
+  target_quantity?: number;
+  uom?: string;
+  rfq_text?: string;
+  is_ordered?: boolean;
+  is_received?: boolean;
+  is_shipped?: boolean;
   timestamp: number;
   created_by?: string;
 }
