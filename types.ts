@@ -348,6 +348,8 @@ export interface SupplyRecord {
   target_quantity?: number;
   uom?: string;
   rfq_text?: string;
+  is_ignored_for_alerts?: boolean;
+  raw_good_id?: string;
   is_ordered?: boolean;
   is_received?: boolean;
   is_shipped?: boolean;

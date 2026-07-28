@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type { SupplyRecord, CompanyProfile, ReceivedGood, User, View } from '../types';
 import { Plus, Trash2, Search, RefreshCw } from './invoices/Icons';
 import { generateRFQTextOpenRouter } from '../services/openrouterService';
@@ -8,6 +8,7 @@ interface SuppliesRecordProps {
   setSuppliesRecords: React.Dispatch<React.SetStateAction<SupplyRecord[]>>;
   companyProfiles: CompanyProfile[];
   receivedGoods?: ReceivedGood[];
+  setReceivedGoods?: React.Dispatch<React.SetStateAction<ReceivedGood[]>>;
   addLogEntry: (action: string, details: string) => void;
   currentUser: User | null;
   setView?: (view: View) => void;
@@ -18,12 +19,13 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   setSuppliesRecords,
   companyProfiles,
   receivedGoods = [],
+  setReceivedGoods,
   addLogEntry,
   currentUser,
   setView
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered'>('all');
+  const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   // Modals
@@ -54,8 +56,49 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     rfq_text: ''
   });
 
-  // Auto-seed procurement dashboard from existing Raw Materials & Company Profiles if empty or on sync
-  const autoSeedFromInventory = React.useCallback(() => {
+  // Calculate stock alert metrics for all raw materials
+  const rawMaterialAlertMap = useMemo(() => {
+    const map = new Map<string, { isLowStock: boolean; isOutOfStock: boolean; percentRemaining: number; currentQty: number; thresholdQty: number; isIgnored: boolean; good: ReceivedGood }>();
+
+    receivedGoods.forEach(good => {
+      const currentQty = good.quantity || 0;
+      const initialQty = good.initialQuantity && good.initialQuantity > 0
+        ? good.initialQuantity
+        : (good.serials && good.serials.length > 0 ? good.serials.length : Math.max(currentQty, 1));
+      const thresholdPercent = typeof good.lowStockThresholdPercent === 'number' ? good.lowStockThresholdPercent : 20;
+      const thresholdQty = Math.round((initialQty * thresholdPercent) / 100);
+      const percentRemaining = Math.max(0, Math.round((currentQty / initialQty) * 100));
+
+      let localIgnoredMap: Record<string, boolean> = {};
+      try {
+        localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+      } catch (e) {
+        localIgnoredMap = {};
+      }
+
+      const isIgnored = typeof good.isIgnoredForAlerts === 'boolean'
+        ? good.isIgnoredForAlerts
+        : Boolean(localIgnoredMap[good.id]);
+
+      const isOutOfStock = currentQty <= 0;
+      const isLowStock = isOutOfStock || currentQty <= thresholdQty;
+
+      map.set(good.name.toLowerCase().trim(), {
+        isLowStock,
+        isOutOfStock,
+        percentRemaining,
+        currentQty,
+        thresholdQty,
+        isIgnored,
+        good
+      });
+    });
+
+    return map;
+  }, [receivedGoods]);
+
+  // Auto-seed procurement dashboard from existing Raw Materials & Company Profiles with Database Sync
+  const autoSeedFromInventory = useCallback(() => {
     if (!receivedGoods || receivedGoods.length === 0) return;
 
     // Build map of company names to company profiles
@@ -80,9 +123,16 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       if (existingNames.has(good.name.toLowerCase().trim())) return;
 
       const matchedCompany = good.supplier ? companyMap.get(good.supplier.toLowerCase().trim()) : undefined;
+      const alertInfo = rawMaterialAlertMap.get(good.name.toLowerCase().trim());
+
+      // If item has low stock, default status to 'to_be_ordered', otherwise 'to_be_ordered' for initial seeds
+      const defaultStatus: 'to_be_ordered' | 'delivered' = (alertInfo?.isLowStock && !alertInfo.isIgnored)
+        ? 'to_be_ordered'
+        : ((good.quantity && good.quantity > 50) ? 'delivered' : 'to_be_ordered');
 
       const seedRecord: SupplyRecord = {
         id: crypto.randomUUID(),
+        raw_good_id: good.id,
         item_name: good.name,
         specification: good.makeModel || `${good.category || 'Raw Material'} Component`,
         from_company: good.supplier || matchedCompany?.name || 'Primary Supplier',
@@ -92,10 +142,11 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         contact_name: matchedCompany?.contactPerson || 'Sales Desk',
         contact_number: matchedCompany?.phoneNumber || '',
         contact_email: matchedCompany?.email || '',
-        status: (good.quantity && good.quantity > 50) ? 'delivered' : 'to_be_ordered',
+        status: defaultStatus,
         target_quantity: good.initialQuantity || good.quantity || 100,
         uom: (good.uom as any) || 'qty',
         rfq_text: '',
+        is_ignored_for_alerts: Boolean(good.isIgnoredForAlerts),
         timestamp: Date.now(),
         created_by: 'Auto-Seed Engine'
       };
@@ -105,9 +156,9 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
     if (newSeeds.length > 0) {
       setSuppliesRecords(prev => [...newSeeds, ...prev]);
-      addLogEntry('Procurement Auto-Seed', `Auto-populated ${newSeeds.length} items from Raw Materials & Companies database.`);
+      addLogEntry('Procurement Database Sync', `Auto-populated ${newSeeds.length} procurement items from Inventory.`);
     }
-  }, [receivedGoods, companyProfiles, suppliesRecords, setSuppliesRecords, addLogEntry]);
+  }, [receivedGoods, companyProfiles, suppliesRecords, setSuppliesRecords, addLogEntry, rawMaterialAlertMap]);
 
   // Initial auto-seed if suppliesRecords is empty
   useEffect(() => {
@@ -115,6 +166,34 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       autoSeedFromInventory();
     }
   }, [suppliesRecords.length, receivedGoods.length, autoSeedFromInventory]);
+
+  // Toggle Ignore Notification Option (syncs across Supplies, Raw Materials, LocalStorage, and Supabase DB)
+  const handleToggleIgnoreAlert = (record: SupplyRecord) => {
+    const newIgnoredState = !record.is_ignored_for_alerts;
+
+    // 1. Update Supplies Record in Supabase DB
+    setSuppliesRecords(prev => prev.map(r => r.id === record.id ? { ...r, is_ignored_for_alerts: newIgnoredState } : r));
+
+    // 2. Update Raw Material Item in Supabase DB if linked
+    const rawGoodId = record.raw_good_id || receivedGoods.find(g => g.name.toLowerCase().trim() === record.item_name.toLowerCase().trim())?.id;
+    
+    if (rawGoodId) {
+      // LocalStorage sync
+      try {
+        const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+        currentMap[rawGoodId] = newIgnoredState;
+        localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
+      } catch (e) {
+        console.warn('Failed to save ignored stock map to localStorage', e);
+      }
+
+      if (setReceivedGoods) {
+        setReceivedGoods(prev => prev.map(g => g.id === rawGoodId ? { ...g, isIgnoredForAlerts: newIgnoredState } : g));
+      }
+    }
+
+    addLogEntry('Stock Alert Notification Toggled', `Item: ${record.item_name} -> ${newIgnoredState ? 'Ignored' : 'Alert On'}`);
+  };
 
   // Handle supplier dropdown selection in form to auto-fill supplier details
   const handleSupplierSelect = (companyName: string) => {
@@ -142,7 +221,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     }
   };
 
-  // Create or Update Record
+  // Create or Update Record (DB Synced)
   const handleSaveRecord = () => {
     if (!formData.item_name) {
       alert('Please enter a Product Name.');
@@ -155,7 +234,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         item_name: formData.item_name || editingRecord.item_name,
         specification: formData.specification || '',
         from_company: formData.from_company || '',
-        to_company: formData.to_company || 'Datlion Cnergy',
+        to_company: formData.to_company || 'Datlion Cnergy Plant',
         supplier_id: formData.supplier_id || '',
         website_url: formData.website_url || '',
         contact_name: formData.contact_name || '',
@@ -212,7 +291,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     });
   };
 
-  // Quick Status Change
+  // Quick Status Change (DB Synced)
   const updateStatus = (id: string, newStatus: 'to_be_ordered' | 'ordered' | 'delivered') => {
     setSuppliesRecords(prev => prev.map(r => {
       if (r.id === id) {
@@ -226,7 +305,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     }));
   };
 
-  // Delete Record
+  // Delete Record (DB Synced)
   const handleDelete = (id: string) => {
     const record = suppliesRecords.find(r => r.id === id);
     if (!record || !confirm(`Are you sure you want to delete "${record.item_name}"?`)) return;
@@ -239,7 +318,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const handleGenerateAI_RFQ = async (record: SupplyRecord) => {
     setRfqModalItem(record);
     setIsGeneratingRfq(true);
-    setGeneratedRfqText(record.rfq_text || 'Generating RFQ using OpenRouter AI...');
+    setGeneratedRfqText(record.rfq_text || 'Connecting to OpenRouter AI...');
 
     try {
       const aiText = await generateRFQTextOpenRouter({
@@ -251,7 +330,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         uom: record.uom
       });
       setGeneratedRfqText(aiText);
-      // Persist to item
+      // Persist to DB state
       setSuppliesRecords(prev => prev.map(r => r.id === record.id ? { ...r, rfq_text: aiText } : r));
     } catch (err) {
       console.error('Failed to generate RFQ text via AI:', err);
@@ -297,7 +376,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     setBulkRfqTexts(newBulkTexts);
   };
 
-  // Bulk Status Update
+  // Bulk Status Update (DB Synced)
   const handleBulkStatusChange = (status: 'to_be_ordered' | 'ordered' | 'delivered') => {
     if (selectedIds.length === 0) return;
     setSuppliesRecords(prev => prev.map(r => selectedIds.includes(r.id) ? { ...r, status } : r));
@@ -308,10 +387,26 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   // Normalized Filtering
   const filteredRecords = useMemo(() => {
     return suppliesRecords.filter(r => {
-      // Determine effective status if legacy record
-      const effectiveStatus = r.status || (r.is_received ? 'delivered' : r.is_ordered ? 'ordered' : 'to_be_ordered');
+      const alertInfo = rawMaterialAlertMap.get(r.item_name.toLowerCase().trim());
+      const isLowStockTriggered = alertInfo?.isLowStock && !alertInfo.isIgnored && !r.is_ignored_for_alerts;
+
+      // Determine effective status
+      let effectiveStatus = r.status || (r.is_received ? 'delivered' : r.is_ordered ? 'ordered' : 'to_be_ordered');
       
-      const matchesStatus = activeStatusFilter === 'all' || effectiveStatus === activeStatusFilter;
+      // Stock Level Alerts by default trigger 'to_be_ordered' status unless explicitly marked as delivered or ignored
+      if (isLowStockTriggered && effectiveStatus !== 'delivered' && effectiveStatus !== 'ordered') {
+        effectiveStatus = 'to_be_ordered';
+      }
+
+      let matchesStatus = true;
+      if (activeStatusFilter === 'all') {
+        matchesStatus = true;
+      } else if (activeStatusFilter === 'stock_alerts') {
+        matchesStatus = Boolean(isLowStockTriggered || r.status === 'to_be_ordered');
+      } else {
+        matchesStatus = effectiveStatus === activeStatusFilter;
+      }
+
       const search = searchTerm.toLowerCase().trim();
       const matchesSearch = !search || 
         r.item_name.toLowerCase().includes(search) ||
@@ -322,23 +417,33 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       return matchesStatus && matchesSearch;
     });
-  }, [suppliesRecords, activeStatusFilter, searchTerm]);
+  }, [suppliesRecords, activeStatusFilter, searchTerm, rawMaterialAlertMap]);
 
-  // Counts
+  // Counts & Alert Summaries
   const counts = useMemo(() => {
     let to_be_ordered = 0;
     let ordered = 0;
     let delivered = 0;
+    let stock_alerts = 0;
 
     suppliesRecords.forEach(r => {
+      const alertInfo = rawMaterialAlertMap.get(r.item_name.toLowerCase().trim());
+      const isLowStockTriggered = alertInfo?.isLowStock && !alertInfo.isIgnored && !r.is_ignored_for_alerts;
+
+      if (isLowStockTriggered) stock_alerts++;
+
       const st = r.status || (r.is_received ? 'delivered' : r.is_ordered ? 'ordered' : 'to_be_ordered');
-      if (st === 'to_be_ordered') to_be_ordered++;
-      else if (st === 'ordered') ordered++;
-      else if (st === 'delivered') delivered++;
+      if (st === 'to_be_ordered' || (isLowStockTriggered && st !== 'delivered' && st !== 'ordered')) {
+        to_be_ordered++;
+      } else if (st === 'ordered') {
+        ordered++;
+      } else if (st === 'delivered') {
+        delivered++;
+      }
     });
 
-    return { total: suppliesRecords.length, to_be_ordered, ordered, delivered };
-  }, [suppliesRecords]);
+    return { total: suppliesRecords.length, to_be_ordered, ordered, delivered, stock_alerts };
+  }, [suppliesRecords, rawMaterialAlertMap]);
 
   // Format WhatsApp Link
   const getWhatsAppLink = (phone?: string, text?: string) => {
@@ -366,9 +471,14 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
               📦
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Procurement & Supplies Dashboard</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Procurement & Supplies Dashboard</h1>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-300">
+                  ⚡ Database Synced
+                </span>
+              </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Track raw component requisitions, RFQ workflows, supplier contacts, and order fulfillment status.
+                Stock level alerts automatically flag items as <span className="font-bold text-amber-600">🟡 To Be Ordered</span> with ignore notification options.
               </p>
             </div>
           </div>
@@ -378,10 +488,10 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           <button
             onClick={autoSeedFromInventory}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all border border-slate-300 flex items-center gap-1.5"
-            title="Auto-sync product specifications and primary suppliers from Raw Materials inventory database"
+            title="Sync inventory stock level alerts & supplier profiles with Supabase DB"
           >
             <RefreshCw size={14} className="text-slate-500" />
-            <span>Sync Inventory Items</span>
+            <span>Sync Inventory & Database</span>
           </button>
 
           <button
@@ -414,23 +524,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       {/* METRIC KPI CARDS & STATUS TABS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Items Tab */}
-        <div
-          onClick={() => setActiveStatusFilter('all')}
-          className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-            activeStatusFilter === 'all'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/20'
-              : 'bg-white text-slate-900 border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <div>
-            <p className={`text-[10px] font-black uppercase tracking-wider ${activeStatusFilter === 'all' ? 'text-slate-400' : 'text-slate-400'}`}>Total Requirements</p>
-            <h3 className="text-2xl font-black mt-1">{counts.total}</h3>
-          </div>
-          <span className="text-2xl">📋</span>
-        </div>
-
-        {/* To Be Ordered (Amber) */}
+        {/* To Be Ordered (Amber / Default Active Tab with Stock Level Alerts) */}
         <div
           onClick={() => setActiveStatusFilter('to_be_ordered')}
           className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
@@ -442,7 +536,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-              <p className="text-[10px] font-black uppercase tracking-wider">🟡 To Be Ordered</p>
+              <p className="text-[10px] font-black uppercase tracking-wider">🟡 To Be Ordered (Alerts)</p>
             </div>
             <h3 className="text-2xl font-black mt-1">{counts.to_be_ordered}</h3>
           </div>
@@ -486,7 +580,46 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           </div>
           <span className="text-2xl">✅</span>
         </div>
+
+        {/* Total Items Tab */}
+        <div
+          onClick={() => setActiveStatusFilter('all')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+            activeStatusFilter === 'all'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/20'
+              : 'bg-white text-slate-900 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-wider ${activeStatusFilter === 'all' ? 'text-slate-400' : 'text-slate-400'}`}>All Procurement Records</p>
+            <h3 className="text-2xl font-black mt-1">{counts.total}</h3>
+          </div>
+          <span className="text-2xl">📋</span>
+        </div>
       </div>
+
+      {/* STOCK ALERT BANNER IF LOW STOCK DETECTED */}
+      {counts.stock_alerts > 0 && (
+        <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-950 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🚨</span>
+            <div>
+              <p className="text-xs font-black">
+                {counts.stock_alerts} Raw Material item(s) running low or out of stock!
+              </p>
+              <p className="text-[11px] text-amber-800 font-medium">
+                These items are automatically queued under <span className="font-bold">🟡 To Be Ordered</span>. You can suppress alerts anytime using the <span className="font-bold">🚫 Ignore</span> button on any card.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveStatusFilter('to_be_ordered')}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl shadow-xs transition-all whitespace-nowrap"
+          >
+            View Requisitions ({counts.to_be_ordered})
+          </button>
+        </div>
+      )}
 
       {/* SEARCH AND BULK ACTIONS BAR */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -572,14 +705,22 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-4xl opacity-30">🔍</span>
                       <p className="font-bold text-slate-600">No procurement items found</p>
-                      <p className="text-xs text-slate-400">Click "Sync Inventory Items" to auto-seed from Raw Materials, or add items manually.</p>
+                      <p className="text-xs text-slate-400">Click "Sync Inventory & Database" to auto-seed from Raw Materials, or add items manually.</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 filteredRecords.map((record) => {
-                  const effectiveStatus = record.status || (record.is_received ? 'delivered' : record.is_ordered ? 'ordered' : 'to_be_ordered');
+                  const alertInfo = rawMaterialAlertMap.get(record.item_name.toLowerCase().trim());
+                  const isLowStockTriggered = alertInfo?.isLowStock && !alertInfo.isIgnored && !record.is_ignored_for_alerts;
+
+                  let effectiveStatus = record.status || (record.is_received ? 'delivered' : record.is_ordered ? 'ordered' : 'to_be_ordered');
+                  if (isLowStockTriggered && effectiveStatus !== 'delivered' && effectiveStatus !== 'ordered') {
+                    effectiveStatus = 'to_be_ordered';
+                  }
+
                   const isChecked = selectedIds.includes(record.id);
+                  const isIgnored = Boolean(record.is_ignored_for_alerts || alertInfo?.isIgnored);
 
                   return (
                     <tr key={record.id} className={`hover:bg-slate-50/70 transition-colors ${isChecked ? 'bg-amber-50/40' : ''}`}>
@@ -596,11 +737,39 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                       {/* Product Particulars */}
                       <td className="px-4 py-3.5">
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-900 text-sm">{record.item_name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">{record.item_name}</span>
+                            
+                            {/* Stock Alert Badge */}
+                            {alertInfo?.isOutOfStock && !isIgnored && (
+                              <span className="bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-md border border-rose-300 animate-pulse">
+                                🚨 OUT OF STOCK
+                              </span>
+                            )}
+                            {alertInfo?.isLowStock && !alertInfo.isOutOfStock && !isIgnored && (
+                              <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-md border border-amber-300">
+                                ⚠️ LOW STOCK ({alertInfo.currentQty} left)
+                              </span>
+                            )}
+                          </div>
+
                           <div className="flex items-center gap-2 mt-1">
                             <span className="bg-slate-100 text-slate-600 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-slate-200">
-                              Qty: {record.target_quantity || 100} {record.uom || 'qty'}
+                              Target Qty: {record.target_quantity || 100} {record.uom || 'qty'}
                             </span>
+
+                            {/* Ignore Notification Option Button (Just like in Raw Material Cards) */}
+                            <button
+                              onClick={() => handleToggleIgnoreAlert(record)}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
+                                isIgnored
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                              }`}
+                              title={isIgnored ? "Click to re-enable low stock alerts for this item" : "Click to ignore alert / mark as do not replenish"}
+                            >
+                              {isIgnored ? '🚫 Ignored' : '🔔 Alert On'}
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -708,7 +877,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                               className="px-3 py-1 bg-amber-100 text-amber-800 border border-amber-300 font-black text-[11px] rounded-full hover:bg-amber-200 transition-all flex items-center gap-1 shadow-2xs"
                               title="Click to advance to 'Ordered'"
                             >
-                              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
                               <span>🟡 To Be Ordered</span>
                             </button>
                           )}
