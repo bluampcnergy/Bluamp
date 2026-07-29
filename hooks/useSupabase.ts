@@ -37,15 +37,27 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
   }
   if (tableName === 'received_goods') {
     let localIgnoredMap: Record<string, boolean> = {};
+    let localInitialQtyMap: Record<string, number> = {};
     try {
       localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+      localInitialQtyMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
     } catch (e) {
       localIgnoredMap = {};
+      localInitialQtyMap = {};
     }
 
     return items.map(item => {
       const currentQty = item.quantity || 0;
-      const initialQty = item.initialQuantity || (item.serials && item.serials.length > 0 ? item.serials.length : currentQty) || 1;
+      let initialQty = item.initialQuantity || (item.id && localInitialQtyMap[item.id] > 0 ? localInitialQtyMap[item.id] : 0);
+      if (!initialQty || initialQty <= 0) {
+        initialQty = (item.serials && item.serials.length > 0 ? item.serials.length : currentQty) || 1;
+        if (item.id && currentQty > 0) {
+          localInitialQtyMap[item.id] = initialQty;
+          try {
+            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialQtyMap));
+          } catch (e) {}
+        }
+      }
       const lowStockThresholdPercent = typeof item.lowStockThresholdPercent === 'number'
         ? item.lowStockThresholdPercent
         : (typeof item.low_stock_threshold_percent === 'number' ? item.low_stock_threshold_percent : 20);

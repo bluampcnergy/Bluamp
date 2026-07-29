@@ -533,6 +533,7 @@ const App: React.FC = () => {
             companyProfiles={companyProfiles}
             receivedGoods={receivedGoods}
             setReceivedGoods={setReceivedGoods}
+            recipes={recipes}
             addLogEntry={addLogEntry}
             currentUser={currentUser}
             setView={setView}

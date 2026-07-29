@@ -103,13 +103,20 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     // Populate form when editing
     useEffect(() => {
         if (editingGood) {
+            let localInitialMap: Record<string, number> = {};
+            try {
+                localInitialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+            } catch (e) {}
+
+            const fixedInitialQty = editingGood.initialQuantity ?? localInitialMap[editingGood.id] ?? editingGood.quantity;
+
             setFormData({
                 name: editingGood.name,
                 category: editingGood.category,
                 makeModel: editingGood.makeModel,
                 supplier: editingGood.supplier,
                 quantity: editingGood.quantity,
-                initialQuantity: editingGood.initialQuantity ?? editingGood.quantity,
+                initialQuantity: fixedInitialQty,
                 uom: editingGood.uom || 'qty',
                 lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
                 isIgnoredForAlerts: Boolean(editingGood.isIgnoredForAlerts),
@@ -357,17 +364,25 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             });
         }
 
+        let localInitialMap: Record<string, number> = {};
+        try {
+            localInitialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+        } catch (e) {}
+
         const initialQty = editingGood 
-            ? (editingGood.initialQuantity || editingGood.quantity || formData.quantity || 1)
+            ? (editingGood.initialQuantity || localInitialMap[goodId] || editingGood.quantity || formData.quantity || 1)
             : (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (formData.quantity || 1));
 
-        // Sync to persistent localStorage map
+        // Sync to persistent localStorage maps
         try {
             const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
             currentMap[goodId] = Boolean(formData.isIgnoredForAlerts);
             localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
+
+            localInitialMap[goodId] = initialQty;
+            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialMap));
         } catch (e) {
-            console.warn('Failed to save ignored stock map to localStorage', e);
+            console.warn('Failed to save stock map to localStorage', e);
         }
 
         // Prepare Received Good

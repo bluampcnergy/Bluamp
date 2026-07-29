@@ -25,12 +25,29 @@ export const getItemStockAlertInfo = (
 ): StockAlertInfo => {
     const currentQty = good.quantity || 0;
     const isIgnored = Boolean(good.isIgnoredForAlerts);
-    
-    // Fallback baseline: initialQuantity, serials count, or current quantity
-    const initialQty = good.initialQuantity && good.initialQuantity > 0
-        ? good.initialQuantity
-        : (good.serials && good.serials.length > 0 ? good.serials.length : Math.max(currentQty, 1));
 
+    let localInitialQtyMap: Record<string, number> = {};
+    try {
+      localInitialQtyMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+    } catch (e) {
+      localInitialQtyMap = {};
+    }
+
+    // Fixed baseline: initialQuantity locked permanently when entry is saved for the very first time
+    let initialQty = good.initialQuantity && good.initialQuantity > 0
+        ? good.initialQuantity
+        : (good.id && localInitialQtyMap[good.id] && localInitialQtyMap[good.id] > 0 ? localInitialQtyMap[good.id] : 0);
+
+    if (!initialQty || initialQty <= 0) {
+        initialQty = (good.serials && good.serials.length > 0 ? good.serials.length : Math.max(currentQty, 1));
+        if (good.id && currentQty > 0) {
+            localInitialQtyMap[good.id] = initialQty;
+            try {
+                localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialQtyMap));
+            } catch (e) {}
+        }
+    }
+    
     const thresholdPercent = typeof overrideThresholdPercent === 'number'
         ? overrideThresholdPercent
         : (typeof good.lowStockThresholdPercent === 'number' ? good.lowStockThresholdPercent : 20);

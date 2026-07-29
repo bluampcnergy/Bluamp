@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import type { SupplyRecord, CompanyProfile, ReceivedGood, User, View } from '../types';
+import type { SupplyRecord, CompanyProfile, ReceivedGood, User, View, Recipe } from '../types';
 import { Plus, Trash2, Search, RefreshCw } from './invoices/Icons';
 import { generateRFQTextOpenRouter } from '../services/openrouterService';
+import { getItemStockAlertInfo } from '../utils/stockAlerts';
 
 interface SuppliesRecordProps {
   suppliesRecords: SupplyRecord[];
@@ -9,6 +10,7 @@ interface SuppliesRecordProps {
   companyProfiles: CompanyProfile[];
   receivedGoods?: ReceivedGood[];
   setReceivedGoods?: React.Dispatch<React.SetStateAction<ReceivedGood[]>>;
+  recipes?: Recipe[];
   addLogEntry: (action: string, details: string) => void;
   currentUser: User | null;
   setView?: (view: View) => void;
@@ -20,6 +22,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   companyProfiles,
   receivedGoods = [],
   setReceivedGoods,
+  recipes = [],
   addLogEntry,
   currentUser,
   setView
@@ -27,6 +30,117 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  // SKU Build Capacity Search State (On-demand calculation)
+  const [skuSearchQuery, setSkuSearchQuery] = useState('');
+  const [calculatedResult, setCalculatedResult] = useState<{
+    skuName: string;
+    recipe?: Recipe;
+    maxBuildable: number;
+    bottleneck?: {
+      name: string;
+      requiredPerUnit: number;
+      availableStock: number;
+      maxBuildableFromThis: number;
+      uom: string;
+    };
+    components: Array<{
+      name: string;
+      requiredPerUnit: number;
+      availableStock: number;
+      maxBuildableFromThis: number;
+      uom: string;
+      isBottleneck: boolean;
+      status: 'bottleneck' | 'low' | 'sufficient';
+      rawGoodId?: string;
+    }>;
+    hasExecuted: boolean;
+  } | null>(null);
+
+  // On-demand SKU build capacity calculation handler
+  const handleCalculateSkuCapacity = useCallback((searchQueryOverride?: string) => {
+    const query = (searchQueryOverride !== undefined ? searchQueryOverride : skuSearchQuery).trim();
+    if (!query) {
+      alert('Please select or enter a SKU / Model name to calculate build capacity.');
+      return;
+    }
+
+    // Find matching Recipe in recipes list
+    const targetRecipe = (recipes || []).find(r => 
+      r.name.toLowerCase().trim() === query.toLowerCase().trim()
+    ) || (recipes || []).find(r => 
+      r.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase().includes(r.name.toLowerCase())
+    );
+
+    if (!targetRecipe) {
+      setCalculatedResult({
+        skuName: query,
+        maxBuildable: 0,
+        components: [],
+        hasExecuted: true
+      });
+      return;
+    }
+
+    // Map each component in the recipe to available inventory stock
+    let minBuildable = Infinity;
+    let bottleneckComp: any = null;
+
+    const componentDetails = targetRecipe.components.map(comp => {
+      const compName = (comp.masterItemName || '').toLowerCase().trim();
+      
+      const matchingGoods = receivedGoods.filter(g => {
+        if (comp.receivedGoodId && g.id === comp.receivedGoodId) return true;
+        if (compName && g.name.toLowerCase().trim() === compName) return true;
+        if (compName && g.name.toLowerCase().includes(compName)) return true;
+        return false;
+      });
+
+      const totalAvailable = matchingGoods.reduce((sum, g) => sum + (g.quantity || 0), 0);
+      const uom = comp.uom || matchingGoods[0]?.uom || 'qty';
+      const required = comp.quantityPerUnit || 1;
+      const maxBuildableFromThis = Math.floor(totalAvailable / required);
+
+      if (maxBuildableFromThis < minBuildable) {
+        minBuildable = maxBuildableFromThis;
+      }
+
+      return {
+        name: comp.masterItemName || matchingGoods[0]?.name || 'Unknown Component',
+        requiredPerUnit: required,
+        availableStock: totalAvailable,
+        maxBuildableFromThis,
+        uom,
+        isBottleneck: false,
+        status: 'sufficient' as 'bottleneck' | 'low' | 'sufficient',
+        rawGoodId: matchingGoods[0]?.id
+      };
+    });
+
+    const finalBuildable = minBuildable === Infinity ? 0 : Math.max(0, minBuildable);
+
+    // Identify bottlenecks
+    componentDetails.forEach(c => {
+      if (c.maxBuildableFromThis === finalBuildable) {
+        c.isBottleneck = true;
+        c.status = 'bottleneck';
+        if (!bottleneckComp) {
+          bottleneckComp = c;
+        }
+      } else if (c.maxBuildableFromThis <= finalBuildable + 5) {
+        c.status = 'low';
+      }
+    });
+
+    setCalculatedResult({
+      skuName: targetRecipe.name,
+      recipe: targetRecipe,
+      maxBuildable: finalBuildable,
+      bottleneck: bottleneckComp,
+      components: componentDetails,
+      hasExecuted: true
+    });
+  }, [skuSearchQuery, recipes, receivedGoods]);
   
   // Modals
   const [isAdding, setIsAdding] = useState(false);
@@ -80,35 +194,14 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     const map = new Map<string, { isLowStock: boolean; isOutOfStock: boolean; percentRemaining: number; currentQty: number; thresholdQty: number; isIgnored: boolean; good: ReceivedGood }>();
 
     receivedGoods.forEach(good => {
-      const currentQty = good.quantity || 0;
-      const initialQty = good.initialQuantity && good.initialQuantity > 0
-        ? good.initialQuantity
-        : (good.serials && good.serials.length > 0 ? good.serials.length : Math.max(currentQty, 1));
-      const thresholdPercent = typeof good.lowStockThresholdPercent === 'number' ? good.lowStockThresholdPercent : 20;
-      const thresholdQty = Math.round((initialQty * thresholdPercent) / 100);
-      const percentRemaining = Math.max(0, Math.round((currentQty / initialQty) * 100));
-
-      let localIgnoredMap: Record<string, boolean> = {};
-      try {
-        localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
-      } catch (e) {
-        localIgnoredMap = {};
-      }
-
-      const isIgnored = typeof good.isIgnoredForAlerts === 'boolean'
-        ? good.isIgnoredForAlerts
-        : Boolean(localIgnoredMap[good.id]);
-
-      const isOutOfStock = currentQty <= 0;
-      const isLowStock = isOutOfStock || currentQty <= thresholdQty;
-
+      const info = getItemStockAlertInfo(good);
       map.set(good.name.toLowerCase().trim(), {
-        isLowStock,
-        isOutOfStock,
-        percentRemaining,
-        currentQty,
-        thresholdQty,
-        isIgnored,
+        isLowStock: info.isLowStock,
+        isOutOfStock: info.isOutOfStock,
+        percentRemaining: info.percentRemaining,
+        currentQty: info.quantity,
+        thresholdQty: info.thresholdQty,
+        isIgnored: info.isIgnored,
         good
       });
     });
@@ -144,10 +237,10 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       const matchedCompany = good.supplier ? companyMap.get(good.supplier.toLowerCase().trim()) : undefined;
       const alertInfo = rawMaterialAlertMap.get(good.name.toLowerCase().trim());
 
-      // If item has low stock, default status to 'to_be_ordered', otherwise 'to_be_ordered' for initial seeds
+      // If item has low stock, default status to 'to_be_ordered', otherwise 'delivered'
       const defaultStatus: 'to_be_ordered' | 'delivered' = (alertInfo?.isLowStock && !alertInfo.isIgnored)
         ? 'to_be_ordered'
-        : ((good.quantity && good.quantity > 50) ? 'delivered' : 'to_be_ordered');
+        : 'delivered';
 
       const seedRecord: SupplyRecord = {
         id: crypto.randomUUID(),
@@ -593,25 +686,40 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     setSelectedIds([]);
   };
 
+  // Helper to determine accurate procurement status for an item
+  const getEffectiveStatus = useCallback((r: SupplyRecord): 'to_be_ordered' | 'ordered' | 'delivered' => {
+    const alertInfo = rawMaterialAlertMap.get(r.item_name.toLowerCase().trim());
+    const isLowStockTriggered = alertInfo?.isLowStock && !alertInfo.isIgnored && !r.is_ignored_for_alerts;
+
+    // Explicit manual overrides
+    if (r.status === 'ordered') return 'ordered';
+    if (r.status === 'delivered') return 'delivered';
+
+    // Low stock alert triggers to_be_ordered status
+    if (isLowStockTriggered) return 'to_be_ordered';
+
+    // Auto-seeded or legacy record whose inventory is NOT low stock -> default to delivered
+    if (r.status === 'to_be_ordered' && !isLowStockTriggered) {
+      if (r.created_by === 'Auto-Seed Engine' || r.raw_good_id) {
+        return 'delivered';
+      }
+    }
+
+    return r.status || 'delivered';
+  }, [rawMaterialAlertMap]);
+
   // Normalized Filtering
   const filteredRecords = useMemo(() => {
     return suppliesRecords.filter(r => {
       const alertInfo = rawMaterialAlertMap.get(r.item_name.toLowerCase().trim());
       const isLowStockTriggered = alertInfo?.isLowStock && !alertInfo.isIgnored && !r.is_ignored_for_alerts;
-
-      // Determine effective status
-      let effectiveStatus = r.status || (r.is_received ? 'delivered' : r.is_ordered ? 'ordered' : 'to_be_ordered');
-      
-      // Stock Level Alerts by default trigger 'to_be_ordered' status unless explicitly marked as delivered or ignored
-      if (isLowStockTriggered && effectiveStatus !== 'delivered' && effectiveStatus !== 'ordered') {
-        effectiveStatus = 'to_be_ordered';
-      }
+      const effectiveStatus = getEffectiveStatus(r);
 
       let matchesStatus = true;
       if (activeStatusFilter === 'all') {
         matchesStatus = true;
       } else if (activeStatusFilter === 'stock_alerts') {
-        matchesStatus = Boolean(isLowStockTriggered || r.status === 'to_be_ordered');
+        matchesStatus = Boolean(isLowStockTriggered);
       } else {
         matchesStatus = effectiveStatus === activeStatusFilter;
       }
@@ -626,7 +734,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       return matchesStatus && matchesSearch;
     });
-  }, [suppliesRecords, activeStatusFilter, searchTerm, rawMaterialAlertMap]);
+  }, [suppliesRecords, activeStatusFilter, searchTerm, rawMaterialAlertMap, getEffectiveStatus]);
 
   // Counts & Alert Summaries
   const counts = useMemo(() => {
@@ -641,8 +749,8 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       if (isLowStockTriggered) stock_alerts++;
 
-      const st = r.status || (r.is_received ? 'delivered' : r.is_ordered ? 'ordered' : 'to_be_ordered');
-      if (st === 'to_be_ordered' || (isLowStockTriggered && st !== 'delivered' && st !== 'ordered')) {
+      const st = getEffectiveStatus(r);
+      if (st === 'to_be_ordered') {
         to_be_ordered++;
       } else if (st === 'ordered') {
         ordered++;
@@ -652,7 +760,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     });
 
     return { total: suppliesRecords.length, to_be_ordered, ordered, delivered, stock_alerts };
-  }, [suppliesRecords, rawMaterialAlertMap]);
+  }, [suppliesRecords, rawMaterialAlertMap, getEffectiveStatus]);
 
   // Format WhatsApp Link
   const getWhatsAppLink = (phone?: string, text?: string) => {
@@ -781,6 +889,227 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
             <span>📥 Choose CSV File</span>
           </button>
         </div>
+      </div>
+
+      {/* SKU BUILD CAPACITY CALCULATOR (ON-DEMAND SEARCH) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700/80 shadow-lg text-white space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700/60 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 text-xl font-bold">
+              🧮
+            </div>
+            <div>
+              <h2 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                SKU Build Capacity Search
+                <span className="bg-amber-500/20 text-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-500/40 uppercase tracking-wider">
+                  On-Demand Calculation
+                </span>
+              </h2>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Search a specific SKU/Product model to calculate maximum buildable units based on current live stock.
+              </p>
+            </div>
+          </div>
+
+          {/* Search Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Select Recipe Dropdown */}
+            {recipes && recipes.length > 0 && (
+              <select
+                value={skuSearchQuery}
+                onChange={(e) => setSkuSearchQuery(e.target.value)}
+                className="bg-slate-800 border border-slate-600 text-slate-100 text-xs font-semibold rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-500 max-w-[220px]"
+              >
+                <option value="">-- Select SKU Recipe --</option>
+                {recipes.map(r => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            )}
+
+            {/* Text Input Search */}
+            <div className="relative">
+              <input
+                type="text"
+                value={skuSearchQuery}
+                onChange={(e) => setSkuSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleCalculateSkuCapacity();
+                  }
+                }}
+                placeholder="Enter SKU / Model Name..."
+                className="bg-slate-800 border border-slate-600 text-slate-100 text-xs font-medium placeholder-slate-400 rounded-xl px-3.5 py-2.5 w-60 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+
+            {/* Search Action Button (Triggered only on click) */}
+            <button
+              onClick={() => handleCalculateSkuCapacity()}
+              className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-2"
+            >
+              <span>🔍 Calculate Capacity</span>
+            </button>
+
+            {calculatedResult && (
+              <button
+                onClick={() => {
+                  setCalculatedResult(null);
+                  setSkuSearchQuery('');
+                }}
+                className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 transition-all"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* CALCULATION RESULTS DISPLAY */}
+        {calculatedResult && calculatedResult.hasExecuted && (
+          <div className="bg-slate-950/80 rounded-xl p-5 border border-slate-800 space-y-4 animate-in fade-in">
+            {!calculatedResult.recipe ? (
+              <div className="text-center py-6 space-y-2">
+                <span className="text-3xl">⚠️</span>
+                <h4 className="text-sm font-bold text-amber-400">No BOM Recipe Found for "{calculatedResult.skuName}"</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  No registered product recipe matched this SKU name. Please select a registered SKU from the dropdown or register a recipe in the Master Data / WIP module.
+                </p>
+                {recipes && recipes.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                    <span className="text-xs text-slate-400 font-semibold">Available SKUs:</span>
+                    {recipes.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          setSkuSearchQuery(r.name);
+                          handleCalculateSkuCapacity(r.name);
+                        }}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs rounded-lg border border-slate-700 font-medium transition-all"
+                      >
+                        {r.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Hero Result Summary Card */}
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider">SKU Build Capacity Calculation</span>
+                    <h3 className="text-xl font-black text-white">{calculatedResult.skuName}</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Calculated dynamically from live stock in Received Goods inventory.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-slate-950 px-5 py-3 rounded-xl border border-slate-800">
+                    <div className="text-right">
+                      <p className="text-[10px] font-black uppercase text-slate-400">Max Buildable Units</p>
+                      <p className="text-3xl font-black text-emerald-400 tracking-tight">{calculatedResult.maxBuildable} <span className="text-xs text-slate-400 font-normal">units</span></p>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-2xl">
+                      ⚡
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottleneck Warning Header */}
+                {calculatedResult.bottleneck && (
+                  <div className="bg-rose-950/40 border border-rose-800/60 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-200">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">🚨</span>
+                      <div>
+                        <p className="text-xs font-bold text-rose-300">
+                          Limiting Factor (Bottleneck): <span className="font-extrabold text-white">{calculatedResult.bottleneck.name}</span>
+                        </p>
+                        <p className="text-[11px] text-rose-300/80">
+                          Stock available: {calculatedResult.bottleneck.availableStock} {calculatedResult.bottleneck.uom} | Requires {calculatedResult.bottleneck.requiredPerUnit} per unit → Limits total build to {calculatedResult.maxBuildable} SKUs.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action button to add missing component to procurement */}
+                    <button
+                      onClick={() => {
+                        const b = calculatedResult.bottleneck!;
+                        const seedRecord: SupplyRecord = {
+                          id: crypto.randomUUID(),
+                          item_name: b.name,
+                          specification: `Bottleneck component for ${calculatedResult.skuName}`,
+                          from_company: 'Primary Supplier',
+                          to_company: 'Datlion Cnergy Plant',
+                          status: 'to_be_ordered',
+                          target_quantity: b.requiredPerUnit * 50,
+                          uom: b.uom || 'qty',
+                          timestamp: Date.now(),
+                          created_by: 'SKU Capacity Calculator'
+                        };
+                        setSuppliesRecords(prev => [seedRecord, ...prev]);
+                        addLogEntry('Procurement Item Added', `Added bottleneck material ${b.name} for SKU ${calculatedResult.skuName} to procurement.`);
+                        alert(`Added ${b.name} to Supplies "To Be Ordered" list!`);
+                      }}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg transition-all whitespace-nowrap shadow-2xs flex items-center gap-1.5"
+                    >
+                      <span>+ Add to Orders</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Component BOM Stock Matrix Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
+                        <th className="py-2.5 px-3">Raw Material Component</th>
+                        <th className="py-2.5 px-3">Required / Unit</th>
+                        <th className="py-2.5 px-3">Available Stock</th>
+                        <th className="py-2.5 px-3">Yield (Buildable SKUs)</th>
+                        <th className="py-2.5 px-3 text-right">Stock Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 font-medium">
+                      {calculatedResult.components.map((comp, idx) => (
+                        <tr key={idx} className={comp.isBottleneck ? 'bg-rose-950/20 text-rose-100 font-semibold' : 'hover:bg-slate-900/40 text-slate-200'}>
+                          <td className="py-2.5 px-3 flex items-center gap-2">
+                            {comp.isBottleneck && <span className="text-xs">🔴</span>}
+                            <span>{comp.name}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-300">
+                            {comp.requiredPerUnit} {comp.uom}
+                          </td>
+                          <td className="py-2.5 px-3 text-emerald-400 font-bold">
+                            {comp.availableStock} {comp.uom}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold">
+                            {comp.maxBuildableFromThis} units
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            {comp.isBottleneck ? (
+                              <span className="bg-rose-500/20 text-rose-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/40">
+                                Bottleneck Limit
+                              </span>
+                            ) : comp.status === 'low' ? (
+                              <span className="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/40">
+                                Tight Stock
+                              </span>
+                            ) : (
+                              <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
+                                Sufficient
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* METRIC KPI CARDS & STATUS TABS */}
