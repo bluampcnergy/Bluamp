@@ -585,6 +585,120 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
         }
     };
 
+    const isIframeMode = isIframe || (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('mode') === 'webmail_compose' || Boolean(new URLSearchParams(window.location.search).get('to'))));
+
+    if (isIframeMode && isComposeOpen) {
+        return (
+            <div className="w-full h-full bg-slate-100 p-2 sm:p-4 flex flex-col justify-between overflow-y-auto min-h-screen">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col flex-1">
+                    <div className="bg-slate-900 text-white px-5 py-3.5 flex justify-between items-center shrink-0">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">✏️</span>
+                            <h3 className="text-xs font-black uppercase tracking-wider">
+                                Dispatch RFQ Email ({activeAccount?.email || selectedAccountEmail})
+                            </h3>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-2 py-0.5 rounded border border-emerald-500/30">Cnergy Webmail Dispatcher</span>
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleSendEmail} className="p-4 sm:p-5 space-y-3.5 flex-1 flex flex-col overflow-y-auto">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">To</label>
+                                <input
+                                    type="email"
+                                    required
+                                    value={composeForm.to}
+                                    onChange={(e) => setComposeForm({ ...composeForm, to: e.target.value })}
+                                    placeholder="recipient@example.com"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">CC (Optional)</label>
+                                <input
+                                    type="text"
+                                    value={composeForm.cc}
+                                    onChange={(e) => setComposeForm({ ...composeForm, cc: e.target.value })}
+                                    placeholder="cc@example.com"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Subject</label>
+                            <input
+                                type="text"
+                                required
+                                value={composeForm.subject}
+                                onChange={(e) => setComposeForm({ ...composeForm, subject: e.target.value })}
+                                placeholder="Enter subject line..."
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
+                            />
+                        </div>
+
+                        <div className="flex-1 flex flex-col min-h-[160px]">
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Message Body</label>
+                            <textarea
+                                rows={8}
+                                required
+                                value={composeForm.body}
+                                onChange={(e) => setComposeForm({ ...composeForm, body: e.target.value })}
+                                placeholder="Type your message here..."
+                                className="w-full flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45] resize-none"
+                            />
+                        </div>
+
+                        {/* Auto Appended Corporate Signature Banner */}
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1 shrink-0">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Corporate Email Signature (Auto-Appended)</span>
+                                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">✓ Verified Branding</span>
+                            </div>
+                            <div className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-center">
+                                <img
+                                    src={CNERGY_EMAIL_SIGNATURE_URL}
+                                    alt="Datlion Cnergy Email Signature"
+                                    className="max-h-16 max-w-full object-contain rounded"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Attachment Upload */}
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-base">📎</span>
+                                {composeForm.attachmentName ? (
+                                    <span className="text-xs font-bold text-slate-800 truncate max-w-xs">{composeForm.attachmentName}</span>
+                                ) : (
+                                    <span className="text-xs text-slate-400 font-medium">Attach PDF or document</span>
+                                )}
+                            </div>
+                            <label className="cursor-pointer px-3 py-1 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-lg border border-slate-300">
+                                <span>Browse</span>
+                                <input type="file" onChange={handleFileChange} className="hidden" />
+                            </label>
+                        </div>
+
+                        {/* Form Buttons */}
+                        <div className="flex justify-end items-center gap-2 pt-2 border-t border-slate-100 shrink-0">
+                            <button
+                                type="submit"
+                                disabled={isSending}
+                                className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-[#8EBF45] to-[#658C3E] text-slate-950 text-xs font-black rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                <span>{isSending ? 'Sending...' : '🚀 Send Email Now'}</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-7xl mx-auto space-y-4">
             {/* TOP BAR & ACCOUNT SWITCHER */}

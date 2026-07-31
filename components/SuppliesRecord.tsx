@@ -169,6 +169,68 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     });
   };
 
+  // Helper to resolve supplier particulars on-demand from record or companyProfiles
+  const getResolvedSupplierInfo = useCallback((record: SupplyRecord) => {
+    let email = record.contact_email || '';
+    let phone = record.contact_number || '';
+    let website = record.website_url || '';
+    let contactName = record.contact_name || '';
+
+    // If any field is missing, search companyProfiles on-demand
+    if (!email || !phone || !website || !contactName) {
+      const targetName = (record.supplier_id || record.from_company || record.item_name || '').toLowerCase().trim();
+      const profile = companyProfiles.find(cp => 
+        (cp.name && cp.name.toLowerCase().trim() === targetName) ||
+        (cp.name && targetName.includes(cp.name.toLowerCase().trim())) ||
+        (cp.name && cp.name.toLowerCase().trim().includes(targetName))
+      );
+
+      if (profile) {
+        if (!email && profile.email) email = profile.email;
+        if (!phone && profile.phoneNumber) phone = profile.phoneNumber;
+        if (!contactName && profile.contactPerson) contactName = profile.contactPerson;
+        if (!website && (profile as any).website) website = (profile as any).website;
+      }
+    }
+
+    return { email, phone, website, contactName };
+  }, [companyProfiles]);
+
+  // Handle click on specific action button with on-demand particulars fetching
+  const handleActionClick = useCallback((record: SupplyRecord, action: 'website' | 'whatsapp' | 'webmail' | 'ai_rfq') => {
+    const info = getResolvedSupplierInfo(record);
+
+    if (action === 'website') {
+      let targetUrl = info.website;
+      if (targetUrl) {
+        if (!targetUrl.startsWith('http')) targetUrl = `https://${targetUrl}`;
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        const queryName = record.from_company || record.supplier_id || record.item_name;
+        const query = encodeURIComponent(`${queryName} supplier catalog`);
+        window.open(`https://www.google.com/search?q=${query}`, '_blank', 'noopener,noreferrer');
+      }
+    } else if (action === 'whatsapp') {
+      const phone = info.phone;
+      const text = record.rfq_text || `Hello ${info.contactName || record.from_company || ''}, inquiring about ${record.item_name} quotation from Datlion Cnergy.`;
+      if (phone) {
+        window.open(`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+      } else {
+        const input = prompt(`No WhatsApp phone number found for ${record.from_company || record.item_name}.\nPlease enter contact phone number (e.g. +919876543210):`);
+        if (input && input.trim()) {
+          window.open(`https://wa.me/${input.trim().replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+        }
+      }
+    } else if (action === 'webmail') {
+      const toEmail = info.email;
+      const subject = `RFQ: ${record.item_name} - Datlion Cnergy`;
+      const body = record.rfq_text || `Dear ${info.contactName || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`;
+      handleOpenWebmailIframe(toEmail, subject, body);
+    } else if (action === 'ai_rfq') {
+      handleGenerateAI_RFQ(record);
+    }
+  }, [getResolvedSupplierInfo, handleOpenWebmailIframe]);
+
   // File Ref for CSV Import
   const csvFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1392,62 +1454,41 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                         </div>
                       </td>
 
-                      {/* Actions & Communication Triggers */}
+                      {/* Actions & Communication Triggers (Always Visible - On-Demand Particulars Fetching) */}
                       <td className="px-4 py-3.5">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {/* 🔗 Buying URL */}
-                          {record.website_url ? (
-                            <a
-                              href={record.website_url.startsWith('http') ? record.website_url : `https://${record.website_url}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-300 flex items-center gap-1 transition-all"
-                              title="Open Supplier Buying URL / Store Catalog"
-                            >
-                              <span>🔗 Website</span>
-                            </a>
-                          ) : (
-                            <span className="text-[10px] text-slate-300 italic">No URL</span>
-                          )}
-
-                          {/* 💬 WhatsApp Trigger */}
-                          {record.contact_number ? (
-                            <a
-                              href={getWhatsAppLink(record.contact_number, record.rfq_text || `Hello ${record.contact_name || ''}, inquiring about ${record.item_name} from Datlion Cnergy.`)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all"
-                              title="Send direct WhatsApp message to supplier contact"
-                            >
-                              <span>💬 WhatsApp</span>
-                            </a>
-                          ) : null}
-
-                          {/* ✉️ Direct Webmail Trigger */}
-                          {record.contact_email ? (
-                            <button
-                              onClick={() => handleOpenWebmailIframe(record.contact_email || '', `RFQ: ${record.item_name} Quotation Inquiry`, record.rfq_text || `Dear ${record.contact_name || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`)}
-                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all"
-                              title="Send direct email via internal Webmail dispatcher iframe"
-                            >
-                              <span>✉️ Direct Mail</span>
-                            </button>
-                          ) : null}
-
-                          {/* 📧 Cnergy Webmail RFQ */}
+                          {/* 🔗 Website */}
                           <button
-                            onClick={() => handleOpenWebmailIframe(record.contact_email || '', `RFQ: ${record.item_name} - Datlion Cnergy`, record.rfq_text || `Dear ${record.contact_name || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`)}
-                            className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all"
-                            title="Open Internal Webmail Dispatcher"
+                            onClick={() => handleActionClick(record, 'website')}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold rounded-lg border border-slate-300 flex items-center gap-1 transition-all"
+                            title="Open Supplier Buying URL / Store Catalog (Fetches particulars on-demand)"
                           >
-                            <span>📧 Webmail</span>
+                            <span>🔗 Website</span>
+                          </button>
+
+                          {/* 💬 WhatsApp */}
+                          <button
+                            onClick={() => handleActionClick(record, 'whatsapp')}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-2xs transition-all"
+                            title="Send direct WhatsApp message to supplier (Fetches phone number on-demand)"
+                          >
+                            <span>💬 WhatsApp</span>
+                          </button>
+
+                          {/* 📧 Webmail (Merged Direct Mail & Webmail) */}
+                          <button
+                            onClick={() => handleActionClick(record, 'webmail')}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-2xs transition-all"
+                            title="Open Internal Webmail Dispatcher (Fetches email contact on-demand)"
+                          >
+                            <span>📧 Email</span>
                           </button>
 
                           {/* ⚡ AI RFQ Generator */}
                           <button
-                            onClick={() => handleGenerateAI_RFQ(record)}
+                            onClick={() => handleActionClick(record, 'ai_rfq')}
                             className="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 text-[11px] font-extrabold rounded-lg border border-amber-400/40 flex items-center gap-1 transition-all"
-                            title="Generate AI Request for Quotation text"
+                            title="Generate AI Request for Quotation text on-demand"
                           >
                             <span>⚡ AI RFQ</span>
                           </button>
@@ -1870,29 +1911,31 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       {/* MODAL 5: 📧 INTERNAL WEBMAIL DISPATCHER IFRAME */}
       {webmailIframeModal?.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in">
-          <div className="bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl h-[88vh] flex flex-col overflow-hidden border border-slate-700">
-            <div className="p-3.5 bg-slate-900 text-white border-b border-slate-800 flex justify-between items-center">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 rounded-2xl shadow-2xl w-[96vw] max-w-6xl h-[92vh] flex flex-col overflow-hidden border border-slate-700">
+            <div className="p-3.5 bg-slate-900 text-white border-b border-slate-800 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-xl">📧</span>
                 <div>
-                  <h2 className="text-sm font-black text-slate-100">Datlion Cnergy Internal Webmail Dispatcher</h2>
+                  <h2 className="text-sm font-black text-slate-100">Datlion Cnergy Webmail Dispatcher</h2>
                   <p className="text-[11px] text-slate-400 font-medium">
-                    Review & confirm email before sending directly via configured webmail without leaving Supplies.
+                    Review & confirm RFQ email details before sending directly via configured webmail without leaving Supplies.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setWebmailIframeModal(null)}
                 className="text-slate-400 hover:text-white p-1.5 text-lg font-bold transition-colors"
+                title="Close Dispatcher Modal"
               >
                 ✕
               </button>
             </div>
-            <div className="flex-1 bg-white">
+            <div className="flex-1 bg-white relative overflow-hidden">
               <iframe
                 src={`/?mode=webmail_compose&to=${encodeURIComponent(webmailIframeModal.to)}&subject=${encodeURIComponent(webmailIframeModal.subject)}&body=${encodeURIComponent(webmailIframeModal.body)}`}
                 className="w-full h-full border-none"
+                style={{ width: '100%', height: '100%', border: 'none' }}
                 title="Internal Webmail Dispatcher"
               />
             </div>
