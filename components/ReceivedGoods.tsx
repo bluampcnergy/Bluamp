@@ -580,9 +580,172 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         document.body.removeChild(link);
     };
 
+    // CSV TEMPLATE DOWNLOADER FOR INVENTORY
+    const downloadInventoryCSVTemplate = () => {
+        const csvContent = [
+            'Item Name,Category,Make/Model,Supplier,Quantity,UOM,Damaged Count,Invoice Number,Serials,Low Stock Threshold %,Notes',
+            'LFP 3.2V 100Ah Cell,Cell,EVE LF100,Sunergy Tech,100,qty,0,INV-9901,"SN1001, SN1002, SN1003",20,Batch A grade cells',
+            'Smart BMS 24S 200A,BMS,JK-B2A24S20P,JK Power,50,qty,0,INV-9902,"BMS-01, BMS-02",20,Factory verified',
+            '5kW Solar Inverter,Inverter,Deye 5K,Deye Solar,10,qty,0,INV-9903,"INV-501",15,Heavy duty inverter'
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `inventory_import_template.csv`;
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // CSV PARSER & IMPORT HANDLERS FOR INVENTORY
+    const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        result.push(current.trim());
+        return result;
+    };
+
+    const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const text = event.target?.result as string;
+            if (text) {
+                parseAndImportInventoryCSV(text);
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
+
+    const parseAndImportInventoryCSV = (csvText: string) => {
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length < 2) {
+            alert('CSV file must contain a header row and at least one data row.');
+            return;
+        }
+
+        const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[^a-z0-9% ]/g, ''));
+        
+        const getColIdx = (possibleNames: string[]) => {
+            return headers.findIndex(h => possibleNames.some(p => h.includes(p.toLowerCase())));
+        };
+
+        const idxName = getColIdx(['item name', 'name', 'product name', 'material']);
+        const idxCategory = getColIdx(['category', 'cat', 'type']);
+        const idxMakeModel = getColIdx(['make/model', 'make', 'model']);
+        const idxSupplier = getColIdx(['supplier', 'vendor']);
+        const idxQty = getColIdx(['quantity', 'qty', 'stock']);
+        const idxUom = getColIdx(['uom', 'unit']);
+        const idxDamaged = getColIdx(['damaged count', 'damaged']);
+        const idxInvoice = getColIdx(['invoice number', 'invoice', 'invoice #']);
+        const idxSerials = getColIdx(['serials', 'serial numbers', 'serial']);
+        const idxThreshold = getColIdx(['low stock threshold', 'threshold', 'alert limit', '%']);
+        const idxNotes = getColIdx(['notes', 'comments']);
+
+        if (idxName === -1) {
+            alert('Could not find required "Item Name" column header in CSV file.');
+            return;
+        }
+
+        let initialMap: Record<string, number> = {};
+        try {
+            initialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+        } catch (e) {}
+
+        const newGoods: ReceivedGood[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = parseCSVLine(line);
+            const itemName = cols[idxName] || '';
+            if (!itemName) continue;
+
+            const category = idxCategory !== -1 && cols[idxCategory] ? cols[idxCategory] : 'Other';
+            const makeModel = idxMakeModel !== -1 ? cols[idxMakeModel] : '';
+            const supplier = idxSupplier !== -1 ? cols[idxSupplier] : '';
+            const quantity = idxQty !== -1 ? Math.max(0, parseFloat(cols[idxQty]) || 0) : 0;
+            const uom = idxUom !== -1 && cols[idxUom] ? cols[idxUom].toLowerCase() : 'qty';
+            const damagedCount = idxDamaged !== -1 ? Math.max(0, parseInt(cols[idxDamaged]) || 0) : 0;
+            const invoiceNumber = idxInvoice !== -1 ? cols[idxInvoice] : '';
+            
+            let serials: string[] = [];
+            if (idxSerials !== -1 && cols[idxSerials]) {
+                serials = cols[idxSerials]
+                    .split(/[,;\n]/)
+                    .map(s => s.trim().replace(/^["']|["']$/g, ''))
+                    .filter(s => s.length > 0);
+            }
+
+            const lowStockThresholdPercent = idxThreshold !== -1 ? Math.min(100, Math.max(0, parseFloat(cols[idxThreshold]) || 20)) : 20;
+            const notes = idxNotes !== -1 ? cols[idxNotes] : 'Imported via CSV';
+
+            const id = crypto.randomUUID();
+            
+            const serialIndexMap: Record<string, number> = {};
+            serials.forEach((s, index) => {
+                serialIndexMap[s] = index + 1;
+            });
+
+            initialMap[id] = quantity;
+
+            const newGood: ReceivedGood = {
+                id,
+                name: itemName,
+                category,
+                makeModel,
+                supplier,
+                quantity,
+                initialQuantity: quantity,
+                uom,
+                lowStockThresholdPercent,
+                status: ReceivedGoodStatus.ND,
+                damagedCount,
+                invoiceNumber,
+                serials,
+                serialIndexMap,
+                timestamp: Date.now(),
+                notes
+            };
+
+            newGoods.push(newGood);
+        }
+
+        if (newGoods.length === 0) {
+            alert('No valid inventory item rows were found in the uploaded CSV.');
+            return;
+        }
+
+        try {
+            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(initialMap));
+        } catch (e) {}
+
+        setReceivedGoods(prev => [...newGoods, ...prev]);
+        addLogEntry('Imported Inventory CSV', `Imported ${newGoods.length} raw material items into Inventory Stock.`);
+        alert(`Successfully imported ${newGoods.length} inventory items!`);
+    };
+
     return (
         <div className="max-w-7xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
                 <div>
                     <h1 className="text-3xl font-black text-[#0D0D0D] tracking-tight">Inventory Stock</h1>
                     <p className="text-sm text-[#404040] mt-1 font-medium">Manage raw materials and tracked components.</p>
@@ -592,12 +755,44 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         <PlusIcon /> <span className="ml-2">Register Item</span>
                     </button>
                     <button onClick={() => fileInputRef.current?.click()} className="flex items-center bg-white border-2 border-[#A8BF75] text-[#658C3E] px-4 py-2 rounded-xl hover:bg-[#A8BF75]/10 transition-colors text-xs font-bold uppercase tracking-widest">
-                        <ImportIcon className="mr-2" size={14} /> Import
+                        <ImportIcon className="mr-2" size={14} /> Import CSV
                     </button>
                     <button onClick={handleExportCsv} className="flex items-center bg-white border-2 border-slate-300 text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 transition-colors text-xs font-bold uppercase tracking-widest">
                         <Download size={14} className="mr-2" /> Export CSV
                     </button>
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".csv" />
+                    <input type="file" ref={fileInputRef} onChange={handleCSVFileChange} className="hidden" accept=".csv" />
+                </div>
+            </div>
+
+            {/* CSV HEADER FORMAT NOTE & TEMPLATE DOWNLOAD BAR FOR INVENTORY */}
+            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                    <span className="text-xl">📄</span>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">CSV Header Format Note (Inventory Import):</span>
+                        </div>
+                        <p className="text-[11px] font-mono text-slate-300 mt-0.5 leading-relaxed">
+                            <span className="text-emerald-400 font-bold">Item Name</span>, <span className="text-emerald-400 font-bold">Category</span>, <span className="text-emerald-400 font-bold">Make/Model</span>, <span className="text-emerald-400 font-bold">Supplier</span>, <span className="text-emerald-400 font-bold">Quantity</span>, <span className="text-emerald-400 font-bold">UOM</span>, <span className="text-emerald-400 font-bold">Damaged Count</span>, <span className="text-emerald-400 font-bold">Invoice Number</span>, <span className="text-emerald-400 font-bold">Serials</span>, <span className="text-emerald-400 font-bold">Low Stock Threshold %</span>, <span className="text-emerald-400 font-bold">Notes</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end md:self-auto">
+                    <button
+                        onClick={downloadInventoryCSVTemplate}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1 shadow-2xs whitespace-nowrap"
+                        title="Download Inventory CSV sample file with proper headers"
+                    >
+                        <span>💾 Download Sample CSV Template</span>
+                    </button>
+
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1"
+                    >
+                        <span>📥 Choose CSV File</span>
+                    </button>
                 </div>
             </div>
 
