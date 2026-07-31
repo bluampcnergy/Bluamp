@@ -1,0 +1,40 @@
+name: Daily Supabase Backup
+
+on:
+  schedule:
+    # 05:30 UTC = 11:00 AM IST every day
+    - cron: '30 5 * * *'
+  workflow_dispatch: # Allows manual trigger anytime from GitHub UI
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+
+      - name: Dump Database Schema & Data
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          mkdir -p supabase/metadata
+          supabase link --project-ref bfkxdpripwjxenfvwpfu
+          supabase db dump -f supabase/schema.sql
+          supabase db dump --data-only -f supabase/data.sql
+          supabase db dump --schema storage -f supabase/storage_schema.sql
+          supabase db dump --schema auth -f supabase/auth_schema.sql
+
+      - name: Upload Backup Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-daily-backup-${{ date }}
+          path: supabase/
+          retention-days: 30
