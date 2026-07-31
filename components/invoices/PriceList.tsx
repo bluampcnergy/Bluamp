@@ -116,6 +116,15 @@ const PriceList: React.FC<PriceListProps> = ({ priceList, setPriceList }) => {
         setEditingId(null);
     };
 
+    const downloadPriceListTemplateCSV = () => {
+        const csvContent = "Model Name,HSN Code,Price without GST\nLithium Battery 48V 100Ah,85076000,45000\nSolar Inverter 5kVA,85044090,32000";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'price_list_template.csv';
+        link.click();
+    };
+
     const filtered = priceList.filter(p => p.model_name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.hsn_code || '').toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
@@ -124,34 +133,47 @@ const PriceList: React.FC<PriceListProps> = ({ priceList, setPriceList }) => {
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold text-slate-800">Price List</h2>
-                    <p className="text-slate-500 text-sm">Upload your latest CSV pricelist. These prices auto-fill in Invoice Maker.</p>
+                    <p className="text-slate-500 text-sm">Manage item pricelist and master rates for invoice creation.</p>
                 </div>
                 <div className="flex gap-2 items-center">
                     <span className="text-xs text-slate-400 font-bold">{priceList.length} items</span>
                 </div>
             </div>
 
-            {/* Upload Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Upload CSV Price List</label>
-                        <p className="text-[10px] text-slate-400 mb-3">CSV columns: <strong>Model Name</strong>, <strong>HSN Code</strong>, <strong>Price without GST</strong>. Uploading replaces the entire list.</p>
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            accept=".csv"
-                            onChange={handleCsvUpload}
-                            disabled={isUploading}
-                            className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-[#8EBF45] file:text-[#0D0D0D] hover:file:bg-[#658C3E] hover:file:text-white file:cursor-pointer file:transition-colors"
-                        />
-                    </div>
-                    {isUploading && (
-                        <div className="flex items-center gap-2 text-sm text-indigo-600 font-bold">
-                            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                            Importing...
+            {/* UNIFORM CSV CONTROL BAR */}
+            <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
+                <div className="flex items-start gap-3">
+                    <span className="text-xl">📄</span>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
                         </div>
-                    )}
+                        <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Model Name</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">HSN Code</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Price without GST</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                    <button
+                        onClick={downloadPriceListTemplateCSV}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title="Download sample CSV template with proper headers"
+                    >
+                        <span>💾 Download Template CSV</span>
+                    </button>
+
+                    <button
+                        onClick={() => fileRef.current?.click()}
+                        disabled={isUploading}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5 disabled:opacity-50"
+                        title="Upload CSV pricelist file (replaces current list)"
+                    >
+                        <span>{isUploading ? 'Importing...' : '📥 Import CSV'}</span>
+                    </button>
+                    <input type="file" ref={fileRef} onChange={handleCsvUpload} className="hidden" accept=".csv,text/csv" />
                 </div>
             </div>
 

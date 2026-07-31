@@ -1668,29 +1668,49 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                         <label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={visibleColumns.total} onChange={e => setVisibleColumns({ ...visibleColumns, total: e.target.checked })} /> Total</label>
                                     </div>
                                 )}
-                                <button onClick={() => itemFileInputRef.current?.click()} className="text-xs bg-[#A8BF75]/20 text-[#658C3E] px-3 py-1 rounded-full border border-[#A8BF75]/50 flex items-center gap-1 hover:bg-[#A8BF75]/30 transition-colors font-medium"><ImportIcon size={12} /> Import Table</button>
-                                <button onClick={downloadItemCSVTemplate} className="text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-300 flex items-center gap-1 hover:bg-slate-200 transition-colors font-medium" title="Download sample CSV template for invoice items"><Download size={12} /> Download Template CSV</button>
-                                <input type="file" ref={itemFileInputRef} className="hidden" accept=".csv" onChange={handleItemImport} />
+                                <input type="file" ref={itemFileInputRef} className="hidden" accept=".csv,text/csv" onChange={handleItemImport} />
                             </div>
                             <button onClick={addItem} className="text-xs text-[#658C3E] flex items-center gap-1 font-semibold hover:underline"><Plus size={12} /> Add Line</button>
                         </div>
 
-                        {/* CSV HEADER FORMAT NOTE & TEMPLATE QUICK LINK */}
-                        <div className="mb-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600 no-print flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-slate-800 flex items-center gap-1">
-                                    <FileText size={13} className="text-[#658C3E]" /> CSV Import Headers:
-                                </span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Description</span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">HSN/SAC</span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Quantity</span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Unit Price</span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Discount</span>
-                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Tax Rate %</span>
+                        {/* UNIFORM CSV CONTROL BAR */}
+                        <div className="mb-4 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
+                            <div className="flex items-start gap-3">
+                                <span className="text-xl">📄</span>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
+                                    </div>
+                                    <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Description</span>
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">HSN/SAC</span>
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Quantity</span>
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Unit Price</span>
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Discount</span>
+                                        <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Tax Rate %</span>
+                                    </p>
+                                </div>
                             </div>
-                            <button onClick={downloadItemCSVTemplate} className="text-[11px] text-[#658C3E] hover:underline font-bold flex items-center gap-1 self-start sm:self-auto">
-                                <Download size={11} /> Download Template CSV
-                            </button>
+
+                            <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                                <button
+                                    onClick={downloadItemCSVTemplate}
+                                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                                    title="Download sample CSV template for invoice items"
+                                >
+                                    <Download size={14} />
+                                    <span>Download Template CSV</span>
+                                </button>
+
+                                <button
+                                    onClick={() => itemFileInputRef.current?.click()}
+                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                                    title="Import line items from CSV file"
+                                >
+                                    <ImportIcon size={14} />
+                                    <span>Import CSV</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div className="mb-4">

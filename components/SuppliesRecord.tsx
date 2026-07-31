@@ -873,15 +873,6 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* CSV Import Button */}
-          <button
-            onClick={handleCSVImportClick}
-            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-all border border-emerald-300 flex items-center gap-1.5 shadow-2xs"
-            title="Import procurement items from CSV file"
-          >
-            <span>📥 Import CSV</span>
-          </button>
-
           {/* Sync Inventory Button */}
           <button
             onClick={autoSeedFromInventory}
@@ -921,34 +912,44 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         </div>
       </div>
 
-      {/* CSV HEADER FORMAT NOTE & TEMPLATE DOWNLOAD BAR */}
-      <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+      {/* UNIFORM CSV CONTROL BAR */}
+      <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
         <div className="flex items-start gap-3">
           <span className="text-xl">📄</span>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-amber-400 uppercase tracking-wider">CSV Header Format Note:</span>
+              <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
             </div>
-            <p className="text-[11px] font-mono text-slate-300 mt-0.5 leading-relaxed">
-              <span className="text-emerald-400 font-bold">Product Name</span>, <span className="text-emerald-400 font-bold">Specification</span>, <span className="text-emerald-400 font-bold">Supplier</span>, <span className="text-emerald-400 font-bold">Website</span>, <span className="text-emerald-400 font-bold">Contact Name</span>, <span className="text-emerald-400 font-bold">Contact Number</span>, <span className="text-emerald-400 font-bold">Contact Email</span>, <span className="text-emerald-400 font-bold">Status</span>, <span className="text-emerald-400 font-bold">Target Quantity</span>, <span className="text-emerald-400 font-bold">UOM</span>
+            <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Product Name</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Specification</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Supplier</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Website</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Contact Name</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Contact Number</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Contact Email</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Status</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Target Quantity</span>
+              <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">UOM</span>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end md:self-auto">
+        <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
           <button
             onClick={downloadCSVTemplate}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1 shadow-2xs whitespace-nowrap"
-            title="Download CSV sample file with proper headers"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+            title="Download CSV sample template with proper headers"
           >
-            <span>💾 Download Sample CSV Template</span>
+            <span>💾 Download Template CSV</span>
           </button>
 
           <button
             onClick={handleCSVImportClick}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap"
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+            title="Import procurement items from CSV file"
           >
-            <span>📥 Choose CSV File</span>
+            <span>📥 Import CSV</span>
           </button>
         </div>
       </div>

@@ -627,14 +627,21 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         });
     }, [selectedBatch, testResults]);
 
+    const downloadTestingCSVTemplate = () => {
+        const csvContent = "Serial Number,Voltage,Resistance,Capacity,Grade,Location\nLFP-32700-001,3.28,6.5,6000,Grade A,Rack A-1\nLFP-32700-002,3.27,6.8,5950,Grade A,Rack A-1";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'testing_results_template.csv';
+        link.click();
+    };
+
     return (
         <div>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-800">Testing</h1>
-                    <p className="text-xs text-gray-500 mt-1">
-                        <span className="font-semibold">CSV Headers:</span> "Serial Number", "Voltage", "Resistance", "Capacity"
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Manage and verify cell/component test results.</p>
                 </div>
                 <div className="flex space-x-2">
                     {selectedSerials.size > 0 && (
@@ -646,21 +653,6 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                             <span className="ml-2">Send to Production ({selectedSerials.size})</span>
                         </button>
                     )}
-                    <button
-                        onClick={handleExportClick}
-                        className="flex items-center bg-white border border-[#A8BF75] text-[#658C3E] px-4 py-2 rounded-lg shadow-sm hover:bg-[#A8BF75]/10 transition-colors font-bold uppercase tracking-wide text-xs"
-                        title={selectedBatch ? `Export results for ${selectedBatch.name}` : "Export all test results"}
-                    >
-                        <Download size={16} />
-                        <span className="ml-2">Export CSV</span>
-                    </button>
-                    <button
-                        onClick={handleImportClick}
-                        className="flex items-center bg-[#8EBF45] text-[#0D0D0D] px-4 py-2 rounded-lg shadow-md hover:bg-[#658C3E] hover:text-white transition-colors font-bold uppercase tracking-wide text-xs"
-                    >
-                        <ImportIcon />
-                        <span className="ml-2">Import Results CSV</span>
-                    </button>
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -668,6 +660,52 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                         className="hidden"
                         accept=".csv,text/csv"
                     />
+                </div>
+            </div>
+
+            {/* UNIFORM CSV CONTROL BAR */}
+            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
+                <div className="flex items-start gap-3">
+                    <span className="text-xl">📄</span>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
+                        </div>
+                        <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Serial Number</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Voltage</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Resistance</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Capacity</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                    <button
+                        onClick={handleExportClick}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title={selectedBatch ? `Export results for ${selectedBatch.name}` : "Export all test results"}
+                    >
+                        <Download size={14} />
+                        <span>Export CSV</span>
+                    </button>
+
+                    <button
+                        onClick={downloadTestingCSVTemplate}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title="Download sample CSV template with proper headers"
+                    >
+                        <span>💾 Download Template CSV</span>
+                    </button>
+
+                    <button
+                        onClick={handleImportClick}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                        title="Import test results from CSV file"
+                    >
+                        <ImportIcon size={14} />
+                        <span>Import CSV</span>
+                    </button>
                 </div>
             </div>
 

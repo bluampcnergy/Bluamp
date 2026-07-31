@@ -754,44 +754,58 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     <button onClick={handleCreateNew} className="flex items-center bg-[#8EBF45] text-[#0D0D0D] px-6 py-2.5 rounded-xl shadow-lg hover:bg-[#658C3E] hover:text-white transition-all transform active:scale-95 font-bold uppercase tracking-widest text-xs">
                         <PlusIcon /> <span className="ml-2">Register Item</span>
                     </button>
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center bg-white border-2 border-[#A8BF75] text-[#658C3E] px-4 py-2 rounded-xl hover:bg-[#A8BF75]/10 transition-colors text-xs font-bold uppercase tracking-widest">
-                        <ImportIcon className="mr-2" size={14} /> Import CSV
-                    </button>
-                    <button onClick={handleExportCsv} className="flex items-center bg-white border-2 border-slate-300 text-slate-600 px-4 py-2 rounded-xl hover:bg-slate-50 transition-colors text-xs font-bold uppercase tracking-widest">
-                        <Download size={14} className="mr-2" /> Export CSV
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleCSVFileChange} className="hidden" accept=".csv" />
+                    <input type="file" ref={fileInputRef} onChange={handleCSVFileChange} className="hidden" accept=".csv,text/csv" />
                 </div>
             </div>
 
-            {/* CSV HEADER FORMAT NOTE & TEMPLATE DOWNLOAD BAR FOR INVENTORY */}
-            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm">
+            {/* UNIFORM CSV CONTROL BAR */}
+            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
                 <div className="flex items-start gap-3">
                     <span className="text-xl">📄</span>
                     <div>
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">CSV Header Format Note (Inventory Import):</span>
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
                         </div>
-                        <p className="text-[11px] font-mono text-slate-300 mt-0.5 leading-relaxed">
-                            <span className="text-emerald-400 font-bold">Item Name</span>, <span className="text-emerald-400 font-bold">Category</span>, <span className="text-emerald-400 font-bold">Make/Model</span>, <span className="text-emerald-400 font-bold">Supplier</span>, <span className="text-emerald-400 font-bold">Quantity</span>, <span className="text-emerald-400 font-bold">UOM</span>, <span className="text-emerald-400 font-bold">Damaged Count</span>, <span className="text-emerald-400 font-bold">Invoice Number</span>, <span className="text-emerald-400 font-bold">Serials</span>, <span className="text-emerald-400 font-bold">Low Stock Threshold %</span>, <span className="text-emerald-400 font-bold">Notes</span>
+                        <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Item Name</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Category</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Make/Model</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Supplier</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Quantity</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">UOM</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Damaged Count</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Invoice Number</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Serials</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Low Stock Threshold %</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Notes</span>
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end md:self-auto">
+                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                    <button
+                        onClick={handleExportCsv}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title="Export current inventory list as CSV"
+                    >
+                        <Download size={14} />
+                        <span>Export CSV</span>
+                    </button>
+
                     <button
                         onClick={downloadInventoryCSVTemplate}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1 shadow-2xs whitespace-nowrap"
-                        title="Download Inventory CSV sample file with proper headers"
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title="Download sample CSV template with proper headers"
                     >
-                        <span>💾 Download Sample CSV Template</span>
+                        <span>💾 Download Template CSV</span>
                     </button>
 
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1"
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                        title="Import inventory stock from CSV file"
                     >
-                        <span>📥 Choose CSV File</span>
+                        <span>📥 Import CSV</span>
                     </button>
                 </div>
             </div>

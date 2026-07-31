@@ -5,6 +5,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { PencilIcon } from './icons/PencilIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { ImportIcon } from './icons/ImportIcon';
+import { Download } from 'lucide-react';
 import Modal from './Modal';
 
 interface CompanyProfilesProps {
@@ -29,6 +30,15 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({ companyProfiles, setC
     const [formData, setFormData] = useState(initialFormState);
     const [searchTerm, setSearchTerm] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const downloadCompanyProfilesTemplateCSV = () => {
+        const csvContent = "Company Name,GST Number,Email,Contact Person,Phone Number,Shipping Address\nAcme Solar Ltd,27AAACA0000A1Z5,contact@acmesolar.com,John Doe,9876543210,\"123 Industrial Area, Pune, Maharashtra 411001\"";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'company_profiles_template.csv';
+        link.click();
+    };
 
     const handleOpenAdd = () => {
         setEditingId(null);
@@ -199,18 +209,9 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({ companyProfiles, setC
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-800">Company Profiles</h1>
-                    <p className="text-xs text-gray-500 mt-1">
-                        <span className="font-semibold">CSV Columns (in order):</span> Company Name, GST Number, Email, Contact Person, Phone Number, Shipping Address
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Manage client and vendor profile directories.</p>
                 </div>
                 <div className="flex space-x-2">
-                    <button 
-                        onClick={handleImportClick}
-                        className="flex items-center bg-white border-2 border-[#A8BF75] text-[#658C3E] px-4 py-2 rounded-lg shadow-md hover:bg-[#A8BF75]/10 transition-colors font-bold uppercase tracking-wide text-xs"
-                    >
-                        <ImportIcon />
-                        <span className="ml-2">Import CSV</span>
-                    </button>
                     <button 
                         onClick={handleOpenAdd}
                         className="flex items-center bg-[#8EBF45] text-[#0D0D0D] px-4 py-2 rounded-lg shadow-md hover:bg-[#658C3E] hover:text-white transition-colors font-bold uppercase tracking-wide text-xs"
@@ -218,14 +219,53 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({ companyProfiles, setC
                         <PlusIcon />
                         <span className="ml-2">Add Company</span>
                     </button>
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleFileChange} 
+                        className="hidden" 
+                        accept=".csv,text/csv"
+                    />
                 </div>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                    accept=".csv,text/csv"
-                />
+            </div>
+
+            {/* UNIFORM CSV CONTROL BAR */}
+            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
+                <div className="flex items-start gap-3">
+                    <span className="text-xl">📄</span>
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
+                        </div>
+                        <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Company Name</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">GST Number</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Email</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Contact Person</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Phone Number</span>
+                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Shipping Address</span>
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                    <button
+                        onClick={downloadCompanyProfilesTemplateCSV}
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        title="Download sample CSV template with proper headers"
+                    >
+                        <span>💾 Download Template CSV</span>
+                    </button>
+
+                    <button
+                        onClick={handleImportClick}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                        title="Import company profiles from CSV file"
+                    >
+                        <ImportIcon size={14} />
+                        <span>Import CSV</span>
+                    </button>
+                </div>
             </div>
 
             <div className="mb-6">
