@@ -4,7 +4,7 @@ import { supabase } from '../../supabaseClient';
 import { ExtractedInvoice, InvoiceTemplate, EMPTY_INVOICE, InvoiceItem, CompanyProfile, BankDetails, PriceListItem, FinishedGood, Recipe } from '../../types';
 import { recalculateInvoiceTotals, safeRender, amountToWords, getTaxMode, getCurrencySymbol } from '../../utils/invoiceUtils';
 import { generateUnitIds } from '../../utils';
-import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, RefreshCw, ChevronUp, ChevronDown, Loader2, LayoutDashboard } from './Icons';
+import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, RefreshCw, ChevronUp, ChevronDown, Loader2, LayoutDashboard, FileText } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
 import { ImportIcon } from '../icons/ImportIcon';
 import AiChatPanel from './AiChatPanel';
@@ -745,6 +745,24 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...recalculateInvoiceTotals(newItems) } }));
     };
 
+    const downloadItemCSVTemplate = () => {
+        const csvContent = [
+            'Description,HSN/SAC,Quantity,Unit Price,Discount,Tax Rate %',
+            'Solar Inverter 5kVA,85044090,2,35000,500,18',
+            'LiFePO4 Battery Pack 48V,85076000,1,68000,0,18',
+            'Solar Cable 6sqmm (100m Roll),85444990,3,4500,100,18'
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'invoice_items_template.csv';
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const handleItemImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -754,33 +772,82 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             const text = event.target?.result;
             if (typeof text === 'string') {
                 const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
-                if (lines.length < 2) return;
+                if (lines.length < 2) {
+                    alert('CSV file must contain a header row and at least one item data row.');
+                    return;
+                }
+
+                // Check for dynamic headers
+                const headerLine = lines[0].toLowerCase();
+                const headers = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+                
+                const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('item') || h.includes('name') || h.includes('product') || h.includes('model'));
+                const hsnIdx = headers.findIndex(h => h.includes('hsn') || h.includes('sac') || h.includes('code'));
+                const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('count'));
+                const rateIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('unit') || h.includes('amount'));
+                const discIdx = headers.findIndex(h => h.includes('disc'));
+                const taxIdx = headers.findIndex(h => h.includes('tax') || h.includes('gst') || h.includes('rate %') || h.includes('igst'));
 
                 const newItems: InvoiceItem[] = [];
-                lines.slice(1).forEach(line => {
-                    const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-                    if (cols.length >= 4) {
-                        const quantity = parseFloat(cols[2]) || 0;
-                        const unit_price = parseFloat(cols[3]) || 0;
-                        const igst_rate = cols[4] ? parseFloat(cols[4]) : 18;
-                        const taxable_value = quantity * unit_price;
-                        const igst_amount = taxable_value * (igst_rate / 100);
+                const taxMode = getTaxMode(doc.issuer_details.gstin, doc.receiver_details.gstin, doc.invoice_metadata.tax_mode);
 
-                        newItems.push({
-                            description: cols[0],
-                            hsn_sac: cols[1],
-                            quantity,
-                            unit_price,
-                            taxable_value,
-                            cgst_rate: 0,
-                            cgst_amount: 0,
-                            sgst_rate: 0,
-                            sgst_amount: 0,
-                            igst_rate,
-                            igst_amount,
-                            total_value: taxable_value + igst_amount
-                        });
+                lines.slice(1).forEach(line => {
+                    const cols: string[] = [];
+                    let cur = '';
+                    let inQuotes = false;
+                    for (let c = 0; c < line.length; c++) {
+                        const char = line[c];
+                        if (char === '"') inQuotes = !inQuotes;
+                        else if (char === ',' && !inQuotes) {
+                            cols.push(cur.trim().replace(/^"|"$/g, ''));
+                            cur = '';
+                        } else cur += char;
                     }
+                    cols.push(cur.trim().replace(/^"|"$/g, ''));
+
+                    const desc = descIdx !== -1 ? cols[descIdx] : cols[0];
+                    if (!desc) return;
+
+                    const hsn = hsnIdx !== -1 ? (cols[hsnIdx] || '') : (cols[1] || '');
+                    const quantity = qtyIdx !== -1 ? (parseFloat(cols[qtyIdx]) || 1) : (parseFloat(cols[2]) || 1);
+                    const unit_price = rateIdx !== -1 ? (parseFloat(cols[rateIdx]) || 0) : (parseFloat(cols[3]) || 0);
+                    const discount = discIdx !== -1 ? (parseFloat(cols[discIdx]) || 0) : 0;
+                    const igst_rate = taxIdx !== -1 ? (parseFloat(cols[taxIdx]) || 18) : (cols[4] ? parseFloat(cols[4]) : 18);
+
+                    const taxable_value = Math.max(0, (quantity * unit_price) - discount);
+                    let cgst_rate = 0;
+                    let cgst_amount = 0;
+                    let sgst_rate = 0;
+                    let sgst_amount = 0;
+                    let igst_amount = 0;
+
+                    if (taxMode === 'intra') {
+                        const halfRate = igst_rate / 2;
+                        cgst_rate = halfRate;
+                        cgst_amount = taxable_value * (halfRate / 100);
+                        sgst_rate = halfRate;
+                        sgst_amount = taxable_value * (halfRate / 100);
+                    } else {
+                        igst_amount = taxable_value * (igst_rate / 100);
+                    }
+
+                    const total_value = taxable_value + cgst_amount + sgst_amount + igst_amount;
+
+                    newItems.push({
+                        description: desc,
+                        hsn_sac: hsn,
+                        quantity,
+                        unit_price,
+                        discount,
+                        taxable_value,
+                        cgst_rate,
+                        cgst_amount,
+                        sgst_rate,
+                        sgst_amount,
+                        igst_rate,
+                        igst_amount,
+                        total_value
+                    });
                 });
 
                 if (newItems.length > 0) {
@@ -792,6 +859,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             totals: { ...prev.totals, ...recalculateInvoiceTotals(updatedItems) }
                         };
                     });
+                    if (addLogEntry) addLogEntry('Imported Table Items', `Imported ${newItems.length} items into invoice via CSV.`);
+                    alert(`✅ Successfully imported ${newItems.length} line items!`);
+                } else {
+                    alert('No valid items were parsed from the CSV file.');
                 }
             }
         };
@@ -1581,9 +1652,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             </div>
                         </div>
 
-                        <div className="flex justify-between items-center mb-2 no-print">
-                            <div className="flex gap-2">
-                                <button onClick={() => setShowColumnMenu(!showColumnMenu)} className="text-xs bg-slate-100 px-3 py-1 rounded-full text-slate-600 border border-slate-200"><Columns size={12} /> Columns</button>
+                        <div className="flex flex-wrap justify-between items-center mb-2 no-print gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <button onClick={() => setShowColumnMenu(!showColumnMenu)} className="text-xs bg-slate-100 px-3 py-1 rounded-full text-slate-600 border border-slate-200 hover:bg-slate-200 transition-colors flex items-center gap-1"><Columns size={12} /> Columns</button>
                                 {showColumnMenu && (
                                     <div className="absolute top-64 left-16 bg-white shadow-xl border rounded p-3 w-48 z-20 grid grid-cols-2 gap-2">
                                         <label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={visibleColumns.index} onChange={e => setVisibleColumns({ ...visibleColumns, index: e.target.checked })} /> No #</label>
@@ -1597,10 +1668,29 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                         <label className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={visibleColumns.total} onChange={e => setVisibleColumns({ ...visibleColumns, total: e.target.checked })} /> Total</label>
                                     </div>
                                 )}
-                                <button onClick={() => itemFileInputRef.current?.click()} className="text-xs bg-[#A8BF75]/20 text-[#658C3E] px-3 py-1 rounded-full border border-[#A8BF75]/50 flex items-center gap-1 hover:bg-[#A8BF75]/30"><ImportIcon size={12} /> Import Table</button>
+                                <button onClick={() => itemFileInputRef.current?.click()} className="text-xs bg-[#A8BF75]/20 text-[#658C3E] px-3 py-1 rounded-full border border-[#A8BF75]/50 flex items-center gap-1 hover:bg-[#A8BF75]/30 transition-colors font-medium"><ImportIcon size={12} /> Import Table</button>
+                                <button onClick={downloadItemCSVTemplate} className="text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-300 flex items-center gap-1 hover:bg-slate-200 transition-colors font-medium" title="Download sample CSV template for invoice items"><Download size={12} /> Download Template CSV</button>
                                 <input type="file" ref={itemFileInputRef} className="hidden" accept=".csv" onChange={handleItemImport} />
                             </div>
-                            <button onClick={addItem} className="text-xs text-[#658C3E] flex items-center gap-1"><Plus size={12} /> Add Line</button>
+                            <button onClick={addItem} className="text-xs text-[#658C3E] flex items-center gap-1 font-semibold hover:underline"><Plus size={12} /> Add Line</button>
+                        </div>
+
+                        {/* CSV HEADER FORMAT NOTE & TEMPLATE QUICK LINK */}
+                        <div className="mb-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600 no-print flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-800 flex items-center gap-1">
+                                    <FileText size={13} className="text-[#658C3E]" /> CSV Import Headers:
+                                </span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Description</span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">HSN/SAC</span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Quantity</span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Unit Price</span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Discount</span>
+                                <span className="bg-white border border-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-mono text-[11px]">Tax Rate %</span>
+                            </div>
+                            <button onClick={downloadItemCSVTemplate} className="text-[11px] text-[#658C3E] hover:underline font-bold flex items-center gap-1 self-start sm:self-auto">
+                                <Download size={11} /> Download Template CSV
+                            </button>
                         </div>
 
                         <div className="mb-4">
