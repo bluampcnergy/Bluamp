@@ -295,7 +295,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         try {
             let query = supabase
                 .from('invoices')
-                .select('*')
+                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, totals, filename, created_at, line_items, is_locked')
                 .eq('requires_review', false)
                 .order('created_at', { ascending: false });
 

@@ -556,7 +556,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         // Using client-side filter of recent documents to avoid PostgREST JSON .or() operator limitations
         const { data, error } = await supabase
             .from('invoices')
-            .select('*')
+            .select('id, invoice_metadata, receiver_details, issuer_details, totals, document_type, source_type, filename, created_at, line_items')
             .order('created_at', { ascending: false })
             .limit(50);
         
@@ -1039,10 +1039,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 .select('invoice_metadata')
                 .ilike('invoice_metadata->>invoice_number', `${newPrefix}%`);
 
-            // Retry once if query fails (stale session)
-            if (queryError && _retryCount < 1) {
-                console.warn('[generateInvoiceNumber] Query failed, retrying...', queryError.message);
-                await new Promise(r => setTimeout(r, 500));
+            // Retry up to 3 times if query fails or returns empty during cold auth initialization
+            if ((queryError || (!data || data.length === 0)) && _retryCount < 3) {
+                const backoff = (_retryCount + 1) * 400;
+                await new Promise(r => setTimeout(r, backoff));
                 return generateInvoiceNumber(overrideDocType, overrideOtherParty, _retryCount + 1);
             }
 
@@ -1090,10 +1090,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             .select('invoice_metadata')
             .ilike('invoice_metadata->>invoice_number', `${fyPrefix}%`);
 
-        // Retry once if query fails (stale session)
-        if (queryErrorOld && _retryCount < 1) {
-            console.warn('[generateInvoiceNumber] Old path query failed, retrying...', queryErrorOld.message);
-            await new Promise(r => setTimeout(r, 500));
+        // Retry up to 3 times if query fails or returns empty during cold auth initialization
+        if ((queryErrorOld || (!data || data.length === 0)) && _retryCount < 3) {
+            const backoff = (_retryCount + 1) * 400;
+            await new Promise(r => setTimeout(r, backoff));
             return generateInvoiceNumber(overrideDocType, overrideOtherParty, _retryCount + 1);
         }
 

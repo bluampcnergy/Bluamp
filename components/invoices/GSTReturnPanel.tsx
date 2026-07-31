@@ -72,10 +72,11 @@ const GSTReturnPanel: React.FC = () => {
 
             const { data, error } = await supabase
                 .from('invoices')
-                .select('*')
+                .select('id, source_type, invoice_metadata, totals, receiver_details, issuer_details, document_type, filename, created_at')
                 .in('document_type', ['invoice', 'generated_invoice', 'receipt']) // Including receipts based on existing schema
                 .gte('invoice_metadata->>invoice_date', startDate)
-                .lte('invoice_metadata->>invoice_date', endDate);
+                .lte('invoice_metadata->>invoice_date', endDate)
+                .limit(500);
 
             if (error) throw error;
             

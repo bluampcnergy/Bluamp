@@ -75,23 +75,33 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
             const todayStr = new Date().toISOString().split('T')[0];
             const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
-            // Invoices
-            const { data: allInv } = await supabase.from('invoices').select('id, created_at, totals, document_type, invoice_metadata, receiver_details, issuer_details').order('created_at', { ascending: false }).limit(500);
-            if (allInv) {
-                const today = allInv.filter((i: any) => i.created_at?.startsWith(todayStr));
-                const week = allInv.filter((i: any) => i.created_at && i.created_at >= weekAgoStr);
-                const totalVal = allInv.reduce((s: number, i: any) => s + (i.totals?.grand_total || 0), 0);
+            // Invoices: Get total count via head query, fetch recent 50 for stats & recent list
+            const { count: totalInvCount } = await supabase.from('invoices').select('id', { count: 'exact', head: true });
+            const { data: recentInv } = await supabase.from('invoices')
+                .select('id, created_at, totals, document_type, invoice_metadata, receiver_details, issuer_details')
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (recentInv) {
+                const today = recentInv.filter((i: any) => i.created_at?.startsWith(todayStr));
+                const week = recentInv.filter((i: any) => i.created_at && i.created_at >= weekAgoStr);
+                const totalVal = recentInv.reduce((s: number, i: any) => s + (i.totals?.grand_total || 0), 0);
                 const todayVal = today.reduce((s: number, i: any) => s + (i.totals?.grand_total || 0), 0);
-                setInvoiceStats({ total: allInv.length, today: today.length, thisWeek: week.length, totalValue: totalVal, todayValue: todayVal });
-                setRecentInvoices(allInv.slice(0, 5) as ExtractedInvoice[]);
+                setInvoiceStats({ total: totalInvCount || recentInv.length, today: today.length, thisWeek: week.length, totalValue: totalVal, todayValue: todayVal });
+                setRecentInvoices(recentInv.slice(0, 5) as ExtractedInvoice[]);
             }
 
-            // Expenses
-            const { data: allExp } = await supabase.from('expenses').select('id, date, amount, type').order('date', { ascending: false }).limit(500);
-            if (allExp) {
-                const todayExp = allExp.filter((e: any) => e.date === todayStr);
+            // Expenses: Get total count via head query, fetch recent 50
+            const { count: totalExpCount } = await supabase.from('expenses').select('id', { count: 'exact', head: true });
+            const { data: recentExp } = await supabase.from('expenses')
+                .select('id, date, amount, type')
+                .order('date', { ascending: false })
+                .limit(50);
+
+            if (recentExp) {
+                const todayExp = recentExp.filter((e: any) => e.date === todayStr);
                 const todayAmt = todayExp.reduce((s: number, e: any) => s + (e.type === 'debit' ? (e.amount || 0) : 0), 0);
-                setExpenseStats({ total: allExp.length, today: todayExp.length, todayAmount: todayAmt });
+                setExpenseStats({ total: totalExpCount || recentExp.length, today: todayExp.length, todayAmount: todayAmt });
             }
         };
         fetch();

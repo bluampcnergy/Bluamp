@@ -97,14 +97,23 @@ const App: React.FC = () => {
   const [users, setUsers] = useSupabase<User>('app_users', [], 'username');
   const [currentUser, setCurrentUser] = useLocalStorage<User | null>('currentUser', null);
 
+  // Track visited views to keep lazy-loaded tables active once fetched
+  const [visitedViews, setVisitedViews] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (view && !visitedViews[view]) {
+      setVisitedViews(prev => ({ ...prev, [view]: true }));
+    }
+  }, [view, visitedViews]);
+
   // App data state - synchronized with Supabase
   const [receivedGoods, setReceivedGoods] = useSupabase<ReceivedGood>('received_goods', DUMMY_RECEIVED_GOODS);
   const [recipes, setRecipes] = useSupabase<Recipe>('recipes', DUMMY_RECIPES);
   const [wipItems, setWipItems] = useSupabase<WIPItem>('wip_items', DUMMY_WIP_ITEMS);
   const [finishedGoods, setFinishedGoods] = useSupabase<FinishedGood>('finished_goods', DUMMY_FINISHED_GOODS);
-  const [repairItems, setRepairItems] = useSupabase<RepairItem>('repair_items', []);
-  const [testResults, setTestResults] = useSupabase<TestResult>('test_results', []);
-  const [logs, setLogs] = useSupabase<LogEntry>('logs', []);
+  const [repairItems, setRepairItems] = useSupabase<RepairItem>('repair_items', [], 'id', view === 'finished' || Boolean(visitedViews['finished']));
+  const [testResults, setTestResults] = useSupabase<TestResult>('test_results', [], 'id', view === 'testing' || Boolean(visitedViews['testing']));
+  const [logs, setLogs] = useSupabase<LogEntry>('logs', [], 'id', view === 'log' || Boolean(visitedViews['log']));
   const [companyProfiles, setCompanyProfiles] = useSupabase<CompanyProfile>('company_profiles', DUMMY_COMPANY_PROFILES);
   const [employeeTasks, setEmployeeTasks] = useSupabase<EmployeeTask>('employee_tasks', DUMMY_EMPLOYEE_TASKS);
 
@@ -115,11 +124,12 @@ const App: React.FC = () => {
     }
   }, [employeeTasks, setEmployeeTasks]);
   
-  // Storage Management State (New)
-  const [rooms, setRooms] = useSupabase<StorageRoom>('storage_rooms', []);
-  const [storageUnits, setStorageUnits] = useSupabase<StorageUnit>('storage_units', []);
-  const [storageItems, setStorageItems] = useSupabase<StorageItem>('storage_items', []);
-  const [suppliesRecords, setSuppliesRecords] = useSupabase<SupplyRecord>('supplies_records', []);
+  // Storage Management State (Lazy loaded)
+  const isStorageActive = view === 'storage' || Boolean(visitedViews['storage']);
+  const [rooms, setRooms] = useSupabase<StorageRoom>('storage_rooms', [], 'id', isStorageActive);
+  const [storageUnits, setStorageUnits] = useSupabase<StorageUnit>('storage_units', [], 'id', isStorageActive);
+  const [storageItems, setStorageItems] = useSupabase<StorageItem>('storage_items', [], 'id', isStorageActive);
+  const [suppliesRecords, setSuppliesRecords] = useSupabase<SupplyRecord>('supplies_records', [], 'id', view === 'supplies' || Boolean(visitedViews['supplies']));
 
   // State for transferring data from Reports to Invoice Maker
   const [invoiceDraft, setInvoiceDraft] = useState<ExtractedInvoice | null>(null);
@@ -197,20 +207,24 @@ const App: React.FC = () => {
     });
   }, [setUsers, users]); 
 
-  // Seamless migration from localStorage to Supabase Auth (runs max once per session load)
+  // Keep currentUser role in sync with app_users table as soon as users state loads
+  useEffect(() => {
+    if (currentUser && users.length > 0) {
+      const dbUser = users.find(u => u.username === currentUser.username);
+      if (dbUser && dbUser.role && dbUser.role !== currentUser.role) {
+        setCurrentUser(prev => prev ? { ...prev, role: dbUser.role } : null);
+      }
+    }
+  }, [users, currentUser, setCurrentUser]);
+
+  // Seamless migration & session check for Supabase Auth (runs max once per session load)
   const hasMigratedAuthRef = useRef(false);
   useEffect(() => {
     if (hasMigratedAuthRef.current) return;
     const migrateExistingSession = async () => {
-      if (!currentUser || !currentUser.password || currentUser.password === 'migrated_to_supabase') {
-        hasMigratedAuthRef.current = true;
-        return;
-      }
-
       const { data: { session } } = await supabase.auth.getSession();
-      
-      // If user has local storage session but no Supabase session, try to migrate them
-      if (!session) {
+
+      if (!session && currentUser && currentUser.password && currentUser.password !== 'migrated_to_supabase') {
         hasMigratedAuthRef.current = true;
         const { error } = await supabase.auth.signInWithPassword({
           email: currentUser.username,
@@ -232,10 +246,8 @@ const App: React.FC = () => {
         });
         
         if (signInErr) {
-            // Probably email confirmation required. They need to log in manually to see the error.
             setCurrentUser(null);
         } else {
-            // Remove plaintext password from local storage
             setCurrentUser(prev => prev ? { ...prev, password: 'migrated_to_supabase' } : null);
         }
       } else {
@@ -267,14 +279,43 @@ const App: React.FC = () => {
       });
 
       if (!error && data.session) {
-        const userRec = users.find(u => u.username === username);
-        setCurrentUser({ username, role: userRec?.role || 'user', password: 'migrated_to_supabase' });
-        addLogEntry('User Logged In', `User '${username}' logged in via Supabase Auth.`);
+        let role = users.find(u => u.username === username)?.role;
+        if (!role) {
+          try {
+            const { data: dbUser } = await supabase
+              .from('app_users')
+              .select('role')
+              .eq('username', username)
+              .maybeSingle();
+            if (dbUser && dbUser.role) {
+              role = dbUser.role;
+            }
+          } catch (e) {
+            console.warn('Direct app_users role fetch failed:', e);
+          }
+        }
+        if (!role && username.toLowerCase() === 'datlioncnergy@gmail.com') {
+          role = 'admin';
+        }
+        const finalRole = role || 'user';
+        setCurrentUser({ username, role: finalRole, password: 'migrated_to_supabase' });
+        addLogEntry('User Logged In', `User '${username}' (${finalRole}) logged in via Supabase Auth.`);
         return null;
       }
 
       // 2. Fallback: Seamless Migration for Legacy Users
-      const legacyUser = users.find(u => u.username === username);
+      let legacyUser = users.find(u => u.username === username);
+      if (!legacyUser) {
+        try {
+          const { data: dbUser } = await supabase
+            .from('app_users')
+            .select('*')
+            .eq('username', username)
+            .maybeSingle();
+          if (dbUser) legacyUser = dbUser as User;
+        } catch (e) {}
+      }
+
       if (legacyUser && legacyUser.password === password) {
         // Valid legacy credentials, migrate them to Supabase
         const { error: signUpError } = await supabase.auth.signUp({
@@ -295,8 +336,9 @@ const App: React.FC = () => {
             return `Migration started, but login failed: ${signInError.message}. (IMPORTANT: Please go to your Supabase Dashboard -> Authentication -> Providers -> Email, and DISABLE 'Confirm email'. Then try logging in again.)`;
         }
 
-        setCurrentUser({ username, role: legacyUser.role || 'user', password: 'migrated_to_supabase' });
-        addLogEntry('User Migrated', `Legacy user '${username}' seamlessly migrated to Supabase Auth.`);
+        const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+        setCurrentUser({ username, role: finalRole, password: 'migrated_to_supabase' });
+        addLogEntry('User Migrated', `Legacy user '${username}' (${finalRole}) seamlessly migrated to Supabase Auth.`);
         return null;
       }
 

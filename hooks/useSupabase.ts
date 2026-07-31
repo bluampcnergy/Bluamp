@@ -148,13 +148,21 @@ const LARGE_TABLE_ROW_LIMIT: Record<string, number> = {
   supplies_records: 500,
 };
 
+// Field pruning for large table scans
+const TABLE_SELECT_COLUMNS: Record<string, string> = {
+  logs: 'id, action, details, timestamp, user',
+  test_results: 'id, receivedGoodId, serialNumber, testType, pass, voltage, internalResistance, capacityAh, grade, testedBy, timestamp, notes',
+  supplies_records: 'id, name, category, quantity, unit, timestamp, notes, supplier',
+};
+
 // Visibility re-fetch cooldown — prevents tab-switch storms
-const VISIBILITY_COOLDOWN_MS = 60_000; // 60 seconds
+const VISIBILITY_COOLDOWN_MS = 300_000; // 5 minutes
 
 export function useSupabase<T>(
   tableName: string,
   initialValue: T[],
-  idKey: string = 'id'
+  idKey: string = 'id',
+  enabled: boolean = true
 ): [T[], React.Dispatch<React.SetStateAction<T[]>>] {
   // Initialize from cache if fresh, otherwise initialValue
   const [data, setData] = useState<T[]>(() => {
@@ -179,6 +187,8 @@ export function useSupabase<T>(
 
   // Fetch initial data with concurrency queue & memory caching
   useEffect(() => {
+    if (!enabled) return;
+
     const fetchAll = async (force: boolean = false) => {
       // Check cache first if not forcing
       if (!force) {
@@ -202,7 +212,8 @@ export function useSupabase<T>(
         let hasMore = true;
 
         while (hasMore) {
-          let query = supabase.from(tableName).select('*');
+          const selectCols = TABLE_SELECT_COLUMNS[tableName] || '*';
+          let query = supabase.from(tableName).select(selectCols);
 
           if (tableName === 'test_results' || tableName === 'logs' || tableName === 'received_goods' || tableName === 'finished_goods') {
             query = query.order('timestamp', { ascending: false }).order(idKey, { ascending: true });
@@ -274,7 +285,7 @@ export function useSupabase<T>(
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [tableName, idKey]);
+  }, [tableName, idKey, enabled]);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
