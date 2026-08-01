@@ -18,8 +18,8 @@ const getEnv = (key: string) => {
   return undefined;
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || "https://bfkxdpripwjxenfvwpfu.supabase.co";
-const supabaseKey = getEnv('VITE_SUPABASE_ANON_KEY') || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJma3hkcHJpcHdqeGVuZnZ3cGZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1MzE5MjUsImV4cCI6MjA3OTEwNzkyNX0.5JSsA1iYBE5C6LNNWXfJ58JlB2U2TFvVradyON3WIQs";
+const supabaseUrl = getEnv('VITE_SUPABASE_URL') || "http://200.141.9.217:8000";
+const supabaseKey = getEnv('VITE_SUPABASE_ANON_KEY') || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE";
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn('Supabase credentials missing. App may not function correctly.');
