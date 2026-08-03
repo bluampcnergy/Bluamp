@@ -556,7 +556,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         // Using client-side filter of recent documents to avoid PostgREST JSON .or() operator limitations
         const { data, error } = await supabase
             .from('invoices')
-            .select('id, invoice_metadata, receiver_details, issuer_details, totals, document_type, source_type, filename, created_at, line_items')
+            .select('id, invoice_metadata, receiver_details, issuer_details, totals, document_type, source_type, filename, created_at, items')
             .order('created_at', { ascending: false })
             .limit(50);
         
