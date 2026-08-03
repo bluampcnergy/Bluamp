@@ -248,7 +248,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
         // Create a mock pending invoice in DB
         const mockInv: any = {
             ...EMPTY_INVOICE,
-            filename: 'https://bfkxdpripwjxenfvwpfu.supabase.co/storage/v1/object/public/Invoices/sample_slack_invoice.pdf', // Using a placeholder URL
+            filename: 'https://supabase.cnergy.co.in/storage/v1/object/public/Invoices/sample_slack_invoice.pdf', // Using a placeholder URL
             timestamp: new Date().toISOString(),
             uploaded_by: 'slack_bot',
             requires_review: true,

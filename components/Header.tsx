@@ -75,7 +75,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
           <div className="flex items-center justify-between py-3 md:py-0 mr-8">
             <div className="flex items-center cursor-pointer gap-3" onClick={() => setView('home')}>
               <img
-                src="https://bfkxdpripwjxenfvwpfu.supabase.co/storage/v1/object/public/Logo/DC_Full_battery_black_bg.png"
+                src="https://supabase.cnergy.co.in/storage/v1/object/public/Logo/DC_Full_battery_black_bg.png"
                 alt="Datlion Cnergy Logo"
                 className="h-10 w-auto object-contain"
               />

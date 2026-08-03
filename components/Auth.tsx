@@ -29,7 +29,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     <div className="min-h-screen bg-[#0D0D0D] flex flex-col justify-center items-center p-4">
         <div className="flex flex-col items-center mb-10 animate-fade-in">
             <img 
-                src="https://bfkxdpripwjxenfvwpfu.supabase.co/storage/v1/object/public/Logo/DC_Full_battery_black_bg.png" 
+                src="https://supabase.cnergy.co.in/storage/v1/object/public/Logo/DC_Full_battery_black_bg.png" 
                 alt="Datlion Cnergy Logo" 
                 className="h-24 w-auto object-contain mb-6"
             />

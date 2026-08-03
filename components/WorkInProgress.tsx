@@ -502,7 +502,7 @@ const WorkInProgress: React.FC<WorkInProgressProps> = ({ wipItems, setWipItems, 
         if (!printWindow) return;
 
         // Construct dynamic image URLs
-        const baseUrl = "https://bfkxdpripwjxenfvwpfu.supabase.co/storage/v1/object/public/Product%20drawings/";
+        const baseUrl = "https://supabase.cnergy.co.in/storage/v1/object/public/Product%20drawings/";
         const encodedName = encodeURIComponent(recipe.name);
 
         const pngUrl = `${baseUrl}${encodedName}.png`;

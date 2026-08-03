@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $ProjectDir = "d:\AI\Docker\welcome-to-docker\Projects\DC_Inventory_190526"
 $Token = "sbp_4884b979edf7e10ed243d218bae18298b762b2f4"
-$ProjectRef = "bfkxdpripwjxenfvwpfu"
+$ProjectRef = "supabase.cnergy.co.in"
 
 Set-Location $ProjectDir
 $env:SUPABASE_ACCESS_TOKEN = $Token

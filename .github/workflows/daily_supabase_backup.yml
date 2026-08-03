@@ -26,7 +26,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           mkdir -p supabase/metadata
-          supabase link --project-ref bfkxdpripwjxenfvwpfu
+          supabase link --project-ref supabase.cnergy.co.in
           supabase db dump -f supabase/schema.sql
           supabase db dump --data-only -f supabase/data.sql
           supabase db dump --schema storage -f supabase/storage_schema.sql
