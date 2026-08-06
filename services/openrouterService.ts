@@ -308,7 +308,7 @@ Procurement Team
 Datlion Cnergy`;
 };
 
-export const CNERGY_EMAIL_SIGNATURE_URL = "https://supabase.cnergy.co.in/storage/v1/object/public/Product%20drawings/Email_signature_3%20(1).png";
+export const CNERGY_EMAIL_SIGNATURE_URL = "https://supabase.cnergy.co.in/storage/v1/object/public/Logo/Email_signature_3.png";
 export const CNERGY_EMAIL_SIGNATURE_HTML = `<br/><br/><div class="cnergy-signature" style="margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;"><img src="${CNERGY_EMAIL_SIGNATURE_URL}" alt="Datlion Cnergy Signature" style="max-width:500px;width:100%;height:auto;display:block;border-radius:4px;" /></div>`;
 
 
