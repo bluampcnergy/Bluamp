@@ -125,6 +125,6 @@ export default async function handler(req: any, res: any) {
     }
   } catch (err: any) {
     console.error('[Slack Task Reminder] Error:', err);
-    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+    return res.status(500).json({ error: err.message || 'Internal Server Error', stack: err.stack, details: String(err) });
   }
 }
