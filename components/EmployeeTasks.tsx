@@ -125,6 +125,123 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
     }
   };
 
+  // WhatsApp Task Formatting Modal State
+  const [isWAModalOpen, setIsWAModalOpen] = useState(false);
+  const [waSelectedEmployees, setWaSelectedEmployees] = useState<string[]>([]);
+  const [waSelectedTaskIds, setWaSelectedTaskIds] = useState<string[]>([]);
+  const [waIncludeCompleted, setWaIncludeCompleted] = useState(false);
+  const [waCopied, setWaCopied] = useState(false);
+
+  // Open WhatsApp Modal (Global or for Specific Employee)
+  const handleOpenWAModal = (preselectedEmp?: string) => {
+    if (preselectedEmp) {
+      setWaSelectedEmployees([preselectedEmp]);
+      const empTaskIds = validTasks.filter(t => t.assigned_to === preselectedEmp && (!t.completed || waIncludeCompleted)).map(t => t.id);
+      setWaSelectedTaskIds(empTaskIds);
+    } else {
+      const allEmps = employeeList.map(e => e.username);
+      setWaSelectedEmployees(allEmps);
+      const allTaskIds = validTasks.filter(t => !t.completed || waIncludeCompleted).map(t => t.id);
+      setWaSelectedTaskIds(allTaskIds);
+    }
+    setIsWAModalOpen(true);
+  };
+
+  // Toggle Employee Selection for WhatsApp
+  const toggleWAEmployee = (username: string) => {
+    setWaSelectedEmployees(prev => {
+      if (prev.includes(username)) {
+        const next = prev.filter(u => u !== username);
+        const empTaskIds = validTasks.filter(t => t.assigned_to === username).map(t => t.id);
+        setWaSelectedTaskIds(tPrev => tPrev.filter(id => !empTaskIds.includes(id)));
+        return next;
+      } else {
+        const next = [...prev, username];
+        const empTaskIds = validTasks.filter(t => t.assigned_to === username && (!t.completed || waIncludeCompleted)).map(t => t.id);
+        setWaSelectedTaskIds(tPrev => Array.from(new Set([...tPrev, ...empTaskIds])));
+        return next;
+      }
+    });
+  };
+
+  // Toggle Individual Task Selection for WhatsApp
+  const toggleWATask = (taskId: string) => {
+    setWaSelectedTaskIds(prev =>
+      prev.includes(taskId) ? prev.filter(id => id !== taskId) : [...prev, taskId]
+    );
+  };
+
+  // Live WhatsApp Formatted Text Memo
+  const waFormattedText = React.useMemo(() => {
+    const dateStr = new Date().toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+
+    let text = `📋 *DATLION CNERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n`;
+
+    const targetEmps = employeeList.filter(e => waSelectedEmployees.includes(e.username));
+    let totalIncludedTasks = 0;
+
+    targetEmps.forEach(emp => {
+      let empTasks = validTasks.filter(t => t.assigned_to === emp.username && waSelectedTaskIds.includes(t.id));
+      if (!waIncludeCompleted) {
+        empTasks = empTasks.filter(t => !t.completed);
+      }
+
+      if (empTasks.length === 0) return;
+
+      const pendingCount = empTasks.filter(t => !t.completed).length;
+      text += `👤 *Employee: ${emp.username}* (${pendingCount} pending)\n`;
+
+      empTasks.forEach(t => {
+        totalIncludedTasks++;
+        const badge = getDueDateBadgeInfo(t.due_date);
+        let statusEmoji = '• 📌';
+        let dueText = '';
+
+        if (t.completed) {
+          statusEmoji = '• ✅';
+          dueText = ' (Completed)';
+        } else if (badge?.isOverdue) {
+          statusEmoji = '• 🚨';
+          dueText = ` — *OVERDUE (${t.due_date})*`;
+        } else if (t.due_date) {
+          dueText = ` — Due: ${t.due_date}`;
+        }
+
+        text += `${statusEmoji} *${t.title}*${dueText}\n`;
+        if (t.description) {
+          text += `   _${t.description.trim()}_\n`;
+        }
+      });
+
+      text += `\n`;
+    });
+
+    if (totalIncludedTasks === 0) {
+      return `📋 *DATLION CNERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n⚠️ No tasks selected for formatting. Please select employees and tasks on the left.`;
+    }
+
+    text += `👉 _Please acknowledge and complete your assigned daily tasks._`;
+    return text;
+  }, [employeeList, validTasks, waSelectedEmployees, waSelectedTaskIds, waIncludeCompleted]);
+
+  // Copy WhatsApp Text Handler
+  const handleCopyWAText = () => {
+    navigator.clipboard.writeText(waFormattedText);
+    setWaCopied(true);
+    setTimeout(() => setWaCopied(false), 3000);
+  };
+
+  // Open WhatsApp Link Handler
+  const handleOpenWALink = () => {
+    const encoded = encodeURIComponent(waFormattedText);
+    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* HEADER CARD */}
@@ -181,6 +298,13 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
             </span>
           )}
           <button
+            onClick={() => handleOpenWAModal()}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-3 py-2 rounded-lg shadow-sm transition-all"
+            title="Select tasks & employees to generate a formatted WhatsApp message"
+          >
+            <span>💬 WhatsApp Format</span>
+          </button>
+          <button
             onClick={handleSendSlackDigest}
             disabled={isBroadcastingSlack}
             className="flex items-center gap-1.5 bg-[#4A154B] hover:bg-[#3F0E40] text-white text-xs font-extrabold px-3 py-2 rounded-lg shadow-sm transition-all disabled:opacity-50"
@@ -218,14 +342,23 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
                   </div>
                 </div>
 
-                {isAdmin && (
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => handleOpenAddModal(employee.username)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                    onClick={() => handleOpenWAModal(employee.username)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300 text-xs font-bold rounded-lg transition-colors shadow-2xs"
+                    title={`Format tasks for ${employee.username} for WhatsApp`}
                   >
-                    <span>+ Add Task</span>
+                    <span>💬 WhatsApp</span>
                   </button>
-                )}
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleOpenAddModal(employee.username)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                    >
+                      <span>+ Add Task</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* PROGRESS BAR */}
@@ -465,6 +598,185 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* WHATSAPP FORMATTING MODAL */}
+      {isWAModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3 mb-4 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">
+                  💬
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Format Tasks for WhatsApp</h3>
+                  <p className="text-xs text-slate-500 font-medium">Select employees and tasks to generate a clean, copyable WhatsApp message.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsWAModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-base px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body: Split View */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden flex-1">
+              {/* Left Column: Selection Controls */}
+              <div className="space-y-4 overflow-y-auto pr-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                    Select Employees & Tasks
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allEmps = employeeList.map(e => e.username);
+                        setWaSelectedEmployees(allEmps);
+                        const allTaskIds = validTasks.filter(t => !t.completed || waIncludeCompleted).map(t => t.id);
+                        setWaSelectedTaskIds(allTaskIds);
+                      }}
+                      className="text-[11px] font-bold text-emerald-700 hover:underline"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaSelectedEmployees([]);
+                        setWaSelectedTaskIds([]);
+                      }}
+                      className="text-[11px] font-bold text-slate-500 hover:underline"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                </div>
+
+                {/* Include Completed Toggle */}
+                <label className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={waIncludeCompleted}
+                    onChange={(e) => {
+                      const include = e.target.checked;
+                      setWaIncludeCompleted(include);
+                      if (include) {
+                        const allTaskIds = validTasks.filter(t => waSelectedEmployees.includes(t.assigned_to)).map(t => t.id);
+                        setWaSelectedTaskIds(allTaskIds);
+                      } else {
+                        const pendingTaskIds = validTasks.filter(t => waSelectedEmployees.includes(t.assigned_to) && !t.completed).map(t => t.id);
+                        setWaSelectedTaskIds(pendingTaskIds);
+                      }
+                    }}
+                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-slate-800">Include Completed Tasks in Message</span>
+                </label>
+
+                {/* Employees & Tasks List */}
+                <div className="space-y-3">
+                  {employeeList.map(emp => {
+                    const empTasks = validTasks.filter(t => t.assigned_to === emp.username && (!t.completed || waIncludeCompleted));
+                    const isEmpSelected = waSelectedEmployees.includes(emp.username);
+
+                    return (
+                      <div key={emp.username} className={`rounded-xl border transition-all ${isEmpSelected ? 'bg-emerald-50/40 border-emerald-300' : 'bg-slate-50/50 border-slate-200 opacity-70'}`}>
+                        {/* Employee Check Header */}
+                        <label className="flex items-center justify-between p-3 cursor-pointer border-b border-slate-200/60">
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isEmpSelected}
+                              onChange={() => toggleWAEmployee(emp.username)}
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span className="text-xs font-black text-slate-900">{emp.username}</span>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                            {empTasks.length} {empTasks.length === 1 ? 'task' : 'tasks'}
+                          </span>
+                        </label>
+
+                        {/* Individual Task Checks */}
+                        {isEmpSelected && empTasks.length > 0 && (
+                          <div className="p-2.5 space-y-1.5 bg-white/70">
+                            {empTasks.map(t => {
+                              const isTaskSelected = waSelectedTaskIds.includes(t.id);
+                              const badge = getDueDateBadgeInfo(t.due_date);
+                              return (
+                                <label key={t.id} className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-100/80 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isTaskSelected}
+                                    onChange={() => toggleWATask(t.id)}
+                                    className="mt-0.5 w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`text-xs ${t.completed ? 'line-through text-slate-400 font-normal' : 'font-semibold text-slate-800'}`}>
+                                      {t.title}
+                                    </p>
+                                    {badge && !t.completed && (
+                                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 inline-block ${badge.badgeClass}`}>
+                                        {badge.isOverdue ? '🚨 OVERDUE' : `📅 Due: ${badge.ddmmyy}`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Column: WhatsApp Formatted Text Preview & Actions */}
+              <div className="flex flex-col h-full bg-slate-900 rounded-xl p-4 text-slate-100 border border-slate-800">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3 shrink-0">
+                  <span className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📱 Live WhatsApp Preview</span>
+                  </span>
+                  {waCopied && (
+                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-950 px-2.5 py-0.5 rounded border border-emerald-800 animate-in fade-in">
+                      ✓ Copied to Clipboard!
+                    </span>
+                  )}
+                </div>
+
+                <textarea
+                  readOnly
+                  value={waFormattedText}
+                  className="w-full flex-1 bg-slate-950/90 border border-slate-800 rounded-lg p-3 text-xs font-mono text-emerald-300 resize-none outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed min-h-[220px]"
+                />
+
+                <div className="flex items-center gap-3 pt-3 border-t border-slate-800 mt-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyWAText}
+                    className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-extrabold rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <span>📋 Copy Text</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenWALink}
+                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>💬 Open in WhatsApp</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

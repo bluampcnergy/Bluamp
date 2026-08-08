@@ -110,6 +110,7 @@ export interface DueDateBadgeInfo {
   dayOfWeek: string;
   ddmmyy: string;
   priority: 1 | 2 | 3 | 4;
+  isOverdue: boolean;
   badgeClass: string;
   dotColor: string;
 }
@@ -130,6 +131,7 @@ export const getDueDateBadgeInfo = (dueDateStr?: string): DueDateBadgeInfo | nul
 
   const diffTime = targetDate.getTime() - today.getTime();
   const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const isOverdue = diffDays < 0;
 
   const dayOfWeek = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
   const dd = String(day).padStart(2, '0');
@@ -145,6 +147,7 @@ export const getDueDateBadgeInfo = (dueDateStr?: string): DueDateBadgeInfo | nul
       dayOfWeek,
       ddmmyy,
       priority: 1,
+      isOverdue,
       badgeClass: 'bg-rose-100 text-rose-800 border border-rose-300 font-bold',
       dotColor: 'bg-rose-600',
     };
@@ -155,6 +158,7 @@ export const getDueDateBadgeInfo = (dueDateStr?: string): DueDateBadgeInfo | nul
       dayOfWeek,
       ddmmyy,
       priority: 2,
+      isOverdue: false,
       badgeClass: 'bg-amber-100 text-amber-900 border border-amber-300 font-bold',
       dotColor: 'bg-amber-500',
     };
@@ -165,6 +169,7 @@ export const getDueDateBadgeInfo = (dueDateStr?: string): DueDateBadgeInfo | nul
       dayOfWeek,
       ddmmyy,
       priority: 3,
+      isOverdue: false,
       badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold',
       dotColor: 'bg-emerald-500',
     };
@@ -175,6 +180,7 @@ export const getDueDateBadgeInfo = (dueDateStr?: string): DueDateBadgeInfo | nul
       dayOfWeek,
       ddmmyy,
       priority: 4,
+      isOverdue: false,
       badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200 font-medium',
       dotColor: 'bg-slate-400',
     };
