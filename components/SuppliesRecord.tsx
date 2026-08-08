@@ -16,6 +16,202 @@ interface SuppliesRecordProps {
   setView?: (view: View) => void;
 }
 
+interface SearchableSupplierDropdownProps {
+  value: string;
+  onChange: (supplierName: string) => void;
+  companyProfiles: CompanyProfile[];
+  onAddNewCompany: () => void;
+  defaultRegisteredSupplierName?: string;
+}
+
+const SearchableSupplierDropdown: React.FC<SearchableSupplierDropdownProps> = ({
+  value,
+  onChange,
+  companyProfiles,
+  onAddNewCompany,
+  defaultRegisteredSupplierName
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter company profiles based on search query
+  const filteredProfiles = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return companyProfiles;
+    return companyProfiles.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.contactPerson && c.contactPerson.toLowerCase().includes(q)) ||
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.phoneNumber && c.phoneNumber.includes(q)) ||
+      (c.gstNumber && c.gstNumber.toLowerCase().includes(q))
+    );
+  }, [companyProfiles, searchQuery]);
+
+  const isDefaultSelected = Boolean(
+    defaultRegisteredSupplierName &&
+    value &&
+    value.toLowerCase().trim() === defaultRegisteredSupplierName.toLowerCase().trim()
+  );
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      {/* Input / Control Bar */}
+      <div
+        onClick={() => setIsOpen(prev => !prev)}
+        className={`w-full px-3 py-2 bg-slate-50 border rounded-xl text-xs font-bold flex items-center justify-between cursor-pointer transition-all ${
+          isOpen
+            ? 'bg-white border-[#8EBF45] ring-2 ring-[#8EBF45]/20 shadow-sm'
+            : 'border-slate-200 hover:border-slate-300'
+        }`}
+      >
+        <div className="flex items-center gap-2 overflow-hidden w-full">
+          <span className="text-slate-400 shrink-0 text-sm">🏢</span>
+          <input
+            type="text"
+            placeholder="Search & select supplier company..."
+            className="bg-transparent border-none outline-none w-full text-xs font-bold text-slate-900 placeholder-slate-400 cursor-pointer"
+            value={isOpen ? searchQuery : (value || '')}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSearchQuery(val);
+              if (!isOpen) setIsOpen(true);
+              onChange(val);
+            }}
+            onFocus={() => {
+              setSearchQuery('');
+              setIsOpen(true);
+            }}
+          />
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {isDefaultSelected && (
+            <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.5 rounded border border-emerald-300 whitespace-nowrap">
+              ✨ Default
+            </span>
+          )}
+          {value && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange('');
+                setSearchQuery('');
+              }}
+              className="text-slate-400 hover:text-slate-700 p-0.5 text-xs font-bold transition-colors"
+              title="Clear selection"
+            >
+              ✕
+            </button>
+          )}
+          <span className="text-slate-400 text-[10px] ml-0.5">▼</span>
+        </div>
+      </div>
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in duration-100">
+          {/* Header */}
+          <div className="p-2 bg-slate-50 border-b border-slate-100 sticky top-0 z-10 flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+              {filteredProfiles.length} of {companyProfiles.length} Companies
+            </span>
+            {defaultRegisteredSupplierName && (
+              <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                Registered Default: {defaultRegisteredSupplierName}
+              </span>
+            )}
+          </div>
+
+          {/* List of Companies */}
+          {filteredProfiles.length > 0 ? (
+            filteredProfiles.map((comp) => {
+              const isSelected = value.toLowerCase().trim() === comp.name.toLowerCase().trim();
+              const isDefaultComp = Boolean(
+                defaultRegisteredSupplierName &&
+                comp.name.toLowerCase().trim() === defaultRegisteredSupplierName.toLowerCase().trim()
+              );
+
+              return (
+                <div
+                  key={comp.id}
+                  onClick={() => {
+                    onChange(comp.name);
+                    setSearchQuery(comp.name);
+                    setIsOpen(false);
+                  }}
+                  className={`p-2.5 hover:bg-emerald-50/70 cursor-pointer transition-colors flex items-start justify-between gap-2 ${
+                    isSelected ? 'bg-emerald-50 border-l-4 border-[#8EBF45]' : ''
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-slate-900 text-xs">{comp.name}</span>
+                      {isDefaultComp && (
+                        <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.2 rounded border border-emerald-300">
+                          ✨ Default Registered
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-medium flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {comp.contactPerson && <span>👤 {comp.contactPerson}</span>}
+                      {comp.email && <span>✉️ {comp.email}</span>}
+                      {comp.phoneNumber && <span>📞 {comp.phoneNumber}</span>}
+                    </div>
+                  </div>
+                  {isSelected && <span className="text-emerald-600 font-black text-xs">✓</span>}
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-3 text-center text-xs text-slate-400 font-medium">
+              No matching registered company found for "{searchQuery}".
+            </div>
+          )}
+
+          {/* Custom Typed Name Option */}
+          {searchQuery && !filteredProfiles.some(c => c.name.toLowerCase() === searchQuery.toLowerCase()) && (
+            <div
+              onClick={() => {
+                onChange(searchQuery);
+                setIsOpen(false);
+              }}
+              className="p-2.5 hover:bg-slate-100 cursor-pointer text-xs font-bold text-slate-700 flex items-center gap-2 border-t"
+            >
+              <span>✏️</span>
+              <span>Use custom supplier name: <span className="text-slate-900 font-extrabold">"{searchQuery}"</span></span>
+            </div>
+          )}
+
+          {/* Add New Company Button */}
+          <div
+            onClick={() => {
+              setIsOpen(false);
+              onAddNewCompany();
+            }}
+            className="p-2.5 bg-slate-50 hover:bg-emerald-100/60 text-emerald-700 font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 border-t sticky bottom-0"
+          >
+            <span>➕</span>
+            <span>+ Add New Supplier Profile...</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   suppliesRecords,
   setSuppliesRecords,
@@ -559,6 +755,112 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     addLogEntry('Stock Alert Notification Toggled', `Item: ${record.item_name} -> ${newIgnoredState ? 'Ignored' : 'Alert On'}`);
   };
 
+  // Helper to find default registered supplier for a product/item name
+  const getDefaultRegisteredSupplier = useCallback((itemName: string): CompanyProfile | null => {
+    if (!itemName || !itemName.trim()) return null;
+    const query = itemName.toLowerCase().trim();
+
+    // 1. Search in receivedGoods for matching item name
+    const matchedGood = receivedGoods.find(g => 
+      g.name.toLowerCase().trim() === query ||
+      query.includes(g.name.toLowerCase().trim()) ||
+      g.name.toLowerCase().trim().includes(query)
+    );
+
+    if (matchedGood && matchedGood.supplier) {
+      const matchedProfile = companyProfiles.find(c =>
+        c.name.toLowerCase().trim() === matchedGood.supplier.toLowerCase().trim() ||
+        c.name.toLowerCase().trim().includes(matchedGood.supplier.toLowerCase().trim()) ||
+        matchedGood.supplier.toLowerCase().trim().includes(c.name.toLowerCase().trim())
+      );
+      if (matchedProfile) return matchedProfile;
+
+      return {
+        id: matchedGood.supplier,
+        name: matchedGood.supplier,
+        contactPerson: 'Sales Desk',
+        email: '',
+        phoneNumber: '',
+        gstNumber: '',
+        shippingAddress: ''
+      };
+    }
+
+    // 2. Search in existing suppliesRecords for matching item_name that has a supplier
+    const matchedRecord = suppliesRecords.find(r =>
+      r.item_name.toLowerCase().trim() === query && r.from_company
+    );
+
+    if (matchedRecord && matchedRecord.from_company) {
+      const matchedProfile = companyProfiles.find(c =>
+        c.name.toLowerCase().trim() === matchedRecord.from_company?.toLowerCase().trim()
+      );
+      if (matchedProfile) return matchedProfile;
+
+      return {
+        id: matchedRecord.supplier_id || matchedRecord.from_company,
+        name: matchedRecord.from_company,
+        contactPerson: matchedRecord.contact_name || '',
+        email: matchedRecord.contact_email || '',
+        phoneNumber: matchedRecord.contact_number || '',
+        gstNumber: '',
+        shippingAddress: ''
+      };
+    }
+
+    // 3. Search directly in companyProfiles if any company name matches or is part of product name
+    const matchedDirect = companyProfiles.find(c =>
+      query.includes(c.name.toLowerCase().trim()) || c.name.toLowerCase().trim().includes(query)
+    );
+    if (matchedDirect) return matchedDirect;
+
+    return null;
+  }, [receivedGoods, suppliesRecords, companyProfiles]);
+
+  // Suggestions for raw materials from inventory and supplies
+  const rawMaterialSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    receivedGoods.forEach(g => {
+      if (g.name) set.add(g.name);
+    });
+    suppliesRecords.forEach(r => {
+      if (r.item_name) set.add(r.item_name);
+    });
+    return Array.from(set);
+  }, [receivedGoods, suppliesRecords]);
+
+  // Default supplier for currently typed or selected item in form
+  const defaultSupplierForCurrentItem = useMemo(() => {
+    return getDefaultRegisteredSupplier(formData.item_name || '');
+  }, [formData.item_name, getDefaultRegisteredSupplier]);
+
+  // Handle product name change and auto-fill default registered supplier
+  const handleItemNameChange = (name: string) => {
+    const defaultSupplier = getDefaultRegisteredSupplier(name);
+
+    setFormData(prev => {
+      const isSupplierEmptyOrGeneric = !prev.from_company || prev.from_company === 'Vendor' || prev.from_company === 'Primary Supplier';
+      
+      if (defaultSupplier && isSupplierEmptyOrGeneric) {
+        return {
+          ...prev,
+          item_name: name,
+          from_company: defaultSupplier.name,
+          supplier_id: defaultSupplier.id,
+          contact_name: defaultSupplier.contactPerson || prev.contact_name || '',
+          contact_number: defaultSupplier.phoneNumber || prev.contact_number || '',
+          contact_email: defaultSupplier.email || prev.contact_email || '',
+          website_url: prev.website_url || (defaultSupplier.name ? `https://www.google.com/search?q=${encodeURIComponent(defaultSupplier.name)}` : '')
+        };
+      }
+
+      return {
+        ...prev,
+        item_name: name
+      };
+    });
+  };
+
   // Handle supplier dropdown selection in form to auto-fill supplier details
   const handleSupplierSelect = (companyName: string) => {
     if (companyName === 'ADD_NEW') {
@@ -566,7 +868,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       return;
     }
 
-    const comp = companyProfiles.find(c => c.name === companyName);
+    const comp = companyProfiles.find(c => c.name.toLowerCase().trim() === companyName.toLowerCase().trim());
     if (comp) {
       setFormData(prev => ({
         ...prev,
@@ -580,7 +882,8 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     } else {
       setFormData(prev => ({
         ...prev,
-        from_company: companyName
+        from_company: companyName,
+        supplier_id: ''
       }));
     }
   };
@@ -1604,10 +1907,16 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                     type="text"
                     required
                     placeholder="e.g. Grade-A 3.2V 280Ah LFP Cell"
+                    list="known-raw-goods-list"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
                     value={formData.item_name}
-                    onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
+                    onChange={(e) => handleItemNameChange(e.target.value)}
                   />
+                  <datalist id="known-raw-goods-list">
+                    {rawMaterialSuggestions.map((name, idx) => (
+                      <option key={idx} value={name} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div className="space-y-1">
@@ -1646,18 +1955,26 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">Supplier Company</label>
-                  <select
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
-                    value={formData.from_company}
-                    onChange={(e) => handleSupplierSelect(e.target.value)}
-                  >
-                    <option value="">-- Select Supplier Company --</option>
-                    {companyProfiles.map(c => (
-                      <option key={c.id} value={c.name}>{c.name}</option>
-                    ))}
-                    <option value="ADD_NEW" className="font-bold text-emerald-600">+ Add New Company...</option>
-                  </select>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-500 uppercase">Supplier Company (Searchable)</label>
+                    {defaultSupplierForCurrentItem && (
+                      <button
+                        type="button"
+                        onClick={() => handleSupplierSelect(defaultSupplierForCurrentItem.name)}
+                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 transition-colors"
+                        title="Pre-select default registered supplier"
+                      >
+                        ✨ Default: {defaultSupplierForCurrentItem.name}
+                      </button>
+                    )}
+                  </div>
+                  <SearchableSupplierDropdown
+                    value={formData.from_company || ''}
+                    onChange={handleSupplierSelect}
+                    companyProfiles={companyProfiles}
+                    onAddNewCompany={() => setIsAddCompanyModalOpen(true)}
+                    defaultRegisteredSupplierName={defaultSupplierForCurrentItem?.name}
+                  />
                 </div>
 
                 <div className="space-y-1">
