@@ -224,6 +224,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   setView
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
@@ -1097,9 +1098,12 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         (r.contact_name && r.contact_name.toLowerCase().includes(search)) ||
         (r.contact_email && r.contact_email.toLowerCase().includes(search));
 
-      return matchesStatus && matchesSearch;
+      const matchesSupplierFilter = !selectedSupplierFilter ||
+        (r.from_company && r.from_company.toLowerCase().trim() === selectedSupplierFilter.toLowerCase().trim());
+
+      return matchesStatus && matchesSearch && matchesSupplierFilter;
     });
-  }, [suppliesRecords, activeStatusFilter, searchTerm, rawMaterialAlertMap, getEffectiveStatus]);
+  }, [suppliesRecords, activeStatusFilter, searchTerm, selectedSupplierFilter, rawMaterialAlertMap, getEffectiveStatus]);
 
   // Counts & Alert Summaries
   const counts = useMemo(() => {
@@ -1579,18 +1583,43 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       {/* SEARCH AND BULK ACTIONS BAR */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder="Search product, spec, or supplier..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-slate-400 text-xs hover:text-slate-700">✕</button>
+        {/* Search Controls (Text Search + Searchable Supplier Dropdown) */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1">
+          {/* General Text Search */}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search product, spec..."
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-[#8EBF45]"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-slate-400 text-xs hover:text-slate-700">✕</button>
+            )}
+          </div>
+
+          {/* Searchable Supplier Dropdown */}
+          <div className="w-full sm:w-72">
+            <SearchableSupplierDropdown
+              value={selectedSupplierFilter}
+              onChange={(supplierName) => setSelectedSupplierFilter(supplierName)}
+              companyProfiles={companyProfiles}
+              onAddNewCompany={() => setIsAddCompanyModalOpen(true)}
+            />
+          </div>
+
+          {/* Clear Supplier Filter */}
+          {selectedSupplierFilter && (
+            <button
+              type="button"
+              onClick={() => setSelectedSupplierFilter('')}
+              className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-all border border-slate-200 flex items-center gap-1 shrink-0 whitespace-nowrap"
+              title="Clear supplier filter"
+            >
+              <span>✕ Clear Supplier Filter</span>
+            </button>
           )}
         </div>
 
@@ -1741,7 +1770,14 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                       <td className="px-4 py-3.5">
                         <div className="space-y-1">
                           <div className="font-bold text-slate-900 flex items-center gap-1">
-                            <span>🏢 {record.from_company || 'Unassigned Supplier'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSupplierFilter(record.from_company || '')}
+                              className="font-bold text-slate-900 hover:text-emerald-700 flex items-center gap-1 transition-colors text-left cursor-pointer"
+                              title="Filter list by this supplier"
+                            >
+                              <span>🏢 {record.from_company || 'Unassigned Supplier'}</span>
+                            </button>
                           </div>
 
                           {record.contact_name && (

@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve('.'),
         }
+      },
+      build: {
+        chunkSizeWarningLimit: 1600
       }
     };
 });
