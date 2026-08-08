@@ -249,30 +249,9 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
         setIsWAModalOpen(false);
       }
     };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isWAModalOpen]);
-
-  // Helper: Create 1-click Google Calendar Event Link
-  const getGoogleCalendarUrl = (title: string, description?: string, dueDateStr?: string) => {
-    const dateStr = dueDateStr || new Date().toISOString().split('T')[0];
-    const parts = dateStr.split('-');
-    let dates = '';
-    if (parts.length === 3) {
-      const year = parts[0];
-      const month = parts[1].padStart(2, '0');
-      const day = parts[2].padStart(2, '0');
-      const cleanDate = `${year}${month}${day}`;
-      dates = `${cleanDate}/${cleanDate}`;
-    } else {
-      const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-      dates = `${todayStr}/${todayStr}`;
-    }
-
-    const textParam = encodeURIComponent(`[Plant OS Task] ${title}`);
-    const detailsParam = encodeURIComponent(
-      (description ? `${description}\n\n` : '') + `📌 Task assigned via Datlion Cnergy Plant OS`
-    );
-    return `https://calendar.google.com/render?action=TEMPLATE&text=${textParam}&details=${detailsParam}&dates=${dates}`;
-  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -475,36 +454,25 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
                           </div>
                         </div>
 
-                        {/* TASK ACTIONS */}
-                        <div className="flex items-center gap-1">
-                          <a
-                            href={getGoogleCalendarUrl(task.title, task.description, task.due_date)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors text-xs"
-                            title="Add/Sync task to Google Calendar"
-                          >
-                            📅
-                          </a>
-                          {isAdmin && (
-                            <>
-                              <button
-                                onClick={() => handleOpenEditModal(task)}
-                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors text-xs"
-                                title="Edit Task"
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                onClick={() => onDeleteTask(task.id)}
-                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors text-xs"
-                                title="Delete Task"
-                              >
-                                🗑️
-                              </button>
-                            </>
-                          )}
-                        </div>
+                        {/* ADMIN EDIT / DELETE ACTIONS */}
+                        {isAdmin && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleOpenEditModal(task)}
+                              className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors text-xs"
+                              title="Edit Task"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => onDeleteTask(task.id)}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors text-xs"
+                              title="Delete Task"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
