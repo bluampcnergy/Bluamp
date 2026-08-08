@@ -3,11 +3,13 @@ import type { SupplyRecord, CompanyProfile, ReceivedGood, User, View, Recipe } f
 import { Plus, Trash2, Search, RefreshCw } from './invoices/Icons';
 import { generateRFQTextOpenRouter } from '../services/openrouterService';
 import { getItemStockAlertInfo } from '../utils/stockAlerts';
+import { FindSupplierTab } from './FindSupplierTab';
 
 interface SuppliesRecordProps {
   suppliesRecords: SupplyRecord[];
   setSuppliesRecords: React.Dispatch<React.SetStateAction<SupplyRecord[]>>;
   companyProfiles: CompanyProfile[];
+  setCompanyProfiles?: React.Dispatch<React.SetStateAction<CompanyProfile[]>>;
   receivedGoods?: ReceivedGood[];
   setReceivedGoods?: React.Dispatch<React.SetStateAction<ReceivedGood[]>>;
   recipes?: Recipe[];
@@ -216,6 +218,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   suppliesRecords,
   setSuppliesRecords,
   companyProfiles,
+  setCompanyProfiles,
   receivedGoods = [],
   setReceivedGoods,
   recipes = [],
@@ -223,6 +226,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   currentUser,
   setView
 }) => {
+  const [mainTab, setMainTab] = useState<'procurement' | 'find_suppliers'>('procurement');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
@@ -1178,8 +1182,42 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         accept=".csv,text/csv"
       />
 
-      {/* TOP DASHBOARD HEADER */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      {/* MODULE NAVIGATION SUB-TABS */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+        <button
+          onClick={() => setMainTab('procurement')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+            mainTab === 'procurement'
+              ? 'bg-slate-900 text-white shadow-md'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <span>📦 Procurement & Requisitions</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('find_suppliers')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+            mainTab === 'find_suppliers'
+              ? 'bg-gradient-to-r from-[#8EBF45] to-[#658C3E] text-slate-950 font-black shadow-md'
+              : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+          }`}
+        >
+          <span>🔍 Find New Suppliers (AI & Maps)</span>
+        </button>
+      </div>
+
+      {mainTab === 'find_suppliers' ? (
+        <FindSupplierTab
+          companyProfiles={companyProfiles}
+          setCompanyProfiles={setCompanyProfiles || (() => {})}
+          addLogEntry={addLogEntry}
+          onOpenWebmail={(to, subject, body) => handleOpenWebmailIframe(to, subject, body)}
+        />
+      ) : (
+        <>
+          {/* TOP DASHBOARD HEADER */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 text-xl font-bold">
@@ -1940,6 +1978,8 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* MODAL 1: ADD / EDIT PROCUREMENT ITEM */}
       {isAdding && (

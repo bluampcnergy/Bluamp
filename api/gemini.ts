@@ -60,6 +60,21 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json({ text: response.text });
         }
 
+        if (action === 'findSuppliers') {
+            const { prompt, schema } = payload;
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    responseMimeType: 'application/json',
+                    responseSchema: schema,
+                    temperature: 0.2,
+                    maxOutputTokens: 8192,
+                }
+            });
+            return res.status(200).json({ text: response.text });
+        }
+
         return res.status(400).json({ error: 'Invalid action' });
     } catch (error: any) {
         console.error('Gemini Proxy Error:', error);

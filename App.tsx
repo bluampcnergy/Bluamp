@@ -573,6 +573,7 @@ const App: React.FC = () => {
             suppliesRecords={suppliesRecords}
             setSuppliesRecords={setSuppliesRecords}
             companyProfiles={companyProfiles}
+            setCompanyProfiles={setCompanyProfiles}
             receivedGoods={receivedGoods}
             setReceivedGoods={setReceivedGoods}
             recipes={recipes}
