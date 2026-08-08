@@ -163,39 +163,39 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({ companyProfiles, setC
 
     if (isIframe) {
         return (
-            <div className="p-6 bg-white min-h-screen flex flex-col justify-start">
-                <form onSubmit={handleSubmit} className="w-full max-w-4xl mx-auto flex flex-col h-full">
-                    <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-4 sm:p-6 bg-white h-screen w-full flex flex-col overflow-hidden box-border">
+                <form onSubmit={handleSubmit} className="w-full max-w-4xl mx-auto flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 pb-2">
                         <div className="col-span-1 md:col-span-2">
-                            <h2 className="text-xl font-bold text-slate-800 mb-2 border-b pb-2">Add New Company</h2>
+                            <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-1 border-b pb-2">Add New Company Profile</h2>
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Company Name <span className="text-red-500">*</span></label>
-                            <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500" required />
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">Company Name <span className="text-red-500">*</span></label>
+                            <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">GST Number</label>
-                            <input type="text" name="gstNumber" value={formData.gstNumber} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500" />
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">GST Number</label>
+                            <input type="text" name="gstNumber" value={formData.gstNumber} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm" />
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Contact Person</label>
-                            <input type="text" name="contactPerson" value={formData.contactPerson} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500" />
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">Contact Person</label>
+                            <input type="text" name="contactPerson" value={formData.contactPerson} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm" />
                         </div>
                         <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Phone Number</label>
-                            <input type="text" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500" />
-                        </div>
-                        <div className="col-span-1 md:col-span-2">
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
-                            <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500" />
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">Phone Number</label>
+                            <input type="text" name="phoneNumber" value={formData.phoneNumber} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm" />
                         </div>
                         <div className="col-span-1 md:col-span-2">
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Shipping Address</label>
-                            <textarea name="shippingAddress" value={formData.shippingAddress} onChange={handleInputChange} rows={3} className="w-full border border-slate-300 rounded-lg shadow-sm p-2.5 focus:ring-2 focus:ring-blue-500"></textarea>
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">Email</label>
+                            <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm" />
+                        </div>
+                        <div className="col-span-1 md:col-span-2">
+                            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">Shipping Address</label>
+                            <textarea name="shippingAddress" value={formData.shippingAddress} onChange={handleInputChange} rows={2} className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm"></textarea>
                         </div>
                     </div>
-                    <div className="mt-8 pt-4 border-t border-slate-200">
-                        <button type="submit" className="w-full bg-[#8EBF45] hover:bg-[#729937] text-white p-3 rounded-lg flex items-center justify-center font-bold uppercase tracking-wider transition-colors shadow-md">
+                    <div className="mt-2 pt-3 border-t border-slate-200 shrink-0 bg-white">
+                        <button type="submit" className="w-full bg-[#8EBF45] hover:bg-[#729937] text-[#0D0D0D] p-2.5 sm:p-3 rounded-lg flex items-center justify-center font-bold uppercase tracking-wider transition-colors shadow-md text-xs sm:text-sm">
                             Save Company Profile
                         </button>
                     </div>

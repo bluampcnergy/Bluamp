@@ -688,7 +688,7 @@ const App: React.FC = () => {
   // --- COMPANY PROFILES IFRAME ROUTE ---
   if (mode === 'add_company') {
       return (
-        <div className="min-h-screen bg-white p-4">
+        <div className="h-screen w-screen bg-white overflow-hidden p-0 m-0">
            <CompanyProfiles 
               companyProfiles={companyProfiles}
               setCompanyProfiles={setCompanyProfiles}

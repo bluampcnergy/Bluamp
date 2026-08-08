@@ -350,6 +350,26 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const [bulkRfqTexts, setBulkRfqTexts] = useState<Record<string, string>>({});
   const [isAddCompanyModalOpen, setIsAddCompanyModalOpen] = useState(false);
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'COMPANY_ADDED') {
+        setIsAddCompanyModalOpen(false);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isAddCompanyModalOpen) {
+        setIsAddCompanyModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAddCompanyModalOpen]);
+
   const [webmailIframeModal, setWebmailIframeModal] = useState<{
     isOpen: boolean;
     to: string;
@@ -2246,16 +2266,28 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
       {/* MODAL 4: ADD COMPANY IFRAME */}
       {isAddCompanyModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 text-left">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="text-lg font-bold text-slate-800">Add New Supplier Profile</h2>
-              <button onClick={() => setIsAddCompanyModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2">✕</button>
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setIsAddCompanyModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] max-h-[600px] flex flex-col overflow-hidden border border-slate-200 text-left"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center px-4 py-3 border-b bg-slate-50 shrink-0">
+              <h2 className="text-base sm:text-lg font-bold text-slate-800">Add New Supplier Profile</h2>
+              <button 
+                onClick={() => setIsAddCompanyModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200 transition-colors text-lg font-bold"
+                title="Close"
+              >
+                ✕
+              </button>
             </div>
-            <div className="flex-1 min-h-[600px] h-[75vh]">
+            <div className="flex-1 w-full h-full min-h-0 bg-white">
               <iframe 
                 src="/?mode=add_company" 
-                className="w-full h-full border-none"
+                className="w-full h-full border-none block"
                 title="Add Company"
               />
             </div>
