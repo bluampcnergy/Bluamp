@@ -242,6 +242,17 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
     window.open(`https://wa.me/?text=${encoded}`, '_blank');
   };
 
+  // Close WhatsApp modal on Escape key press
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isWAModalOpen) {
+        setIsWAModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isWAModalOpen]);
+
   return (
     <div className="space-y-6 pb-12">
       {/* HEADER CARD */}
@@ -603,31 +614,36 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
       )}
       {/* WHATSAPP FORMATTING MODAL */}
       {isWAModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3 mb-4 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">
+        <div 
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 z-[9999] overflow-y-auto animate-in fade-in duration-150"
+          onClick={(e) => e.target === e.currentTarget && setIsWAModalOpen(false)}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[88vh] flex flex-col my-auto overflow-hidden">
+            {/* STICKY HEADER */}
+            <div className="bg-slate-900 text-white p-4 sm:p-5 flex justify-between items-center shrink-0 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold text-xl">
                   💬
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Format Tasks for WhatsApp</h3>
-                  <p className="text-xs text-slate-500 font-medium">Select employees and tasks to generate a clean, copyable WhatsApp message.</p>
+                  <h3 className="text-sm sm:text-base font-black text-white tracking-wide">Format Tasks for WhatsApp</h3>
+                  <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Select employees & tasks to generate a formatted WhatsApp message.</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsWAModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 font-bold text-base px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+                className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+                title="Close Modal (Esc)"
               >
-                ✕
+                <span className="text-base leading-none">✕</span>
+                <span className="hidden sm:inline">Close</span>
               </button>
             </div>
 
-            {/* Modal Body: Split View */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden flex-1">
+            {/* MODAL BODY: SPLIT VIEW WITH INDEPENDENT SCROLL */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
               {/* Left Column: Selection Controls */}
-              <div className="space-y-4 overflow-y-auto pr-2">
+              <div className="space-y-4 overflow-y-auto pr-1 max-h-[50vh] md:max-h-none">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
                     Select Employees & Tasks
@@ -740,7 +756,7 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
               </div>
 
               {/* Right Column: WhatsApp Formatted Text Preview & Actions */}
-              <div className="flex flex-col h-full bg-slate-900 rounded-xl p-4 text-slate-100 border border-slate-800">
+              <div className="flex flex-col h-full bg-slate-900 rounded-xl p-4 text-slate-100 border border-slate-800 flex-1 min-h-0">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-3 shrink-0">
                   <span className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                     <span>📱 Live WhatsApp Preview</span>
@@ -755,14 +771,22 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
                 <textarea
                   readOnly
                   value={waFormattedText}
-                  className="w-full flex-1 bg-slate-950/90 border border-slate-800 rounded-lg p-3 text-xs font-mono text-emerald-300 resize-none outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed min-h-[220px]"
+                  className="w-full flex-1 bg-slate-950/90 border border-slate-800 rounded-lg p-3 text-xs font-mono text-emerald-300 resize-none outline-none focus:ring-1 focus:ring-emerald-500 leading-relaxed min-h-[160px] sm:min-h-[220px]"
                 />
 
-                <div className="flex items-center gap-3 pt-3 border-t border-slate-800 mt-3 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800 mt-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsWAModalOpen(false)}
+                    className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition-all"
+                  >
+                    Cancel
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleCopyWAText}
-                    className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-extrabold rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm"
+                    className="flex-1 min-w-[110px] px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-extrabold rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm"
                   >
                     <span>📋 Copy Text</span>
                   </button>
@@ -770,7 +794,7 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenWALink}
-                    className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                    className="flex-1 min-w-[130px] px-3.5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
                   >
                     <span>💬 Open in WhatsApp</span>
                   </button>
