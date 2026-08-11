@@ -242,6 +242,7 @@ export interface CompanyProfile {
   id: string;
   name: string;
   gstNumber: string;
+  gstin?: string;
   shippingAddress: string;
   email: string;
   contactPerson: string;
