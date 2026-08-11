@@ -143,9 +143,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     const tr = testResults.find(r => r.receivedGoodId === editingGood.id && r.serialNumber === s);
                     return {
                         serial: s,
-                        voltage: tr?.voltage?.toString() || '',
-                        resistance: tr?.resistance?.toString() || '',
-                        capacity: tr?.capacity?.toString() || '',
+                        voltage: tr?.voltage !== undefined && tr?.voltage !== null ? String(tr.voltage) : '',
+                        resistance: tr?.resistance !== undefined && tr?.resistance !== null ? String(tr.resistance) : '',
+                        capacity: tr?.capacity !== undefined && tr?.capacity !== null ? String(tr.capacity) : '',
                         grade: tr?.grade || '',
                         location: tr?.location || ''
                     };
@@ -422,9 +422,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         receivedGoodId: goodId,
                         serialNumber: entry.serial,
                         category: 'Cell',
-                        voltage: entry.voltage ? parseFloat(entry.voltage) : undefined,
-                        resistance: entry.resistance ? parseFloat(entry.resistance) : undefined,
-                        capacity: entry.capacity ? parseFloat(entry.capacity) : undefined,
+                        voltage: entry.voltage !== undefined && entry.voltage !== '' && !isNaN(parseFloat(entry.voltage)) ? parseFloat(entry.voltage) : undefined,
+                        resistance: entry.resistance !== undefined && entry.resistance !== '' && !isNaN(parseFloat(entry.resistance)) ? parseFloat(entry.resistance) : undefined,
+                        capacity: entry.capacity !== undefined && entry.capacity !== '' && !isNaN(parseFloat(entry.capacity)) ? parseFloat(entry.capacity) : undefined,
                         grade: entry.grade || undefined,
                         location: entry.location || undefined,
                         timestamp: Date.now(),

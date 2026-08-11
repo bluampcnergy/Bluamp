@@ -241,7 +241,16 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         });
 
         if (itemToSave) {
-            supabase.from('test_results').upsert([itemToSave]).then(({ error }) => {
+            const targetItem = itemToSave as TestResult;
+            const dbPayload = {
+                ...targetItem,
+                voltage: targetItem.voltage !== undefined && !isNaN(targetItem.voltage) ? targetItem.voltage : null,
+                resistance: targetItem.resistance !== undefined && !isNaN(targetItem.resistance) ? targetItem.resistance : null,
+                capacity: targetItem.capacity !== undefined && !isNaN(targetItem.capacity) ? targetItem.capacity : null,
+                grade: targetItem.grade || null,
+                location: targetItem.location || null,
+            };
+            supabase.from('test_results').upsert([dbPayload]).then(({ error }) => {
                 if (error) console.error('Error persisting test result change to Supabase:', error);
             });
         }
@@ -1080,7 +1089,11 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                                             step="0.01"
                                                             className="w-full p-1 border rounded focus:ring-2 focus:ring-[#8EBF45]"
                                                             value={result.voltage ?? ''}
-                                                            onChange={(e) => handleInputChange(serial, { voltage: parseFloat(e.target.value) })}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                const parsed = val === '' ? undefined : parseFloat(val);
+                                                                handleInputChange(serial, { voltage: parsed !== undefined && !isNaN(parsed) ? parsed : undefined });
+                                                            }}
                                                         />
                                                     </td>
                                                     <td className="p-3 border-b">
@@ -1089,7 +1102,11 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                                             step="0.01"
                                                             className="w-full p-1 border rounded focus:ring-2 focus:ring-[#8EBF45]"
                                                             value={result.resistance ?? ''}
-                                                            onChange={(e) => handleInputChange(serial, { resistance: parseFloat(e.target.value) })}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                const parsed = val === '' ? undefined : parseFloat(val);
+                                                                handleInputChange(serial, { resistance: parsed !== undefined && !isNaN(parsed) ? parsed : undefined });
+                                                            }}
                                                         />
                                                     </td>
                                                     <td className="p-3 border-b">
@@ -1098,7 +1115,11 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                                             step="0.01"
                                                             className="w-full p-1 border rounded focus:ring-2 focus:ring-[#8EBF45]"
                                                             value={result.capacity ?? ''}
-                                                            onChange={(e) => handleInputChange(serial, { capacity: parseFloat(e.target.value) })}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                const parsed = val === '' ? undefined : parseFloat(val);
+                                                                handleInputChange(serial, { capacity: parsed !== undefined && !isNaN(parsed) ? parsed : undefined });
+                                                            }}
                                                         />
                                                     </td>
                                                     <td className="p-3 border-b text-center">

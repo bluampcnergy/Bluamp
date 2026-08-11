@@ -112,7 +112,7 @@ const App: React.FC = () => {
   const [wipItems, setWipItems] = useSupabase<WIPItem>('wip_items', DUMMY_WIP_ITEMS);
   const [finishedGoods, setFinishedGoods] = useSupabase<FinishedGood>('finished_goods', DUMMY_FINISHED_GOODS);
   const [repairItems, setRepairItems] = useSupabase<RepairItem>('repair_items', [], 'id', view === 'finished' || Boolean(visitedViews['finished']));
-  const [testResults, setTestResults] = useSupabase<TestResult>('test_results', [], 'id', view === 'testing' || Boolean(visitedViews['testing']));
+  const [testResults, setTestResults] = useSupabase<TestResult>('test_results', []);
   const [logs, setLogs] = useSupabase<LogEntry>('logs', [], 'id', view === 'log' || Boolean(visitedViews['log']));
   const [companyProfiles, setCompanyProfiles] = useSupabase<CompanyProfile>('company_profiles', DUMMY_COMPANY_PROFILES);
   const [employeeTasks, setEmployeeTasks] = useSupabase<EmployeeTask>('employee_tasks', DUMMY_EMPLOYEE_TASKS);

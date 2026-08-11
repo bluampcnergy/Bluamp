@@ -144,7 +144,6 @@ const releaseFetchSlot = () => {
 // Tables that can grow very large — cap initial fetch to prevent unbounded pagination & memory bloat
 const LARGE_TABLE_ROW_LIMIT: Record<string, number> = {
   logs: 300,
-  test_results: 300,
   supplies_records: 500,
 };
 
