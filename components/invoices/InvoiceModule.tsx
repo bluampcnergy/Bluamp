@@ -8,6 +8,7 @@ import InventoryPanel from './InventoryPanel';
 import GSTReturnPanel from './GSTReturnPanel';
 import InvoiceMaker from './InvoiceMaker';
 import PriceList from './PriceList';
+import LedgerPanel from './LedgerPanel';
 import { extractInvoiceData } from '../../services/geminiService';
 import { extractInvoiceDataLocal, testOllamaConnection } from '../../services/ollamaService';
 import { extractInvoiceDataOpenRouter, testOpenRouterConnection } from '../../services/openrouterService';
@@ -24,7 +25,7 @@ if (pdfjs.GlobalWorkerOptions) {
     pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 }
 
-type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices';
+type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices' | 'ledger';
 type AIProvider = 'gemini' | 'ollama' | 'openrouter';
 
 // Batch Job Interface
@@ -51,7 +52,7 @@ interface InvoiceModuleProps {
     addLogEntry?: (action: string, details: string) => void;
 }
 
-const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], addLogEntry }) => {
+const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, setInvoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], addLogEntry }) => {
     // Batch Queue State
     const [batchQueue, setBatchQueue] = useState<BatchJob[]>([]);
     const [activeJobId, setActiveJobId] = useState<string | null>(null); // Job currently being reviewed
@@ -279,25 +280,10 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
     };
 
     const handleEditInvoice = (invoice: ExtractedInvoice) => {
-        const jobId = `edit-${invoice.id}`;
-        // Check if already in queue to avoid duplicates?
-        const existingJob = batchQueue.find(j => j.id === jobId);
-
-        if (existingJob) {
-            setActiveJobId(jobId);
-        } else {
-            const job: BatchJob = {
-                id: jobId,
-                file: undefined,
-                status: 'review',
-                data: invoice,
-                previewUrl: undefined // No preview available for existing invoices unless stored
-            };
-            setBatchQueue(prev => [job, ...prev]);
-            setActiveJobId(jobId);
+        if (setInvoiceDraft && setView) {
+            setInvoiceDraft(invoice);
+            setView('finance_maker');
         }
-
-        if (setView) setView('finance_upload');
     };
 
     const handleSaveActive = async () => {
@@ -591,6 +577,10 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
 
             {activeTab === 'prices' && (
                 <PriceList priceList={priceList} setPriceList={setPriceList} />
+            )}
+
+            {activeTab === 'ledger' && (
+                <LedgerPanel currentUser={currentUser} />
             )}
         </div>
     );

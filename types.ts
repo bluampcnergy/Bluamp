@@ -20,6 +20,7 @@ export type View =
   | 'finance_expenses'
   | 'finance_prices'
   | 'finance_maker'
+  | 'finance_ledger'
   | 'supplies'
   | 'help'
   | 'webmail';

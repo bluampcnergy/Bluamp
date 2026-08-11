@@ -151,7 +151,7 @@ const LARGE_TABLE_ROW_LIMIT: Record<string, number> = {
 // Field pruning for large table scans
 const TABLE_SELECT_COLUMNS: Record<string, string> = {
   logs: 'id, action, details, timestamp, user',
-  test_results: 'id, receivedGoodId, serialNumber, testType, pass, voltage, internalResistance, capacityAh, grade, testedBy, timestamp, notes',
+  test_results: 'id, receivedGoodId, serialNumber, category, voltage, resistance, capacity, passed, grade, location, timestamp, testedBy',
   supplies_records: 'id, name, category, quantity, unit, timestamp, notes, supplier',
 };
 

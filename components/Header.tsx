@@ -53,7 +53,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
     home: ['home', 'help', 'webmail'] as View[],
     supplies: ['supplies'] as View[],
     operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage'] as View[],
-    finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker'] as View[],
+    finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker', 'finance_ledger'] as View[],
     admin: ['companies', 'users', 'employee_tasks', 'ai_assistant', 'reports', 'master', 'log'] as View[],
   }), []);
 
@@ -239,6 +239,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                   <>
                     <SubNavButton isActive={currentView === 'finance_upload'} onClick={() => setView('finance_upload')}>Scan & Import</SubNavButton>
                     <SubNavButton isActive={currentView === 'finance_dashboard'} onClick={() => setView('finance_dashboard')}>Summary</SubNavButton>
+                    <SubNavButton isActive={currentView === 'finance_ledger'} onClick={() => setView('finance_ledger')}>Ledger</SubNavButton>
                   </>
                 )}
                 <SubNavButton isActive={currentView === 'finance_maker'} onClick={() => setView('finance_maker')}>Invoice Maker</SubNavButton>

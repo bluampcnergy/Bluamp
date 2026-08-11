@@ -51,7 +51,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         return null;
     }, [initialData]);
 
-    const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma'>(draft?.docType || 'invoice');
+    const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(draft?.docType || 'invoice');
     const [customTitle, setCustomTitle] = useState(draft?.customTitle || 'INVOICE');
     const [doc, setDoc] = useState<ExtractedInvoice>(() => {
         const base = initialData || draft?.doc || EMPTY_INVOICE;
@@ -325,9 +325,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 dataToLoad.supplier_details = (dataToLoad.invoice_metadata as any).supplier_details;
             }
             setDoc(dataToLoad);
-            const type = initialData.document_type === 'generated_po' ? 'po' : initialData.document_type === 'generated_quotation' ? 'quotation' : initialData.document_type === 'generated_proforma_invoice' ? 'proforma' : 'invoice';
+            const type = initialData.document_type === 'generated_po' ? 'po' : initialData.document_type === 'generated_quotation' ? 'quotation' : initialData.document_type === 'generated_proforma_invoice' ? 'proforma' : initialData.document_type === 'generated_debit_note' ? 'debit_note' : initialData.document_type === 'generated_credit_note' ? 'credit_note' : 'invoice';
             setDocType(type);
-            setCustomTitle(type === 'invoice' ? 'INVOICE' : type === 'po' ? 'PURCHASE ORDER' : type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
+            setCustomTitle(type === 'invoice' ? 'INVOICE' : type === 'po' ? 'PURCHASE ORDER' : type === 'quotation' ? 'QUOTATION' : type === 'debit_note' ? 'DEBIT NOTE' : type === 'credit_note' ? 'CREDIT NOTE' : 'PROFORMA INVOICE');
 
             if (initialData.invoice_metadata?.ui_config) {
                 const loadedConfig = initialData.invoice_metadata.ui_config;
@@ -362,7 +362,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         // 1. Doc Type & Template
         if (data.document_type) {
             setDocType(data.document_type);
-            setCustomTitle(data.document_type === 'invoice' ? 'INVOICE' : data.document_type === 'po' ? 'PURCHASE ORDER' : data.document_type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
+            setCustomTitle(data.document_type === 'invoice' ? 'INVOICE' : data.document_type === 'po' ? 'PURCHASE ORDER' : data.document_type === 'quotation' ? 'QUOTATION' : data.document_type === 'debit_note' ? 'DEBIT NOTE' : data.document_type === 'credit_note' ? 'CREDIT NOTE' : 'PROFORMA INVOICE');
         }
         if (data.template_name) {
             const normalizedAiName = String(data.template_name).toLowerCase().trim();
@@ -641,10 +641,19 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         generateInvoiceNumber(tmpl.type as string);
     };
 
-    const handleDocTypeChange = (type: 'invoice' | 'po' | 'quotation' | 'proforma') => {
+    const handleDocTypeChange = (type: 'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note') => {
         setDocType(type);
-        setCustomTitle(type === 'invoice' ? 'INVOICE' : type === 'po' ? 'PURCHASE ORDER' : type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
+        const titleMap: Record<string, string> = { invoice: 'INVOICE', po: 'PURCHASE ORDER', quotation: 'QUOTATION', proforma: 'PROFORMA INVOICE', debit_note: 'DEBIT NOTE', credit_note: 'CREDIT NOTE' };
+        setCustomTitle(titleMap[type] || 'INVOICE');
         generateInvoiceNumber(type);
+        // Auto-expand note section and pre-set note_type for DN/CN
+        if (type === 'debit_note' || type === 'credit_note') {
+            setShowNoteSection(true);
+            setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, note_type: type === 'debit_note' ? 'debit' : 'credit' } }));
+        } else {
+            // Clear note metadata when switching away from DN/CN
+            setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, note_type: undefined as any } }));
+        }
     };
 
     const updateParty = (side: 'issuer' | 'receiver' | 'supplier', field: string, val: string) => {
@@ -987,7 +996,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     }
                 },
                 filename: invNum,
-                document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : 'generated_proforma_invoice',
+                document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
                 uploaded_by: currentUser?.username || 'system',
                 requires_review: false
             };
@@ -1040,6 +1049,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             if (currentDocType === 'po') typeTag = 'PO';
             else if (currentDocType === 'quotation') typeTag = 'QUO';
             else if (currentDocType === 'proforma') typeTag = 'PRO';
+            else if (currentDocType === 'debit_note') typeTag = 'DN';
+            else if (currentDocType === 'credit_note') typeTag = 'CN';
 
             const newPrefix = `${typeTag}/DC/${fyStr}/`;
             
@@ -1200,6 +1211,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <button onClick={() => handleDocTypeChange('quotation')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'quotation' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Quote</button>
                         <button onClick={() => handleDocTypeChange('po')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'po' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>PO</button>
                         <button onClick={() => handleDocTypeChange('proforma')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'proforma' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Proforma</button>
+                        <button onClick={() => handleDocTypeChange('debit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'debit_note' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-500 border-red-200'}`}>DN</button>
+                        <button onClick={() => handleDocTypeChange('credit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'credit_note' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-500 border-emerald-200'}`}>CN</button>
                     </div>
                 </div>
 

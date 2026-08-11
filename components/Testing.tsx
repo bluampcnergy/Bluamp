@@ -207,6 +207,7 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
     const handleInputChange = (serial: string, changes: Partial<TestResult>) => {
         if (!selectedBatch) return;
 
+        let itemToSave: TestResult | null = null;
         setTestResults(prev => {
             const updated = [...prev];
             const existingIdx = updated.findIndex(r => r.receivedGoodId === selectedBatch.id && r.serialNumber === serial);
@@ -214,17 +215,18 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
             const category = batchCat.includes('cell') ? 'Cell' : 'BMS';
 
             if (existingIdx > -1) {
-                updated[existingIdx] = {
+                itemToSave = {
                     ...updated[existingIdx],
                     ...changes,
                     timestamp: Date.now(),
                     testedBy: currentUser?.username || 'user'
                 };
+                updated[existingIdx] = itemToSave;
             } else {
                 // Safe Serial ID generation
                 const safeSerial = serial.replace(/[^a-zA-Z0-9]/g, '_');
 
-                updated.push({
+                itemToSave = {
                     id: `test-${selectedBatch.id}-${safeSerial}`,
                     receivedGoodId: selectedBatch.id,
                     serialNumber: serial,
@@ -232,10 +234,17 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                     timestamp: Date.now(),
                     testedBy: currentUser?.username || 'user',
                     ...changes
-                });
+                };
+                updated.push(itemToSave);
             }
             return updated;
         });
+
+        if (itemToSave) {
+            supabase.from('test_results').upsert([itemToSave]).then(({ error }) => {
+                if (error) console.error('Error persisting test result change to Supabase:', error);
+            });
+        }
     };
 
     // Helper to get result
@@ -358,6 +367,7 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         const category = batchCat.includes('cell') ? 'Cell' : 'BMS';
 
         // 1. Update Test Results with Grades AND Location
+        const itemsToSave: TestResult[] = [];
         setTestResults(prev => {
             const updated = [...prev];
 
@@ -384,16 +394,18 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
 
                 // --- Update Logic ---
                 if (existingIdx > -1) {
-                    updated[existingIdx] = {
+                    const item: TestResult = {
                         ...updated[existingIdx],
                         grade: newGrade || updated[existingIdx].grade, // Keep existing grade if calculation skipped (e.g. no value)
                         location: batchLocation || updated[existingIdx].location, // Bulk update location
                         timestamp: Date.now()
                     };
+                    updated[existingIdx] = item;
+                    itemsToSave.push(item);
                 } else if (newGrade || batchLocation) {
                     // Create entry if we have grading data OR location data
                     const safeSerial = serial.replace(/[^a-zA-Z0-9]/g, '_');
-                    updated.push({
+                    const item: TestResult = {
                         id: `test-${selectedBatch.id}-${safeSerial}`,
                         receivedGoodId: selectedBatch.id,
                         serialNumber: serial,
@@ -402,11 +414,19 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                         testedBy: currentUser?.username || 'user',
                         grade: newGrade,
                         location: batchLocation
-                    });
+                    };
+                    updated.push(item);
+                    itemsToSave.push(item);
                 }
             });
             return updated;
         });
+
+        if (itemsToSave.length > 0) {
+            supabase.from('test_results').upsert(itemsToSave).then(({ error }) => {
+                if (error) console.error('Error persisting grading to Supabase:', error);
+            });
+        }
 
         // Prepare config object for saving
         const newGradingConfig = {
@@ -514,10 +534,12 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         if (lines.length < 2) return;
 
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
-        const serialIdx = headers.findIndex(h => h.includes('serial'));
-        const voltIdx = headers.findIndex(h => h.includes('voltage'));
-        const resIdx = headers.findIndex(h => h.includes('resistance'));
-        const capIdx = headers.findIndex(h => h.includes('capacity'));
+        const serialIdx = headers.findIndex(h => h.includes('serial') || h === 'sn' || h === 's/n' || h.includes('s_n'));
+        const voltIdx = headers.findIndex(h => h.includes('voltage') || h.includes('volt') || h === 'v');
+        const resIdx = headers.findIndex(h => h.includes('resistance') || h.includes('res') || h.includes('ir') || h.includes('mΩ') || h.includes('mohm'));
+        const capIdx = headers.findIndex(h => h.includes('capacity') || h.includes('cap') || h.includes('ah'));
+        const gradeIdx = headers.findIndex(h => h.includes('grade'));
+        const locIdx = headers.findIndex(h => h.includes('location') || h.includes('rack'));
 
         if (serialIdx === -1) {
             alert('CSV must contain a "serial number" column.');
@@ -544,12 +566,14 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
             const voltage = voltIdx !== -1 ? parseFloat(values[voltIdx]) : undefined;
             const resistance = resIdx !== -1 ? parseFloat(values[resIdx]) : undefined;
             const capacity = capIdx !== -1 ? parseFloat(values[capIdx]) : undefined;
+            const grade = gradeIdx !== -1 ? values[gradeIdx] : undefined;
+            const location = locIdx !== -1 ? values[locIdx] : undefined;
 
             const safeVoltage = isNaN(voltage as number) ? undefined : voltage;
             const safeResistance = isNaN(resistance as number) ? undefined : resistance;
             const safeCapacity = isNaN(capacity as number) ? undefined : capacity;
 
-            if (safeVoltage === undefined && safeResistance === undefined && safeCapacity === undefined) return;
+            if (safeVoltage === undefined && safeResistance === undefined && safeCapacity === undefined && !grade && !location) return;
 
             const safeSerial = serial.replace(/[^a-zA-Z0-9]/g, '_');
             newResults.push({
@@ -560,6 +584,8 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                 voltage: safeVoltage,
                 resistance: safeResistance,
                 capacity: safeCapacity,
+                grade: grade || undefined,
+                location: location || undefined,
                 timestamp: Date.now(),
                 testedBy: currentUser?.username || 'Bulk Import',
             });
@@ -580,6 +606,8 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                         voltage: newResult.voltage ?? updated[existingIdx].voltage,
                         resistance: newResult.resistance ?? updated[existingIdx].resistance,
                         capacity: newResult.capacity ?? updated[existingIdx].capacity,
+                        grade: newResult.grade ?? updated[existingIdx].grade,
+                        location: newResult.location ?? updated[existingIdx].location,
                         timestamp: Date.now(),
                         testedBy: newResult.testedBy
                     };
@@ -588,6 +616,15 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                 }
             });
             return updated;
+        });
+
+        // Direct explicit upsert to Supabase database so data is saved immediately
+        supabase.from('test_results').upsert(newResults).then(({ error }) => {
+            if (error) {
+                console.error("Error upserting imported CSV test results to Supabase:", error);
+            } else {
+                console.log(`Successfully persisted ${newResults.length} CSV test results to Supabase DB.`);
+            }
         });
 
         addLogEntry('Imported Test Results', `Bulk imported test results for ${newResults.length} items.`);
