@@ -285,6 +285,12 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
 
         sorted.forEach(inv => {
             const voucherType = getVoucherType(inv);
+            
+            // Only consider calculations for Invoices, Debit Notes, and Credit Notes (exclude POs, Proformas, Quotations, etc.)
+            if (!['Sales', 'Purchase', 'Credit Note', 'Debit Note'].includes(voucherType)) {
+                return;
+            }
+
             const amount = inv.totals?.grand_total || 0;
             const date = inv.invoice_metadata?.invoice_date || (inv.created_at ? new Date(inv.created_at).toISOString().split('T')[0] : '');
             const invNum = inv.invoice_metadata?.invoice_number || '-';
@@ -294,21 +300,22 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
             let particulars = '';
             let partyGstin = '';
 
+            const meta = (inv.invoice_metadata || {}) as any;
             if (isSales) {
-                particulars = inv.receiver_details?.name || 'Unknown Customer';
-                partyGstin = inv.receiver_details?.gstin || '';
+                particulars = inv.receiver_details?.name || meta.receiver_details?.name || 'Customer';
+                partyGstin = extractGstinFromObj(inv.receiver_details) || extractGstinFromObj(meta.receiver_details);
             } else {
-                particulars = inv.issuer_details?.name || inv.supplier_details?.name || 'Unknown Supplier';
-                partyGstin = inv.issuer_details?.gstin || inv.supplier_details?.gstin || '';
+                particulars = inv.issuer_details?.name || inv.supplier_details?.name || meta.supplier_details?.name || meta.issuer_details?.name || 'Supplier';
+                partyGstin = extractGstinFromObj(inv.issuer_details) || extractGstinFromObj(inv.supplier_details) || extractGstinFromObj(meta.supplier_details) || extractGstinFromObj(meta.issuer_details);
             }
 
             let debit = 0;
             let credit = 0;
 
             if (ledgerPerspective === 'receivable') {
-                if (voucherType === 'Sales' || voucherType === 'Proforma') {
+                if (voucherType === 'Sales') {
                     debit = amount;
-                } else if (voucherType === 'Purchase' || voucherType === 'PO') {
+                } else if (voucherType === 'Purchase') {
                     credit = amount;
                 } else if (voucherType === 'Credit Note') {
                     if (isSales) credit = amount;
@@ -316,13 +323,11 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                 } else if (voucherType === 'Debit Note') {
                     if (isSales) debit = amount;
                     else credit = amount;
-                } else if (voucherType === 'Quotation') {
-                    return;
                 }
             } else {
-                if (voucherType === 'Purchase' || voucherType === 'PO') {
+                if (voucherType === 'Purchase') {
                     debit = amount;
-                } else if (voucherType === 'Sales' || voucherType === 'Proforma') {
+                } else if (voucherType === 'Sales') {
                     credit = amount;
                 } else if (voucherType === 'Credit Note') {
                     if (isPurchase) credit = amount;
@@ -330,8 +335,6 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                 } else if (voucherType === 'Debit Note') {
                     if (isPurchase) debit = amount;
                     else credit = amount;
-                } else if (voucherType === 'Quotation') {
-                    return;
                 }
             }
 
