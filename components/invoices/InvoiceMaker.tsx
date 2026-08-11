@@ -58,7 +58,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         return { 
             ...EMPTY_INVOICE,
             ...base, 
-            source_type: 'sales', 
+            source_type: (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' ? 'purchase' : (base.source_type || 'sales'), 
             document_type: 'generated_invoice',
             receiver_details: base.receiver_details || EMPTY_INVOICE.receiver_details,
             issuer_details: { 
@@ -646,13 +646,14 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         const titleMap: Record<string, string> = { invoice: 'INVOICE', po: 'PURCHASE ORDER', quotation: 'QUOTATION', proforma: 'PROFORMA INVOICE', debit_note: 'DEBIT NOTE', credit_note: 'CREDIT NOTE' };
         setCustomTitle(titleMap[type] || 'INVOICE');
         generateInvoiceNumber(type);
-        // Auto-expand note section and pre-set note_type for DN/CN
+        setDoc(prev => ({
+            ...prev,
+            source_type: type === 'po' ? 'purchase' : 'sales',
+            invoice_metadata: { ...prev.invoice_metadata, note_type: (type === 'debit_note' ? 'debit' : type === 'credit_note' ? 'credit' : undefined) as any }
+        }));
+        // Auto-expand note section for DN/CN
         if (type === 'debit_note' || type === 'credit_note') {
             setShowNoteSection(true);
-            setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, note_type: type === 'debit_note' ? 'debit' : 'credit' } }));
-        } else {
-            // Clear note metadata when switching away from DN/CN
-            setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, note_type: undefined as any } }));
         }
     };
 
@@ -981,6 +982,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             // Force invoice number as filename
             const record = {
                 ...doc,
+                source_type: docType === 'po' ? 'purchase' : (doc.source_type || 'sales'),
                 invoice_metadata: {
                     ...doc.invoice_metadata,
                     shipped_to_details: doc.shipped_to_details,
