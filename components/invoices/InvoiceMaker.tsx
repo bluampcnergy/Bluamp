@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
-import { ExtractedInvoice, InvoiceTemplate, EMPTY_INVOICE, InvoiceItem, CompanyProfile, BankDetails, PriceListItem, FinishedGood, Recipe } from '../../types';
+import { ExtractedInvoice, InvoiceTemplate, EMPTY_INVOICE, InvoiceItem, CompanyProfile, BankDetails, PriceListItem, FinishedGood, Recipe, InvoiceEditHistoryEntry } from '../../types';
 import { recalculateInvoiceTotals, safeRender, amountToWords, getTaxMode, getCurrencySymbol } from '../../utils/invoiceUtils';
 import { generateUnitIds } from '../../utils';
-import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, RefreshCw, ChevronUp, ChevronDown, Loader2, LayoutDashboard, FileText } from './Icons';
+import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, RefreshCw, ChevronUp, ChevronDown, Loader2, LayoutDashboard, FileText, History } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
 import { ImportIcon } from '../icons/ImportIcon';
 import AiChatPanel from './AiChatPanel';
@@ -18,6 +18,7 @@ interface InvoiceMakerProps {
     finishedGoods?: FinishedGood[];
     recipes?: Recipe[];
     addLogEntry?: (action: string, details: string) => void;
+    setInvoiceDraft?: (draft: ExtractedInvoice | null) => void;
 }
 
 // Extend config locally to support new UI flags without breaking shared types immediately
@@ -40,7 +41,7 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     shippedToLabel?: string;
 };
 
-const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry }) => {
+const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry, setInvoiceDraft }) => {
     // Load draft from local storage if not editing an existing record
     const draft = useMemo(() => {
         if (initialData?.id) return null;
@@ -953,6 +954,86 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const removeLogo = () => { setLogo(null); if (logoInputRef.current) logoInputRef.current.value = ''; };
     const removeStamp = () => { setStamp(null); if (stampInputRef.current) stampInputRef.current.value = ''; };
     const removeSignature = () => { setSignature(null); if (signatureInputRef.current) signatureInputRef.current.value = ''; };
+    const isEditingExistingRecord = Boolean(initialData?.id || doc.id);
+    const editingRecordId = doc.id || initialData?.id;
+
+    const handleUpdateRecord = async () => {
+        const targetId = editingRecordId;
+        if (!targetId) {
+            return alert("No existing record ID found to update.");
+        }
+        const invNum = doc.invoice_metadata.invoice_number;
+        if (!invNum) return alert("Please provide an invoice number.");
+
+        setIsSaving(true);
+        try {
+            const now = new Date().toISOString();
+            const editorName = currentUser?.username || username || 'system';
+            
+            const historyEntry: InvoiceEditHistoryEntry = {
+                edited_at: now,
+                edited_by: editorName,
+                previous_grand_total: initialData?.totals?.grand_total ?? doc.totals?.grand_total,
+                previous_invoice_number: initialData?.invoice_metadata?.invoice_number ?? doc.invoice_metadata?.invoice_number,
+                summary: `Updated by ${editorName} on ${new Date(now).toLocaleDateString('en-IN')} at ${new Date(now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+            };
+
+            const prevHistory = doc.invoice_metadata?.edit_history || initialData?.invoice_metadata?.edit_history || [];
+            const updatedHistory = [...prevHistory, historyEntry];
+
+            const record = {
+                ...doc,
+                source_type: docType === 'po' ? 'purchase' : (doc.source_type || 'sales'),
+                invoice_metadata: {
+                    ...doc.invoice_metadata,
+                    edit_history: updatedHistory,
+                    shipped_to_details: doc.shipped_to_details,
+                    supplier_details: doc.supplier_details,
+                    ui_config: {
+                        ...config,
+                        logoUrl: logo || undefined,
+                        stampUrl: stamp || undefined,
+                        signatureUrl: signature || undefined,
+                        visibleColumns,
+                        billedToLabel,
+                        shippedToLabel
+                    }
+                },
+                filename: invNum,
+                document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
+                uploaded_by: doc.uploaded_by || currentUser?.username || 'system',
+                requires_review: false
+            };
+
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id, timestamp, created_at, shipped_to_details, supplier_details, ...cleanRecord } = record as any;
+
+            const { error: updateError } = await supabase
+                .from('invoices')
+                .update(cleanRecord)
+                .eq('id', targetId);
+
+            if (updateError) throw updateError;
+
+            // Update local state with history and id
+            setDoc(prev => ({
+                ...prev,
+                id: targetId,
+                invoice_metadata: {
+                    ...prev.invoice_metadata,
+                    edit_history: updatedHistory
+                }
+            }));
+
+            try { localStorage.removeItem('invoice_maker_draft'); } catch (e) {}
+            if (addLogEntry) addLogEntry('Updated Document', `Updated ${docType.toUpperCase()} document #${invNum} in Dashboard.`);
+            alert(`✅ Document #${invNum} updated successfully in database! Revision logged.`);
+        } catch (error: any) {
+            alert("Error updating record: " + error.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleSaveRecord = async () => {
         const invNum = doc.invoice_metadata.invoice_number;
@@ -1214,9 +1295,41 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <button onClick={() => handleDocTypeChange('po')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'po' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>PO</button>
                         <button onClick={() => handleDocTypeChange('proforma')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'proforma' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Proforma</button>
                         <button onClick={() => handleDocTypeChange('debit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'debit_note' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-500 border-red-200'}`}>DN</button>
-                        <button onClick={() => handleDocTypeChange('credit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'credit_note' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-500 border-emerald-200'}`}>CN</button>
+                        <button onClick={() => handleDocTypeChange('credit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'credit_note' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-600 border-emerald-200'}`}>CN</button>
                     </div>
                 </div>
+
+                {isEditingExistingRecord && (
+                    <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-xl shadow-2xs">
+                        <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2">
+                                <span className="p-1 bg-amber-500 text-white rounded font-bold text-[10px] uppercase tracking-wider">Editing Mode</span>
+                                <span className="text-xs font-bold text-amber-900 truncate max-w-[180px]">
+                                    Doc #{doc.invoice_metadata?.invoice_number || 'N/A'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    if (confirm("Clear active edit mode and start a new blank invoice?")) {
+                                        setDoc({ ...EMPTY_INVOICE });
+                                        if (setInvoiceDraft) setInvoiceDraft(null);
+                                    }
+                                }}
+                                className="text-[10px] bg-white text-amber-800 border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-100 font-bold"
+                            >
+                                New Blank
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-amber-700 font-mono mt-1">
+                            ID: {editingRecordId?.slice(0, 8)}...
+                            {doc.invoice_metadata?.edit_history && doc.invoice_metadata.edit_history.length > 0 && (
+                                <span className="ml-2 font-sans font-semibold text-amber-800">
+                                    • {doc.invoice_metadata.edit_history.length} revision(s)
+                                </span>
+                            )}
+                        </p>
+                    </div>
+                )}
 
                 {/* Debit / Credit Note — minimizable */}
                 <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
@@ -1544,15 +1657,59 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     </div>
                 </div>
 
+                {doc.invoice_metadata?.edit_history && doc.invoice_metadata.edit_history.length > 0 && (
+                    <div className="mt-6 p-3 bg-amber-50/70 border border-amber-200 rounded-lg">
+                        <h4 className="text-xs font-black text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <History size={14} className="text-amber-600" /> Edit History ({doc.invoice_metadata.edit_history.length})
+                        </h4>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            {doc.invoice_metadata.edit_history.map((entry, idx) => (
+                                <div key={idx} className="p-2 bg-white rounded border border-amber-100 text-xs shadow-2xs">
+                                    <div className="flex justify-between font-bold text-slate-700">
+                                        <span>{entry.edited_by || 'User'}</span>
+                                        <span className="text-[10px] text-slate-400 font-normal">{new Date(entry.edited_at).toLocaleDateString('en-IN')}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">{entry.summary || 'Document updated'}</p>
+                                    {entry.previous_grand_total !== undefined && (
+                                        <p className="text-[10px] text-slate-400 font-mono">Prev Total: ₹{entry.previous_grand_total.toLocaleString('en-IN')}</p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="mt-8 pt-6 border-t flex flex-col gap-3 mb-10">
-                    <button
-                        onClick={handleSaveRecord}
-                        disabled={isSaving}
-                        className={`w-full ${isSaving ? 'bg-slate-400' : 'bg-[#8EBF45] hover:bg-[#658C3E] text-[#0D0D0D] hover:text-white'} py-2 rounded shadow flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wide`}
-                    >
-                        {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-                        {isSaving ? "Checking for duplicates..." : "Save Draft"}
-                    </button>
+                    {isEditingExistingRecord ? (
+                        <div className="space-y-2">
+                            <button
+                                onClick={handleUpdateRecord}
+                                disabled={isSaving}
+                                className={`w-full ${isSaving ? 'bg-amber-400' : 'bg-amber-500 hover:bg-amber-600 text-white'} py-2.5 rounded-lg shadow-md flex items-center justify-center gap-2 text-sm font-black uppercase tracking-wide transition-all`}
+                            >
+                                {isSaving ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+                                {isSaving ? "Updating Record..." : "Update Existing Record"}
+                            </button>
+
+                            <button
+                                onClick={handleSaveRecord}
+                                disabled={isSaving}
+                                className={`w-full ${isSaving ? 'bg-slate-300' : 'bg-slate-700 hover:bg-slate-800 text-white'} py-2 rounded shadow flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wide transition-all`}
+                            >
+                                {isSaving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                Save as New Copy
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleSaveRecord}
+                            disabled={isSaving}
+                            className={`w-full ${isSaving ? 'bg-slate-400' : 'bg-[#8EBF45] hover:bg-[#658C3E] text-[#0D0D0D] hover:text-white'} py-2 rounded shadow flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wide`}
+                        >
+                            {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                            {isSaving ? "Checking for duplicates..." : "Save Draft"}
+                        </button>
+                    )}
                     <div className="flex gap-2">
                         <button onClick={handlePrint} className="flex-1 bg-[#0D0D0D] text-white py-2 rounded shadow hover:bg-[#404040] flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wide"><Printer size={16} /> Print</button>
                         <button onClick={handlePrint} className="flex-1 bg-[#8EBF45] text-[#0D0D0D] py-2 rounded shadow hover:bg-[#658C3E] hover:text-white flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wide"><Download size={16} /> PDF</button>

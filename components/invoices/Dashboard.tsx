@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { ExtractedInvoice } from '../../types';
 import { generateCSV, generateCompanyProfileCSV, downloadFile, safeRender } from '../../utils/invoiceUtils';
-import { FileSpreadsheet, FileJson, Loader2, RefreshCw, Search, FileText, Plus, X, Building, ChevronDown, ChevronUp, Trash2, Download, Mail, CheckCircle, Square, CheckSquare, MinusSquare } from './Icons';
+import { FileSpreadsheet, FileJson, Loader2, RefreshCw, Search, FileText, Plus, X, Building, ChevronDown, ChevronUp, Trash2, Download, Mail, CheckCircle, Square, CheckSquare, MinusSquare, History } from './Icons';
 import { ImportIcon } from '../icons/ImportIcon';
 import { PencilIcon } from '../icons/PencilIcon';
 import Modal from '../Modal';
@@ -299,22 +299,28 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                 .eq('requires_review', false)
                 .order('created_at', { ascending: false });
 
-            query = query.eq('source_type', invoiceType);
-
-            if (documentCategory === 'invoice') {
-                query = query.in('document_type', ['invoice', 'generated_invoice', 'receipt', 'other']);
-            } else if (documentCategory === 'po') {
-                 query = query.in('document_type', ['po', 'generated_po', 'purchase_order']);
-            } else if (documentCategory === 'quotation') {
-                 query = query.in('document_type', ['quotation', 'generated_quotation']);
-            } else if (documentCategory === 'proforma_invoice') {
-                 query = query.in('document_type', ['proforma_invoice', 'generated_proforma_invoice']);
-            } else if (documentCategory === 'debit_note') {
-                 query = query.in('document_type', ['debit_note', 'generated_debit_note']);
-            } else if (documentCategory === 'credit_note') {
-                 query = query.in('document_type', ['credit_note', 'generated_credit_note']);
+            if (documentCategory === 'po') {
+                if (invoiceType === 'purchase') {
+                    query = query.in('document_type', ['po', 'generated_po', 'purchase_order']);
+                } else {
+                    query = query.eq('source_type', invoiceType).in('document_type', ['po', 'generated_po', 'purchase_order']);
+                }
             } else {
-                 query = query.eq('document_type', documentCategory);
+                query = query.eq('source_type', invoiceType);
+
+                if (documentCategory === 'invoice') {
+                    query = query.in('document_type', ['invoice', 'generated_invoice', 'receipt', 'other']);
+                } else if (documentCategory === 'quotation') {
+                    query = query.in('document_type', ['quotation', 'generated_quotation']);
+                } else if (documentCategory === 'proforma_invoice') {
+                    query = query.in('document_type', ['proforma_invoice', 'generated_proforma_invoice']);
+                } else if (documentCategory === 'debit_note') {
+                    query = query.in('document_type', ['debit_note', 'generated_debit_note']);
+                } else if (documentCategory === 'credit_note') {
+                    query = query.in('document_type', ['credit_note', 'generated_credit_note']);
+                } else {
+                    query = query.eq('document_type', documentCategory);
+                }
             }
 
             if (filterStart) {
@@ -703,6 +709,28 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                                     {inv.image_link && <><span className="text-slate-400">Image:</span> <a href={inv.image_link} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline truncate" title={inv.image_link}>View Image/Link</a></>}
                                                                 </div>
                                                             </div>
+                                                            {inv.invoice_metadata?.edit_history && inv.invoice_metadata.edit_history.length > 0 && (
+                                                                <div className="mt-6 pt-4 border-t border-slate-100">
+                                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                                                        <History size={12} className="text-[#8EBF45]" />
+                                                                        Edit History & Audit Trail ({inv.invoice_metadata.edit_history.length})
+                                                                    </p>
+                                                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                                                        {inv.invoice_metadata.edit_history.map((log: any, hIdx: number) => (
+                                                                            <div key={hIdx} className="bg-slate-50 p-2 rounded text-xs border border-slate-100 flex items-start justify-between">
+                                                                                <div>
+                                                                                    <span className="font-bold text-slate-700 block">{log.action || 'Updated'}</span>
+                                                                                    <span className="text-[10px] text-slate-500">{log.notes || log.details || 'Document modified'}</span>
+                                                                                </div>
+                                                                                <div className="text-right shrink-0 ml-2">
+                                                                                    <span className="text-[10px] font-bold text-slate-600 block">{log.updated_by || 'User'}</span>
+                                                                                    <span className="text-[9px] text-slate-400 font-mono">{log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN') : ''}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </td>

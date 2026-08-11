@@ -127,9 +127,30 @@ export const generateBatchId = (good: FinishedGood, allGoods: FinishedGood[], re
 2.  **Config:** User defines `LowerLimit`, `UpperLimit`, `NumGrades`.
 3.  **Binning Algorithm:**
     *   Calculate `Step = (Upper - Lower) / NumGrades`.
-    *   `BinIndex = floor((Value - Lower) / Step)`.
-    *   Convert `BinIndex` to Roman Numeral (I, II, III...).
-    *   **Rule:** If `Value < Lower` or `Value > Upper`, Grade = "Fail".
+
+---
+
+### Module E: Finance, Ledger & Audit Trail
+**Core Objective:** Maintain accurate double-entry financial ledger view, party resolution, and revision audit logs for all accounting documents.
+
+**Functional Logic:**
+1. **Party Aggregation (`LedgerPanel.tsx`):**
+   * Combines registered companies from `company_profiles` table with parties extracted from invoice issuer, receiver, and supplier details into a unified `allParties` list.
+2. **Review Filtering:**
+   * Fetches finalized documents with `.or('requires_review.eq.false,requires_review.is.null')`.
+3. **Audit Trail Schema (`edit_history`):**
+   * Edits and updates to invoices append log objects to `invoice_metadata.edit_history`:
+     ```json
+     [
+       {
+         "timestamp": "2026-08-11T10:00:00.000Z",
+         "user": "admin",
+         "action": "Update Document",
+         "notes": "Updated invoice totals and line items"
+       }
+     ]
+     ```
+   * Rendered visually in `Dashboard.tsx` expandable row timeline.
 
 ---
 

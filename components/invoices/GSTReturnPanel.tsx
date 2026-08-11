@@ -110,21 +110,23 @@ const GSTReturnPanel: React.FC = () => {
 
         data.forEach(inv => {
             const totals = inv.totals;
+            const isCreditNote = inv.document_type === 'credit_note' || inv.document_type === 'generated_credit_note' || inv.invoice_metadata?.note_type === 'credit';
+            const multiplier = isCreditNote ? -1 : 1;
             
             if (inv.source_type === 'sales') {
-                summary.outward_taxable += totals.subtotal_taxable || 0;
-                summary.outward_igst += totals.igst_total || 0;
-                summary.outward_cgst += totals.cgst_total || 0;
-                summary.outward_sgst += totals.sgst_total || 0;
+                summary.outward_taxable += (totals.subtotal_taxable || 0) * multiplier;
+                summary.outward_igst += (totals.igst_total || 0) * multiplier;
+                summary.outward_cgst += (totals.cgst_total || 0) * multiplier;
+                summary.outward_sgst += (totals.sgst_total || 0) * multiplier;
             } else if (inv.source_type === 'purchase') {
                 const isEligible = inv.invoice_metadata?.input_tax_credit !== 'non_set_off';
                 
                 if (isEligible) {
-                    summary.itc_igst += totals.igst_total || 0;
-                    summary.itc_cgst += totals.cgst_total || 0;
-                    summary.itc_sgst += totals.sgst_total || 0;
+                    summary.itc_igst += (totals.igst_total || 0) * multiplier;
+                    summary.itc_cgst += (totals.cgst_total || 0) * multiplier;
+                    summary.itc_sgst += (totals.sgst_total || 0) * multiplier;
                 } else {
-                    summary.itc_ineligible += (totals.igst_total || 0) + (totals.cgst_total || 0) + (totals.sgst_total || 0);
+                    summary.itc_ineligible += ((totals.igst_total || 0) + (totals.cgst_total || 0) + (totals.sgst_total || 0)) * multiplier;
                 }
             }
         });

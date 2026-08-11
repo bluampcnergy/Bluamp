@@ -580,7 +580,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
             )}
 
             {activeTab === 'ledger' && (
-                <LedgerPanel currentUser={currentUser} />
+                <LedgerPanel currentUser={currentUser} companyProfiles={companyProfiles} />
             )}
         </div>
     );

@@ -5,7 +5,6 @@ import { PlusIcon } from './icons/PlusIcon';
 import { PencilIcon } from './icons/PencilIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { ImportIcon } from './icons/ImportIcon';
-import { Download } from 'lucide-react';
 import Modal from './Modal';
 
 interface CompanyProfilesProps {

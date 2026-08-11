@@ -358,12 +358,21 @@ export interface SupplyRecord {
   created_by?: string;
 }
 
+export interface InvoiceEditHistoryEntry {
+  edited_at: string;
+  edited_by: string;
+  previous_grand_total?: number;
+  previous_invoice_number?: string;
+  notes?: string;
+  summary?: string;
+}
+
 export interface ExtractedInvoice {
   id?: string;
   created_at?: string;
   timestamp?: string;
   filename: string;
-  document_type: 'invoice' | 'receipt' | 'credit_note' | 'debit_note' | 'generated_invoice' | 'generated_po' | 'purchase_order' | 'quotation' | 'proforma_invoice' | 'other';
+  document_type: 'invoice' | 'receipt' | 'credit_note' | 'debit_note' | 'generated_invoice' | 'generated_po' | 'generated_debit_note' | 'generated_credit_note' | 'generated_quotation' | 'generated_proforma_invoice' | 'purchase_order' | 'quotation' | 'proforma_invoice' | 'other';
   source_type: 'sales' | 'purchase';
   issuer_details: InvoiceParty;
   receiver_details: InvoiceParty;
@@ -385,6 +394,7 @@ export interface ExtractedInvoice {
     tax_mode?: 'intra' | 'inter';
     mail_sent?: boolean;
     ui_config?: Record<string, any>;
+    edit_history?: InvoiceEditHistoryEntry[];
   };
   items: InvoiceItem[];
   totals: {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
-import { ExtractedInvoice } from '../../types';
+import { ExtractedInvoice, CompanyProfile } from '../../types';
 import { Loader2, Download, Search, Building, RefreshCw, FileText } from './Icons';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
@@ -19,6 +19,7 @@ interface LedgerEntry {
 
 interface LedgerPanelProps {
     currentUser: { username: string; role?: string } | null;
+    companyProfiles?: CompanyProfile[];
 }
 
 const VOUCHER_TYPE_COLORS: Record<string, string> = {
@@ -31,8 +32,9 @@ const VOUCHER_TYPE_COLORS: Record<string, string> = {
     'Proforma': 'bg-indigo-50 text-indigo-700',
 };
 
-const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser }) => {
+const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles = [] }) => {
     const [invoices, setInvoices] = useState<ExtractedInvoice[]>([]);
+    const [dbCompanyProfiles, setDbCompanyProfiles] = useState<CompanyProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [filterStart, setFilterStart] = useState('');
     const [filterEnd, setFilterEnd] = useState('');
@@ -42,13 +44,27 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser }) => {
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const ledgerRef = useRef<HTMLDivElement>(null);
 
+    const fetchCompanies = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('company_profiles')
+                .select('*')
+                .order('name', { ascending: true });
+            if (!error && data) {
+                setDbCompanyProfiles(data as CompanyProfile[]);
+            }
+        } catch (err) {
+            console.error('Ledger company profiles fetch error:', err);
+        }
+    };
+
     const fetchInvoices = async () => {
         setLoading(true);
         try {
             let query = supabase
                 .from('invoices')
-                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, supplier_details, totals, filename, created_at')
-                .eq('requires_review', false)
+                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, supplier_details, totals, filename, created_at, requires_review')
+                .or('requires_review.eq.false,requires_review.is.null')
                 .order('created_at', { ascending: true })
                 .limit(500);
 
@@ -70,13 +86,25 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser }) => {
     };
 
     useEffect(() => {
+        fetchCompanies();
+    }, []);
+
+    useEffect(() => {
         const timer = setTimeout(() => fetchInvoices(), 300);
         return () => clearTimeout(timer);
     }, [filterStart, filterEnd]);
 
-    // Extract unique party names from all invoices
+    // Extract unique party names from company profiles + invoices
     const allParties = useMemo(() => {
         const partySet = new Set<string>();
+
+        // 1. Add registered company profile names
+        const profilesToUse = companyProfiles.length > 0 ? companyProfiles : dbCompanyProfiles;
+        profilesToUse.forEach(cp => {
+            if (cp.name && cp.name.trim()) partySet.add(cp.name.trim());
+        });
+
+        // 2. Add party names from invoices
         invoices.forEach(inv => {
             const issuer = inv.issuer_details?.name?.trim();
             const receiver = inv.receiver_details?.name?.trim();
@@ -86,7 +114,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser }) => {
             if (supplier) partySet.add(supplier);
         });
         return Array.from(partySet).sort();
-    }, [invoices]);
+    }, [invoices, companyProfiles, dbCompanyProfiles]);
 
     // Determine voucher type from document_type
     const getVoucherType = (inv: ExtractedInvoice): string => {
@@ -223,7 +251,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser }) => {
                 filename: `Ledger_${selectedParty === '__ALL__' ? 'All_Parties' : selectedParty.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
                 image: { type: 'jpeg' as const, quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
             };
             await html2pdf().set(opt).from(element).save();
         } catch (err: any) {
