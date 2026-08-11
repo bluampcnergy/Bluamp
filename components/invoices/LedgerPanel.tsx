@@ -73,8 +73,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         try {
             let query = supabase
                 .from('invoices')
-                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, supplier_details, totals, filename, created_at, requires_review')
-                .or('requires_review.eq.false,requires_review.is.null')
+                .select('*')
                 .order('created_at', { ascending: true })
                 .limit(1000);
 
@@ -105,6 +104,58 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
     }, [filterStart, filterEnd]);
 
     const normalizeGstin = (g?: string) => (g || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+    // Helper functions for deep party info extraction from any invoice structure
+    const extractGstinFromObj = (obj: any): string => {
+        if (!obj) return '';
+        const raw = obj.gstin || obj.gstNumber || obj.gst_number || obj.gst || '';
+        return normalizeGstin(raw);
+    };
+
+    const extractNameFromObj = (obj: any): string => {
+        if (!obj) return '';
+        return (obj.name || obj.company_name || obj.legal_name || '').trim();
+    };
+
+    const getAllGstinsFromInvoice = (inv: ExtractedInvoice): string[] => {
+        const gstins = new Set<string>();
+        const meta = (inv.invoice_metadata || {}) as any;
+        const targets = [
+            inv.issuer_details,
+            inv.receiver_details,
+            inv.supplier_details,
+            inv.shipped_to_details,
+            meta.supplier_details,
+            meta.shipped_to_details,
+            meta.issuer_details,
+            meta.receiver_details,
+        ];
+        targets.forEach(t => {
+            const g = extractGstinFromObj(t);
+            if (g) gstins.add(g);
+        });
+        return Array.from(gstins);
+    };
+
+    const getAllNamesFromInvoice = (inv: ExtractedInvoice): string[] => {
+        const names = new Set<string>();
+        const meta = (inv.invoice_metadata || {}) as any;
+        const targets = [
+            inv.issuer_details,
+            inv.receiver_details,
+            inv.supplier_details,
+            inv.shipped_to_details,
+            meta.supplier_details,
+            meta.shipped_to_details,
+            meta.issuer_details,
+            meta.receiver_details,
+        ];
+        targets.forEach(t => {
+            const n = extractNameFromObj(t).toUpperCase();
+            if (n) names.add(n);
+        });
+        return Array.from(names);
+    };
 
     // Extract unique vendor/party options sourced from company_profiles database table & invoices
     const allPartyOptions = useMemo(() => {
@@ -150,14 +201,24 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
 
         // 2. Secondary: Parties extracted from invoices, debit notes, credit notes
         invoices.forEach(inv => {
-            if (inv.issuer_details) registerParty(inv.issuer_details.name, inv.issuer_details.gstin, undefined, 'invoice');
-            if (inv.receiver_details) registerParty(inv.receiver_details.name, inv.receiver_details.gstin, undefined, 'invoice');
-            if (inv.supplier_details) registerParty(inv.supplier_details.name, inv.supplier_details.gstin, undefined, 'invoice');
+            const meta = (inv.invoice_metadata || {}) as any;
+            const targets = [
+                inv.issuer_details,
+                inv.receiver_details,
+                inv.supplier_details,
+                inv.shipped_to_details,
+                meta.supplier_details,
+                meta.shipped_to_details,
+                meta.issuer_details,
+                meta.receiver_details,
+            ];
+            targets.forEach(t => {
+                if (t) registerParty(extractNameFromObj(t), extractGstinFromObj(t), undefined, 'invoice');
+            });
         });
 
         const list = Array.from(partyMap.values());
         return list.sort((a, b) => {
-            // Sort registered company profiles first, then alphabetically
             if (a.isRegistered !== b.isRegistered) {
                 return a.isRegistered ? -1 : 1;
             }
@@ -172,7 +233,8 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
 
     // Determine voucher type from document_type
     const getVoucherType = (inv: ExtractedInvoice): string => {
-        const dt = inv.document_type || '';
+        const meta = (inv.invoice_metadata || {}) as any;
+        const dt = (inv.document_type || meta.document_type || '').toLowerCase();
         if (dt.includes('credit_note')) return 'Credit Note';
         if (dt.includes('debit_note')) return 'Debit Note';
         if (dt.includes('po') || dt.includes('purchase_order')) return 'PO';
@@ -191,27 +253,22 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
             const selectedGstin = selectedPartyObj?.gstin;
             const selectedName = selectedPartyObj?.name?.toUpperCase();
 
-            const issuerGstin = normalizeGstin(inv.issuer_details?.gstin);
-            const receiverGstin = normalizeGstin(inv.receiver_details?.gstin);
-            const supplierGstin = normalizeGstin(inv.supplier_details?.gstin);
-
-            const issuerName = (inv.issuer_details?.name || '').trim().toUpperCase();
-            const receiverName = (inv.receiver_details?.name || '').trim().toUpperCase();
-            const supplierName = (inv.supplier_details?.name || '').trim().toUpperCase();
+            const docGstins = getAllGstinsFromInvoice(inv);
+            const docNames = getAllNamesFromInvoice(inv);
 
             if (selectedGstin) {
-                if (issuerGstin === selectedGstin || receiverGstin === selectedGstin || supplierGstin === selectedGstin) {
+                if (docGstins.includes(selectedGstin)) {
                     return true;
                 }
                 // Fallback: match by vendor name if document lacks GSTIN
-                if (selectedName && (issuerName === selectedName || receiverName === selectedName || supplierName === selectedName)) {
+                if (selectedName && docNames.includes(selectedName)) {
                     return true;
                 }
                 return false;
             }
 
             if (selectedName) {
-                return issuerName === selectedName || receiverName === selectedName || supplierName === selectedName;
+                return docNames.includes(selectedName);
             }
 
             return false;
