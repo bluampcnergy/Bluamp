@@ -657,7 +657,11 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                             <td className="p-4 text-right font-mono">{(inv.totals?.subtotal_taxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                             <td className="p-4 text-right font-black text-[#0D0D0D]">₹{(inv.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                             <td className="p-4 text-center flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                                {onEditInvoice && <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit"><PencilIcon className="w-4 h-4" /></button>}
+                                                {onEditInvoice && currentUser?.role === 'admin' && (
+                                                    <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record (Admins Only)">
+                                                        <PencilIcon className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 <button onClick={() => setPrintInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Download / Print"><Download size={16} /></button>
                                                 {inv.invoice_metadata?.mail_sent ? (
                                                     <button className="p-2 text-[#8EBF45] cursor-default" title="Mail Sent"><CheckCircle size={16} /></button>
