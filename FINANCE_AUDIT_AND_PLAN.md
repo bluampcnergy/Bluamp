@@ -67,6 +67,7 @@ This document presents the complete audit of the financial module within the Dat
 - [x] **GST Returns Integration:** `GSTReturnPanel.tsx` updated with Credit Note multiplier logic (-1) to correctly adjust outward supplies and ITC totals in GSTR-3B and GSTR-1.
 - [x] **Dashboard Filtering:** Filter support for `debit_note` and `credit_note` document categories in `Dashboard.tsx`.
 - [x] **Unified Ledger UI:** `LedgerPanel.tsx` renders party-wise running balances, Debit/Credit columns, transaction breakdown, and PDF export.
+- [x] **GSTIN-Specific Calculations:** Ledger groups transactions strictly by unique GSTINs (with party name fallback) to compute accurate party statement balances, GSTIN table columns, and PDF headers.
 
 ---
 

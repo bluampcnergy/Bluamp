@@ -9,12 +9,20 @@ import html2pdf from 'html2pdf.js';
 interface LedgerEntry {
     date: string;
     particulars: string;
+    gstin?: string;
     voucherType: string;
     voucherNumber: string;
     debit: number;
     credit: number;
     balance: number;
     sourceId?: string;
+}
+
+interface PartyOption {
+    id: string; // GSTIN if available, or 'NAME:<party_name>'
+    name: string;
+    gstin?: string;
+    label: string;
 }
 
 interface LedgerPanelProps {
@@ -94,27 +102,61 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         return () => clearTimeout(timer);
     }, [filterStart, filterEnd]);
 
-    // Extract unique party names from company profiles + invoices
-    const allParties = useMemo(() => {
-        const partySet = new Set<string>();
+    const normalizeGstin = (g?: string) => (g || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
-        // 1. Add registered company profile names
+    // Extract unique party options indexed by GSTIN or Name
+    const allPartyOptions = useMemo(() => {
+        const partyMap = new Map<string, { name: string; gstin?: string }>();
+
+        const registerParty = (name?: string, rawGstin?: string) => {
+            const cleanName = (name || '').trim();
+            const cleanGstin = normalizeGstin(rawGstin);
+
+            if (cleanGstin) {
+                if (!partyMap.has(cleanGstin)) {
+                    partyMap.set(cleanGstin, { name: cleanName || 'Unnamed Party', gstin: cleanGstin });
+                } else if (cleanName && (!partyMap.get(cleanGstin)?.name || partyMap.get(cleanGstin)?.name === 'Unnamed Party')) {
+                    partyMap.get(cleanGstin)!.name = cleanName;
+                }
+            } else if (cleanName) {
+                const key = `NAME:${cleanName.toUpperCase()}`;
+                if (!partyMap.has(key)) {
+                    partyMap.set(key, { name: cleanName });
+                }
+            }
+        };
+
+        // 1. Registered company profiles
         const profilesToUse = companyProfiles.length > 0 ? companyProfiles : dbCompanyProfiles;
-        profilesToUse.forEach(cp => {
-            if (cp.name && cp.name.trim()) partySet.add(cp.name.trim());
+        profilesToUse.forEach(cp => registerParty(cp.name, cp.gstin));
+
+        // 2. Invoice parties
+        invoices.forEach(inv => {
+            if (inv.issuer_details) registerParty(inv.issuer_details.name, inv.issuer_details.gstin);
+            if (inv.receiver_details) registerParty(inv.receiver_details.name, inv.receiver_details.gstin);
+            if (inv.supplier_details) registerParty(inv.supplier_details.name, inv.supplier_details.gstin);
         });
 
-        // 2. Add party names from invoices
-        invoices.forEach(inv => {
-            const issuer = inv.issuer_details?.name?.trim();
-            const receiver = inv.receiver_details?.name?.trim();
-            const supplier = inv.supplier_details?.name?.trim();
-            if (issuer) partySet.add(issuer);
-            if (receiver) partySet.add(receiver);
-            if (supplier) partySet.add(supplier);
+        const list: PartyOption[] = [];
+        partyMap.forEach((val, key) => {
+            const label = val.gstin
+                ? `${val.name} [GSTIN: ${val.gstin}]`
+                : `${val.name} (No GSTIN)`;
+            list.push({
+                id: key,
+                name: val.name,
+                gstin: val.gstin,
+                label,
+            });
         });
-        return Array.from(partySet).sort();
+
+        return list.sort((a, b) => a.label.localeCompare(b.label));
     }, [invoices, companyProfiles, dbCompanyProfiles]);
+
+    const selectedPartyObj = useMemo(() => {
+        if (selectedParty === '__ALL__') return null;
+        return allPartyOptions.find(p => p.id === selectedParty) || null;
+    }, [allPartyOptions, selectedParty]);
 
     // Determine voucher type from document_type
     const getVoucherType = (inv: ExtractedInvoice): string => {
@@ -127,16 +169,40 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         return inv.source_type === 'purchase' ? 'Purchase' : 'Sales';
     };
 
-    // Build ledger entries
+    // Build ledger entries filtered strictly by GSTIN / Party
     const ledgerEntries = useMemo(() => {
         const entries: LedgerEntry[] = [];
 
         const relevantInvoices = invoices.filter(inv => {
             if (selectedParty === '__ALL__') return true;
-            const issuer = inv.issuer_details?.name?.trim() || '';
-            const receiver = inv.receiver_details?.name?.trim() || '';
-            const supplier = inv.supplier_details?.name?.trim() || '';
-            return issuer === selectedParty || receiver === selectedParty || supplier === selectedParty;
+
+            const selectedGstin = selectedPartyObj?.gstin;
+            const selectedName = selectedPartyObj?.name?.toUpperCase();
+
+            const issuerGstin = normalizeGstin(inv.issuer_details?.gstin);
+            const receiverGstin = normalizeGstin(inv.receiver_details?.gstin);
+            const supplierGstin = normalizeGstin(inv.supplier_details?.gstin);
+
+            const issuerName = (inv.issuer_details?.name || '').trim().toUpperCase();
+            const receiverName = (inv.receiver_details?.name || '').trim().toUpperCase();
+            const supplierName = (inv.supplier_details?.name || '').trim().toUpperCase();
+
+            if (selectedGstin) {
+                if (issuerGstin === selectedGstin || receiverGstin === selectedGstin || supplierGstin === selectedGstin) {
+                    return true;
+                }
+                // Fallback: match by party name if invoice lacks GSTIN
+                if (selectedName && (issuerName === selectedName || receiverName === selectedName || supplierName === selectedName)) {
+                    return true;
+                }
+                return false;
+            }
+
+            if (selectedName) {
+                return issuerName === selectedName || receiverName === selectedName || supplierName === selectedName;
+            }
+
+            return false;
         });
 
         // Sort by invoice_date, then created_at
@@ -156,21 +222,21 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
             const isSales = inv.source_type === 'sales';
             const isPurchase = inv.source_type === 'purchase';
 
-            // Determine counterparty name for particulars
             let particulars = '';
+            let partyGstin = '';
+
             if (isSales) {
                 particulars = inv.receiver_details?.name || 'Unknown Customer';
+                partyGstin = inv.receiver_details?.gstin || '';
             } else {
                 particulars = inv.issuer_details?.name || inv.supplier_details?.name || 'Unknown Supplier';
+                partyGstin = inv.issuer_details?.gstin || inv.supplier_details?.gstin || '';
             }
 
             let debit = 0;
             let credit = 0;
 
             if (ledgerPerspective === 'receivable') {
-                // Company perspective: Sales = Debit (customer owes us), Purchase = Credit (we owe supplier)
-                // Credit Note (Sales) = Credit (reducing receivable), Debit Note (Sales) = Debit
-                // Credit Note (Purchase) = Debit (supplier reducing payable), Debit Note (Purchase) = Credit
                 if (voucherType === 'Sales' || voucherType === 'Proforma') {
                     debit = amount;
                 } else if (voucherType === 'Purchase' || voucherType === 'PO') {
@@ -182,11 +248,9 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                     if (isSales) debit = amount;
                     else credit = amount;
                 } else if (voucherType === 'Quotation') {
-                    // Quotations don't affect ledger balance, skip
                     return;
                 }
             } else {
-                // Payable perspective: reverse
                 if (voucherType === 'Purchase' || voucherType === 'PO') {
                     debit = amount;
                 } else if (voucherType === 'Sales' || voucherType === 'Proforma') {
@@ -207,6 +271,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
             entries.push({
                 date,
                 particulars,
+                gstin: partyGstin,
                 voucherType,
                 voucherNumber: invNum,
                 debit,
@@ -217,7 +282,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         });
 
         return entries;
-    }, [invoices, selectedParty, ledgerPerspective]);
+    }, [invoices, selectedParty, selectedPartyObj, ledgerPerspective]);
 
     // Filter by search term
     const filteredEntries = useMemo(() => {
@@ -226,7 +291,8 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         return ledgerEntries.filter(e =>
             e.particulars.toLowerCase().includes(term) ||
             e.voucherNumber.toLowerCase().includes(term) ||
-            e.voucherType.toLowerCase().includes(term)
+            e.voucherType.toLowerCase().includes(term) ||
+            (e.gstin && e.gstin.toLowerCase().includes(term))
         );
     }, [ledgerEntries, searchTerm]);
 
@@ -246,9 +312,13 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
 
         try {
             const element = ledgerRef.current;
+            const partyLabel = selectedPartyObj
+                ? (selectedPartyObj.gstin ? `${selectedPartyObj.name}_${selectedPartyObj.gstin}` : selectedPartyObj.name)
+                : 'All_Parties';
+
             const opt = {
                 margin: [10, 10, 10, 10] as [number, number, number, number],
-                filename: `Ledger_${selectedParty === '__ALL__' ? 'All_Parties' : selectedParty.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+                filename: `Ledger_${partyLabel.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
                 image: { type: 'jpeg' as const, quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' as const },
@@ -271,9 +341,9 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                 <div>
                     <h2 className="text-2xl font-black text-[#0D0D0D] font-brand tracking-tight flex items-center gap-2">
                         <FileText size={24} className="text-[#8EBF45]" />
-                        Party Ledger
+                        Party Ledger (GSTIN Accounting)
                     </h2>
-                    <p className="text-slate-500 text-sm">Transaction-by-transaction record of all financial dealings with a party.</p>
+                    <p className="text-slate-500 text-sm">GSTIN-specific statement of account & transaction-by-transaction running balance.</p>
                 </div>
                 <div className="flex gap-2">
                     <button
@@ -297,16 +367,18 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
             {/* Filters */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-12 gap-4 items-end">
                 <div className="md:col-span-4">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Party / Company</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Party / GSTIN Account</label>
                     <div className="relative">
                         <Building className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
                         <select
-                            className="w-full pl-10 p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]/20 focus:border-[#8EBF45] appearance-none bg-white"
+                            className="w-full pl-10 p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]/20 focus:border-[#8EBF45] appearance-none bg-white font-medium"
                             value={selectedParty}
                             onChange={(e) => setSelectedParty(e.target.value)}
                         >
-                            <option value="__ALL__">All Parties</option>
-                            {allParties.map(p => <option key={p} value={p}>{p}</option>)}
+                            <option value="__ALL__">All GSTINs & Parties</option>
+                            {allPartyOptions.map(p => (
+                                <option key={p.id} value={p.id}>{p.label}</option>
+                            ))}
                         </select>
                     </div>
                 </div>
@@ -317,7 +389,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                         <input
                             type="text"
                             className="w-full pl-10 p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]/20 focus:border-[#8EBF45]"
-                            placeholder="Search voucher #, party..."
+                            placeholder="Search voucher #, GSTIN, party..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
@@ -352,6 +424,25 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                 </div>
             </div>
 
+            {/* Selected Party GSTIN Info Banner */}
+            {selectedPartyObj && (
+                <div className="bg-slate-900 text-white rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-md">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs uppercase tracking-widest text-[#8EBF45] font-bold">Party Statement</span>
+                            <span className="bg-slate-800 text-slate-300 text-xs px-2 py-0.5 rounded font-mono">
+                                {selectedPartyObj.gstin ? `GSTIN: ${selectedPartyObj.gstin}` : 'No GSTIN Registered'}
+                            </span>
+                        </div>
+                        <h3 className="text-lg font-bold text-white mt-0.5">{selectedPartyObj.name}</h3>
+                    </div>
+                    <div className="text-right">
+                        <span className="text-xs text-slate-400">Total Entries:</span>
+                        <span className="ml-2 font-mono font-bold text-white">{filteredEntries.length} Vouchers</span>
+                    </div>
+                </div>
+            )}
+
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
                 <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
@@ -375,8 +466,11 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                 {/* PDF Header (visible in PDF) */}
                 <div className="p-4 border-b border-slate-100 bg-slate-50 print-only" style={{ display: 'none' }}>
                     <h3 className="text-lg font-bold text-[#0D0D0D]">
-                        Party Ledger — {selectedParty === '__ALL__' ? 'All Parties' : selectedParty}
+                        Party Ledger Statement — {selectedPartyObj ? selectedPartyObj.name : 'All Parties'}
                     </h3>
+                    <p className="text-xs text-slate-600 font-mono">
+                        GSTIN: {selectedPartyObj?.gstin || 'All GSTINs'}
+                    </p>
                     <p className="text-xs text-slate-500">
                         {filterStart && `From: ${filterStart}`} {filterEnd && `To: ${filterEnd}`}
                         {!filterStart && !filterEnd && 'All Dates'}
@@ -390,6 +484,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                             <tr>
                                 <th className="p-4 w-28">Date</th>
                                 <th className="p-4">Particulars</th>
+                                <th className="p-4 w-40">GSTIN</th>
                                 <th className="p-4 w-32">Voucher Type</th>
                                 <th className="p-4 w-40">Voucher No.</th>
                                 <th className="p-4 text-right w-36">Debit (₹)</th>
@@ -399,14 +494,15 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan={7} className="p-8 text-center text-slate-400"><Loader2 className="animate-spin mx-auto mb-2 text-[#8EBF45]" /> Loading ledger...</td></tr>
+                                <tr><td colSpan={8} className="p-8 text-center text-slate-400"><Loader2 className="animate-spin mx-auto mb-2 text-[#8EBF45]" /> Loading ledger...</td></tr>
                             ) : filteredEntries.length === 0 ? (
-                                <tr><td colSpan={7} className="p-8 text-center text-slate-400">No ledger entries found for the selected filters.</td></tr>
+                                <tr><td colSpan={8} className="p-8 text-center text-slate-400">No ledger entries found for the selected GSTIN / filters.</td></tr>
                             ) : (
                                 filteredEntries.map((entry, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50 transition-colors">
                                         <td className="p-4 text-slate-500 whitespace-nowrap font-mono text-xs">{entry.date || '—'}</td>
                                         <td className="p-4 font-medium text-[#0D0D0D]">{entry.particulars}</td>
+                                        <td className="p-4 font-mono text-xs text-slate-500">{entry.gstin || '—'}</td>
                                         <td className="p-4">
                                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${VOUCHER_TYPE_COLORS[entry.voucherType] || 'bg-slate-100 text-slate-600'}`}>
                                                 {entry.voucherType}
@@ -425,7 +521,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
                         {filteredEntries.length > 0 && (
                             <tfoot className="bg-[#0D0D0D] text-white font-black">
                                 <tr>
-                                    <td className="p-4" colSpan={4}>TOTALS</td>
+                                    <td className="p-4" colSpan={5}>TOTALS</td>
                                     <td className="p-4 text-right font-mono">₹{formatINR(totals.totalDebit)}</td>
                                     <td className="p-4 text-right font-mono">₹{formatINR(totals.totalCredit)}</td>
                                     <td className={`p-4 text-right font-mono ${totals.closing >= 0 ? 'text-red-300' : 'text-green-300'}`}>
