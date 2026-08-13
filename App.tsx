@@ -207,12 +207,22 @@ const App: React.FC = () => {
     });
   }, [setUsers, users]); 
 
-  // Keep currentUser role in sync with app_users table as soon as users state loads
+  // Keep currentUser role & password in sync with app_users table; automatically log out if user is deleted or password changes
   useEffect(() => {
     if (currentUser && users.length > 0) {
-      const dbUser = users.find(u => u.username === currentUser.username);
-      if (dbUser && dbUser.role && dbUser.role !== currentUser.role) {
-        setCurrentUser(prev => prev ? { ...prev, role: dbUser.role } : null);
+      const dbUser = users.find(u => u.username.toLowerCase() === currentUser.username.toLowerCase());
+      if (!dbUser) {
+        // User removed from app_users DB -> Force immediate logout
+        setCurrentUser(null);
+      } else {
+        // Role sync
+        if (dbUser.role && dbUser.role !== currentUser.role) {
+          setCurrentUser(prev => prev ? { ...prev, role: dbUser.role } : null);
+        }
+        // Password sync: If password in app_users DB table changed and no longer matches active session password -> Force immediate logout
+        if (dbUser.password && currentUser.password && currentUser.password !== dbUser.password && currentUser.password !== 'migrated_to_supabase') {
+          setCurrentUser(null);
+        }
       }
     }
   }, [users, currentUser, setCurrentUser]);
@@ -248,7 +258,7 @@ const App: React.FC = () => {
         if (signInErr) {
             setCurrentUser(null);
         } else {
-            setCurrentUser(prev => prev ? { ...prev, password: 'migrated_to_supabase' } : null);
+            setCurrentUser(prev => prev ? { ...prev, password: currentUser.password } : null);
         }
       } else {
         hasMigratedAuthRef.current = true;
@@ -298,7 +308,7 @@ const App: React.FC = () => {
           role = 'admin';
         }
         const finalRole = role || 'user';
-        setCurrentUser({ username, role: finalRole, password: 'migrated_to_supabase' });
+        setCurrentUser({ username, role: finalRole, password });
         addLogEntry('User Logged In', `User '${username}' (${finalRole}) logged in via Supabase Auth.`);
         return null;
       }
@@ -333,12 +343,16 @@ const App: React.FC = () => {
         });
 
         if (signInError) {
-            return `Migration started, but login failed: ${signInError.message}. (IMPORTANT: Please go to your Supabase Dashboard -> Authentication -> Providers -> Email, and DISABLE 'Confirm email'. Then try logging in again.)`;
+            // Even if Supabase auth fails, allow legacy login with app_users table password
+            const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+            setCurrentUser({ username, role: finalRole, password });
+            addLogEntry('User Logged In', `User '${username}' (${finalRole}) logged in via app_users table.`);
+            return null;
         }
 
         const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
-        setCurrentUser({ username, role: finalRole, password: 'migrated_to_supabase' });
-        addLogEntry('User Migrated', `Legacy user '${username}' (${finalRole}) seamlessly migrated to Supabase Auth.`);
+        setCurrentUser({ username, role: finalRole, password });
+        addLogEntry('User Migrated', `Legacy user '${username}' (${finalRole}) seamlessly logged in.`);
         return null;
       }
 

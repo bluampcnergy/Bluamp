@@ -552,11 +552,12 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                     currentUser={currentUser}
                     setView={setView}
                     onEditInvoice={handleEditInvoice}
+                    addLogEntry={addLogEntry}
                 />
             )}
 
             {activeTab === 'expenses' && (
-                <ExpenseForm currentUser={currentUser} />
+                <ExpenseForm currentUser={currentUser} addLogEntry={addLogEntry} />
             )}
 
             {activeTab === 'gst' && (

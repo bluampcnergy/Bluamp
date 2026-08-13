@@ -6,6 +6,7 @@ import { Loader2, PlusCircle, CheckCircle, Trash2 } from './Icons';
 
 interface ExpenseFormProps {
     currentUser: { username: string; role?: string } | null;
+    addLogEntry?: (action: string, details: string) => void;
 }
 
 const CATEGORIES = [
@@ -20,7 +21,7 @@ const CATEGORIES = [
     'Other'
 ];
 
-const ExpenseForm: React.FC<ExpenseFormProps> = ({ currentUser }) => {
+const ExpenseForm: React.FC<ExpenseFormProps> = ({ currentUser, addLogEntry }) => {
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
     const [success, setSuccess] = useState(false);
@@ -100,6 +101,10 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ currentUser }) => {
             const { error } = await supabase.from('expenses').insert([payload]);
             if (error) throw error;
 
+            if (addLogEntry) {
+                addLogEntry('Recorded Expense', `Recorded ${formData.type.toUpperCase()} expense of ₹${amount} for ${formData.employeeName} (${formData.category})`);
+            }
+
             setSuccess(true);
             setFormData({
                 employeeName: formData.employeeName,
@@ -124,6 +129,9 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ currentUser }) => {
         try {
             const { error } = await supabase.from('expenses').delete().eq('id', id);
             if (error) throw error;
+            if (addLogEntry) {
+                addLogEntry('Deleted Expense', `Deleted expense entry ID ${id}`);
+            }
             setExpenses(prev => prev.filter(e => e.id !== id));
         } catch (err: any) {
             alert('Error deleting: ' + err.message);

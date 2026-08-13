@@ -17,9 +17,10 @@ interface NoteModalProps {
     parentInvoice: ExtractedInvoice | null;
     onSuccess: () => void;
     currentUser: { username: string } | null;
+    addLogEntry?: (action: string, details: string) => void;
 }
 
-const NoteModal: React.FC<NoteModalProps> = ({ isOpen, onClose, parentInvoice, onSuccess, currentUser }) => {
+const NoteModal: React.FC<NoteModalProps> = ({ isOpen, onClose, parentInvoice, onSuccess, currentUser, addLogEntry }) => {
     const [noteType, setNoteType] = useState<'credit_note' | 'debit_note'>('credit_note');
     const [noteNumber, setNoteNumber] = useState('');
     const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
@@ -73,6 +74,9 @@ const NoteModal: React.FC<NoteModalProps> = ({ isOpen, onClose, parentInvoice, o
         try {
             const { error } = await supabase.from('invoices').insert([noteRecord]);
             if (error) throw error;
+            if (addLogEntry) {
+                addLogEntry('Created Note', `Created ${noteType === 'credit_note' ? 'Credit Note' : 'Debit Note'} #${noteNumber} for ₹${amount} (Ref Invoice #${parentInvoice.invoice_metadata?.invoice_number})`);
+            }
             onSuccess();
             onClose();
         } catch (err: any) {
@@ -177,9 +181,10 @@ interface DashboardProps {
     currentUser: { username: string; role: 'admin' | 'user' | 'billing' } | null;
     setView?: (view: any) => void;
     onEditInvoice?: (invoice: ExtractedInvoice) => void;
+    addLogEntry?: (action: string, details: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoice }) => {
+const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoice, addLogEntry }) => {
     const [invoices, setInvoices] = useState<ExtractedInvoice[]>([]);
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
@@ -440,6 +445,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         }));
 
         localStorage.setItem('pendingInventoryImport', JSON.stringify(exportData));
+        if (addLogEntry) {
+            addLogEntry('Imported Inventory Stock', `Staged ${itemsToImport.length} line items from invoice #${sourceInvoice?.invoice_metadata?.invoice_number || 'Unknown'} for inventory import.`);
+        }
         setImportModalOpen(false);
         setSourceInvoice(null);
         setItemsToImport([]);
@@ -450,11 +458,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
 
     const handleDeleteInvoice = async (id: string) => {
         if (!id) return;
-        if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
+        const targetInv = invoices.find(inv => inv.id === id);
+        const invNum = targetInv?.invoice_metadata?.invoice_number || targetInv?.filename || id;
+        if (!confirm(`Are you sure you want to delete invoice #${invNum}? This action cannot be undone.`)) return;
 
         try {
             const { error } = await supabase.from('invoices').delete().match({ id: id });
             if (error) throw error;
+            if (addLogEntry) {
+                addLogEntry('Deleted Document', `Deleted financial document #${invNum} (ID: ${id})`);
+            }
             setInvoices(prev => prev.filter(inv => inv.id !== id));
             alert("Invoice deleted successfully.");
         } catch (err: any) {
@@ -481,6 +494,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                 parentInvoice={selectedInvoice}
                 onSuccess={fetchInvoices}
                 currentUser={currentUser}
+                addLogEntry={addLogEntry}
             />
 
             <Modal isOpen={importModalOpen} onClose={() => setImportModalOpen(false)} title="Confirm Inventory Import" persistent={true} size="xl">
@@ -656,7 +670,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                             <td className="p-4 text-slate-500 font-mono font-bold">{safeRender(inv.invoice_metadata?.invoice_number) || '-'}</td>
                                             <td className="p-4 text-right font-mono">{(inv.totals?.subtotal_taxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                             <td className="p-4 text-right font-black text-[#0D0D0D]">₹{(inv.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                            <td className="p-4 text-center flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                            <td className="p-4 text-center flex justify-center items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                {inv.invoice_metadata?.edit_history && inv.invoice_metadata.edit_history.length > 0 && (
+                                                    <button
+                                                        onClick={() => toggleRow(inv.id)}
+                                                        className="px-2 py-1 bg-amber-50 text-amber-800 hover:bg-amber-100 rounded-md text-[10px] font-black flex items-center gap-1 border border-amber-300 shadow-xs transition-all shrink-0"
+                                                        title="View Edit History & Audit Trail"
+                                                    >
+                                                        <History size={12} className="text-amber-600" />
+                                                        <span>{inv.invoice_metadata.edit_history.length} Edits</span>
+                                                    </button>
+                                                )}
                                                 {onEditInvoice && currentUser?.role === 'admin' && (
                                                     <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record (Admins Only)">
                                                         <PencilIcon className="w-4 h-4" />
@@ -715,23 +739,35 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                             </div>
                                                             {inv.invoice_metadata?.edit_history && inv.invoice_metadata.edit_history.length > 0 && (
                                                                 <div className="mt-6 pt-4 border-t border-slate-100">
-                                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
-                                                                        <History size={12} className="text-[#8EBF45]" />
+                                                                    <p className="text-[10px] font-black text-[#658C3E] uppercase mb-2 flex items-center gap-1.5">
+                                                                        <History size={14} className="text-[#8EBF45]" />
                                                                         Edit History & Audit Trail ({inv.invoice_metadata.edit_history.length})
                                                                     </p>
-                                                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                                                                        {inv.invoice_metadata.edit_history.map((log: any, hIdx: number) => (
-                                                                            <div key={hIdx} className="bg-slate-50 p-2 rounded text-xs border border-slate-100 flex items-start justify-between">
-                                                                                <div>
-                                                                                    <span className="font-bold text-slate-700 block">{log.action || 'Updated'}</span>
-                                                                                    <span className="text-[10px] text-slate-500">{log.notes || log.details || 'Document modified'}</span>
+                                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                                        {inv.invoice_metadata.edit_history.map((log: any, hIdx: number) => {
+                                                                            const dateStr = log.edited_at || log.timestamp;
+                                                                            const userStr = log.edited_by || log.updated_by || 'User';
+                                                                            const summaryStr = log.summary || log.notes || log.details || 'Document modified';
+                                                                            const formattedDate = dateStr ? new Date(dateStr).toLocaleString('en-IN') : '';
+                                                                            return (
+                                                                                <div key={hIdx} className="bg-amber-50/40 p-2.5 rounded-lg text-xs border border-amber-200/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                                                                    <div>
+                                                                                        <span className="font-bold text-slate-800 block">
+                                                                                            ✏️ {summaryStr}
+                                                                                        </span>
+                                                                                        {log.previous_grand_total !== undefined && (
+                                                                                            <span className="text-[10px] text-slate-500 font-mono">
+                                                                                                Prev Total: ₹{Number(log.previous_grand_total).toLocaleString('en-IN')}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="text-right shrink-0">
+                                                                                        <span className="text-[10px] font-bold text-slate-700 bg-amber-100 px-1.5 py-0.5 rounded inline-block">{userStr}</span>
+                                                                                        <span className="text-[9px] text-slate-400 font-mono block mt-0.5">{formattedDate}</span>
+                                                                                    </div>
                                                                                 </div>
-                                                                                <div className="text-right shrink-0 ml-2">
-                                                                                    <span className="text-[10px] font-bold text-slate-600 block">{log.updated_by || 'User'}</span>
-                                                                                    <span className="text-[9px] text-slate-400 font-mono">{log.timestamp ? new Date(log.timestamp).toLocaleString('en-IN') : ''}</span>
-                                                                                </div>
-                                                                            </div>
-                                                                        ))}
+                                                                            );
+                                                                        })}
                                                                     </div>
                                                                 </div>
                                                             )}
