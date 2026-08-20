@@ -52,15 +52,28 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         return null;
     }, [initialData]);
 
-    const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(draft?.docType || 'invoice');
-    const [customTitle, setCustomTitle] = useState(draft?.customTitle || 'INVOICE');
+    const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(() => {
+        if (draft?.docType) return draft.docType;
+        if (initialData?.document_type) {
+            const dt = initialData.document_type;
+            if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') return 'po';
+            if (dt === 'generated_quotation' || dt === 'quotation') return 'quotation';
+            if (dt === 'generated_proforma_invoice' || dt === 'proforma_invoice' || dt === 'proforma') return 'proforma';
+            if (dt === 'generated_debit_note' || dt === 'debit_note') return 'debit_note';
+            if (dt === 'generated_credit_note' || dt === 'credit_note') return 'credit_note';
+            return 'invoice';
+        }
+        return 'invoice';
+    });
+    const [customTitle, setCustomTitle] = useState(draft?.customTitle || (docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE'));
     const [doc, setDoc] = useState<ExtractedInvoice>(() => {
         const base = initialData || draft?.doc || EMPTY_INVOICE;
+        const computedSourceType = (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
         return { 
             ...EMPTY_INVOICE,
             ...base, 
-            source_type: (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' ? 'purchase' : (base.source_type || 'sales'), 
-            document_type: 'generated_invoice',
+            source_type: computedSourceType, 
+            document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
             receiver_details: base.receiver_details || EMPTY_INVOICE.receiver_details,
             issuer_details: { 
                 ...EMPTY_INVOICE.issuer_details,
@@ -586,9 +599,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     const loadPreviousDocument = (selectedDoc: ExtractedInvoice) => {
         if (!confirm("This will overwrite your current invoice data. Proceed?")) return;
-        setDoc(selectedDoc);
+        const targetDocType = selectedDoc.document_type === 'generated_po' || selectedDoc.document_type === 'purchase_order' || (selectedDoc.document_type as string) === 'po' ? 'po' : 'invoice';
+        setDoc({
+            ...selectedDoc,
+            source_type: targetDocType === 'po' ? 'purchase' : 'sales'
+        });
         if (selectedDoc.document_type) {
-            setDocType(selectedDoc.document_type as any);
+            setDocType(targetDocType as any);
             setCustomTitle(selectedDoc.document_type === 'generated_invoice' ? 'INVOICE' : (selectedDoc.document_type === 'purchase_order' || selectedDoc.document_type === 'generated_po' || (selectedDoc.document_type as string) === 'po') ? 'PURCHASE ORDER' : selectedDoc.document_type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
         }
         setSearchDocTerm('');
@@ -986,7 +1003,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
             const record = {
                 ...doc,
-                source_type: docType === 'po' ? 'purchase' : (doc.source_type || 'sales'),
+                source_type: docType === 'po' ? 'purchase' : 'sales',
                 invoice_metadata: {
                     ...doc.invoice_metadata,
                     edit_history: updatedHistory,
@@ -1066,7 +1083,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             // Force invoice number as filename
             const record = {
                 ...doc,
-                source_type: docType === 'po' ? 'purchase' : (doc.source_type || 'sales'),
+                source_type: docType === 'po' ? 'purchase' : 'sales',
                 invoice_metadata: {
                     ...doc.invoice_metadata,
                     shipped_to_details: doc.shipped_to_details,

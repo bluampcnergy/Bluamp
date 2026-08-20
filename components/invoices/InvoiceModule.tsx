@@ -107,13 +107,24 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
         }
     }, [activeTab]);
 
-    // Load Price List from Supabase
+    // Load Price List from Supabase & Self-Heal Misclassified Generated Sales Invoices
     useEffect(() => {
-        const loadPrices = async () => {
+        const loadPricesAndHeal = async () => {
             const { data } = await supabase.from('price_list').select('*').order('model_name');
             if (data) setPriceList(data as PriceListItem[]);
+
+            // Repair any generated sales documents misclassified as 'purchase'
+            try {
+                await supabase
+                    .from('invoices')
+                    .update({ source_type: 'sales' })
+                    .eq('source_type', 'purchase')
+                    .in('document_type', ['generated_invoice', 'generated_quotation', 'generated_proforma_invoice', 'generated_debit_note', 'generated_credit_note']);
+            } catch (healErr) {
+                console.warn('[InvoiceModule] Self-healing misclassified invoices failed:', healErr);
+            }
         };
-        loadPrices();
+        loadPricesAndHeal();
     }, []);
 
     // --- Helper Functions ---
