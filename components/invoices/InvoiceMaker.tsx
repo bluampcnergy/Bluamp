@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../supabaseClient';
 import { ExtractedInvoice, InvoiceTemplate, EMPTY_INVOICE, InvoiceItem, CompanyProfile, BankDetails, PriceListItem, FinishedGood, Recipe, InvoiceEditHistoryEntry } from '../../types';
-import { recalculateInvoiceTotals, safeRender, amountToWords, getTaxMode, getCurrencySymbol } from '../../utils/invoiceUtils';
+import { recalculateInvoiceTotals, safeRender, amountToWords, getTaxMode, getCurrencySymbol, computeInvoiceChanges } from '../../utils/invoiceUtils';
 import { generateUnitIds } from '../../utils';
 import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, RefreshCw, ChevronUp, ChevronDown, Loader2, LayoutDashboard, FileText, History } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
@@ -104,6 +104,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const [stamp, setStamp] = useState<string | null>(draft?.stamp || null);
     const [signature, setSignature] = useState<string | null>(draft?.signature || null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Baseline reference of document before edits to compute exact diffs
+    const baselineDocRef = useRef<ExtractedInvoice | null>(null);
+    const baselineConfigRef = useRef<ExtendedConfig | null>(null);
 
     // Document Search State
     const [searchDocTerm, setSearchDocTerm] = useState('');
@@ -361,7 +365,12 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 setLogo(loadedConfig.logoUrl || null);
                 setStamp(loadedConfig.stampUrl || null);
                 setSignature(loadedConfig.signatureUrl || null);
+                baselineConfigRef.current = JSON.parse(JSON.stringify(loadedConfig));
+            } else {
+                baselineConfigRef.current = JSON.parse(JSON.stringify(config));
             }
+
+            baselineDocRef.current = JSON.parse(JSON.stringify(dataToLoad));
 
             // Hydrate from Slack AI payload if present
             if ((initialData.invoice_metadata as any)?.slack_ai_payload) {
@@ -369,6 +378,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             }
         }
     }, [initialData]);
+
+    useEffect(() => {
+        if (!baselineDocRef.current && (initialData || doc)) {
+            baselineDocRef.current = JSON.parse(JSON.stringify(initialData || doc));
+            baselineConfigRef.current = JSON.parse(JSON.stringify(config));
+        }
+    }, []);
 
     const handleApplyAiData = (data: any) => {
         if (!data) return;
@@ -600,10 +616,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const loadPreviousDocument = (selectedDoc: ExtractedInvoice) => {
         if (!confirm("This will overwrite your current invoice data. Proceed?")) return;
         const targetDocType = selectedDoc.document_type === 'generated_po' || selectedDoc.document_type === 'purchase_order' || (selectedDoc.document_type as string) === 'po' ? 'po' : 'invoice';
-        setDoc({
+        const clonedDoc: ExtractedInvoice = {
             ...selectedDoc,
             source_type: targetDocType === 'po' ? 'purchase' : 'sales'
-        });
+        };
+        setDoc(clonedDoc);
+        baselineDocRef.current = JSON.parse(JSON.stringify(clonedDoc));
+        baselineConfigRef.current = JSON.parse(JSON.stringify(config));
         if (selectedDoc.document_type) {
             setDocType(targetDocType as any);
             setCustomTitle(selectedDoc.document_type === 'generated_invoice' ? 'INVOICE' : (selectedDoc.document_type === 'purchase_order' || selectedDoc.document_type === 'generated_po' || (selectedDoc.document_type as string) === 'po') ? 'PURCHASE ORDER' : selectedDoc.document_type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
@@ -990,12 +1009,19 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             const now = new Date().toISOString();
             const editorName = currentUser?.username || username || 'system';
             
+            const oldDoc = baselineDocRef.current || initialData || null;
+            const oldConfig = baselineConfigRef.current || null;
+            const diff = computeInvoiceChanges(oldDoc, doc, oldConfig, config);
+
             const historyEntry: InvoiceEditHistoryEntry = {
                 edited_at: now,
                 edited_by: editorName,
-                previous_grand_total: initialData?.totals?.grand_total ?? doc.totals?.grand_total,
-                previous_invoice_number: initialData?.invoice_metadata?.invoice_number ?? doc.invoice_metadata?.invoice_number,
-                summary: `Updated by ${editorName} on ${new Date(now).toLocaleDateString('en-IN')} at ${new Date(now).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+                previous_grand_total: oldDoc?.totals?.grand_total ?? doc.totals?.grand_total,
+                new_grand_total: doc.totals?.grand_total,
+                previous_invoice_number: oldDoc?.invoice_metadata?.invoice_number ?? doc.invoice_metadata?.invoice_number,
+                new_invoice_number: doc.invoice_metadata?.invoice_number,
+                summary: diff.summary,
+                changes: diff.changes
             };
 
             const prevHistory = doc.invoice_metadata?.edit_history || initialData?.invoice_metadata?.edit_history || [];
@@ -1035,6 +1061,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
             if (updateError) throw updateError;
 
+            // Update local baseline ref to newly saved record state
+            baselineDocRef.current = JSON.parse(JSON.stringify(record));
+            baselineConfigRef.current = JSON.parse(JSON.stringify(config));
+
             // Update local state with history and id
             setDoc(prev => ({
                 ...prev,
@@ -1046,8 +1076,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             }));
 
             try { localStorage.removeItem('invoice_maker_draft'); } catch (e) {}
-            if (addLogEntry) addLogEntry('Updated Document', `Updated ${docType.toUpperCase()} document #${invNum} in Dashboard.`);
-            alert(`✅ Document #${invNum} updated successfully in database! Revision logged.`);
+            if (addLogEntry) addLogEntry('Updated Document', `Updated ${docType.toUpperCase()} document #${invNum}: ${diff.summary}`);
+            alert(`✅ Document #${invNum} updated successfully in database! Revision logged with ${diff.changes.length} change(s).`);
         } catch (error: any) {
             alert("Error updating record: " + error.message);
         } finally {
@@ -1678,20 +1708,30 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 </div>
 
                 {doc.invoice_metadata?.edit_history && doc.invoice_metadata.edit_history.length > 0 && (
-                    <div className="mt-6 p-3 bg-amber-50/70 border border-amber-200 rounded-lg">
-                        <h4 className="text-xs font-black text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                            <History size={14} className="text-amber-600" /> Edit History ({doc.invoice_metadata.edit_history.length})
+                    <div className="mt-6 p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+                        <h4 className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <History size={15} className="text-amber-600" /> Revision & Edit History ({doc.invoice_metadata.edit_history.length})
                         </h4>
-                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                        <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
                             {doc.invoice_metadata.edit_history.map((entry, idx) => (
-                                <div key={idx} className="p-2 bg-white rounded border border-amber-100 text-xs shadow-2xs">
-                                    <div className="flex justify-between font-bold text-slate-700">
-                                        <span>{entry.edited_by || 'User'}</span>
-                                        <span className="text-[10px] text-slate-400 font-normal">{new Date(entry.edited_at).toLocaleDateString('en-IN')}</span>
+                                <div key={idx} className="p-3 bg-white rounded-lg border border-amber-100 text-xs shadow-2xs space-y-1.5">
+                                    <div className="flex justify-between items-center font-bold text-slate-800">
+                                        <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px] font-black">{entry.edited_by || 'User'}</span>
+                                        <span className="text-[10px] text-slate-400 font-mono">{entry.edited_at ? new Date(entry.edited_at).toLocaleString('en-IN') : ''}</span>
                                     </div>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">{entry.summary || 'Document updated'}</p>
-                                    {entry.previous_grand_total !== undefined && (
-                                        <p className="text-[10px] text-slate-400 font-mono">Prev Total: ₹{entry.previous_grand_total.toLocaleString('en-IN')}</p>
+                                    <p className="text-xs font-semibold text-slate-700">{entry.summary || 'Document updated'}</p>
+                                    {entry.changes && entry.changes.length > 0 && (
+                                        <div className="mt-1 pt-1.5 border-t border-slate-100 space-y-1">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Detailed Changes:</span>
+                                            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-600 font-medium">
+                                                {entry.changes.map((changeStr, cIdx) => (
+                                                    <li key={cIdx} className="leading-snug">{changeStr}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {entry.previous_grand_total !== undefined && (!entry.changes || entry.changes.length === 0) && (
+                                        <p className="text-[10px] text-slate-400 font-mono">Prev Total: ₹{Number(entry.previous_grand_total).toLocaleString('en-IN')}</p>
                                     )}
                                 </div>
                             ))}

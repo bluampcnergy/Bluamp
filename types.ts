@@ -363,9 +363,12 @@ export interface InvoiceEditHistoryEntry {
   edited_at: string;
   edited_by: string;
   previous_grand_total?: number;
+  new_grand_total?: number;
   previous_invoice_number?: string;
+  new_invoice_number?: string;
   notes?: string;
   summary?: string;
+  changes?: string[];
 }
 
 export interface ExtractedInvoice {

@@ -743,28 +743,42 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                                         <History size={14} className="text-[#8EBF45]" />
                                                                         Edit History & Audit Trail ({inv.invoice_metadata.edit_history.length})
                                                                     </p>
-                                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                                    <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                                                                         {inv.invoice_metadata.edit_history.map((log: any, hIdx: number) => {
                                                                             const dateStr = log.edited_at || log.timestamp;
                                                                             const userStr = log.edited_by || log.updated_by || 'User';
                                                                             const summaryStr = log.summary || log.notes || log.details || 'Document modified';
                                                                             const formattedDate = dateStr ? new Date(dateStr).toLocaleString('en-IN') : '';
+                                                                            const detailedChanges: string[] = Array.isArray(log.changes) ? log.changes : [];
                                                                             return (
-                                                                                <div key={hIdx} className="bg-amber-50/40 p-2.5 rounded-lg text-xs border border-amber-200/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                                                                                    <div>
-                                                                                        <span className="font-bold text-slate-800 block">
-                                                                                            ✏️ {summaryStr}
-                                                                                        </span>
-                                                                                        {log.previous_grand_total !== undefined && (
-                                                                                            <span className="text-[10px] text-slate-500 font-mono">
-                                                                                                Prev Total: ₹{Number(log.previous_grand_total).toLocaleString('en-IN')}
+                                                                                <div key={hIdx} className="bg-amber-50/40 p-3 rounded-lg text-xs border border-amber-200/60 space-y-1.5">
+                                                                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5">
+                                                                                        <div>
+                                                                                            <span className="font-bold text-slate-800 block">
+                                                                                                ✏️ {summaryStr}
                                                                                             </span>
-                                                                                        )}
+                                                                                            {log.previous_grand_total !== undefined && detailedChanges.length === 0 && (
+                                                                                                <span className="text-[10px] text-slate-500 font-mono">
+                                                                                                    Prev Total: ₹{Number(log.previous_grand_total).toLocaleString('en-IN')}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div className="text-right shrink-0">
+                                                                                            <span className="text-[10px] font-bold text-slate-700 bg-amber-100 px-2 py-0.5 rounded inline-block">{userStr}</span>
+                                                                                            <span className="text-[9px] text-slate-400 font-mono block mt-0.5">{formattedDate}</span>
+                                                                                        </div>
                                                                                     </div>
-                                                                                    <div className="text-right shrink-0">
-                                                                                        <span className="text-[10px] font-bold text-slate-700 bg-amber-100 px-1.5 py-0.5 rounded inline-block">{userStr}</span>
-                                                                                        <span className="text-[9px] text-slate-400 font-mono block mt-0.5">{formattedDate}</span>
-                                                                                    </div>
+
+                                                                                    {detailedChanges.length > 0 && (
+                                                                                        <div className="pt-2 border-t border-amber-200/50 bg-white/60 p-2 rounded">
+                                                                                            <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">Changes breakdown:</p>
+                                                                                            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-700">
+                                                                                                {detailedChanges.map((changeText, cIdx) => (
+                                                                                                    <li key={cIdx} className="leading-snug">{changeText}</li>
+                                                                                                ))}
+                                                                                            </ul>
+                                                                                        </div>
+                                                                                    )}
                                                                                 </div>
                                                                             );
                                                                         })}
