@@ -584,6 +584,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                     finishedGoods={finishedGoods}
                     recipes={recipes}
                     addLogEntry={addLogEntry}
+                    setInvoiceDraft={setInvoiceDraft}
                 />
             )}
 

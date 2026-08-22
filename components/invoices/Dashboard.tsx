@@ -750,18 +750,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                                             const summaryStr = log.summary || log.notes || log.details || 'Document modified';
                                                                             const formattedDate = dateStr ? new Date(dateStr).toLocaleString('en-IN') : '';
                                                                             const detailedChanges: string[] = Array.isArray(log.changes) ? log.changes : [];
+                                                                            const revNum = hIdx + 1;
                                                                             return (
-                                                                                <div key={hIdx} className="bg-amber-50/40 p-3 rounded-lg text-xs border border-amber-200/60 space-y-1.5">
+                                                                                <div key={hIdx} className="bg-amber-50/50 p-3 rounded-lg text-xs border border-amber-200/70 space-y-2">
                                                                                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5">
-                                                                                        <div>
-                                                                                            <span className="font-bold text-slate-800 block">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <span className="bg-amber-200/80 text-amber-900 text-[10px] font-black px-1.5 py-0.5 rounded">
+                                                                                                Rev #{revNum}
+                                                                                            </span>
+                                                                                            <span className="font-bold text-slate-800">
                                                                                                 ✏️ {summaryStr}
                                                                                             </span>
-                                                                                            {log.previous_grand_total !== undefined && detailedChanges.length === 0 && (
-                                                                                                <span className="text-[10px] text-slate-500 font-mono">
-                                                                                                    Prev Total: ₹{Number(log.previous_grand_total).toLocaleString('en-IN')}
-                                                                                                </span>
-                                                                                            )}
                                                                                         </div>
                                                                                         <div className="text-right shrink-0">
                                                                                             <span className="text-[10px] font-bold text-slate-700 bg-amber-100 px-2 py-0.5 rounded inline-block">{userStr}</span>
@@ -769,12 +768,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                                                         </div>
                                                                                     </div>
 
+                                                                                    {log.previous_grand_total !== undefined && detailedChanges.length === 0 && (
+                                                                                        <div className="text-[11px] text-slate-600 font-mono bg-white/70 px-2 py-1 rounded border border-amber-100 flex items-center justify-between">
+                                                                                            <span>Previous Grand Total:</span>
+                                                                                            <span className="font-bold text-slate-800">₹{Number(log.previous_grand_total).toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    )}
+
                                                                                     {detailedChanges.length > 0 && (
-                                                                                        <div className="pt-2 border-t border-amber-200/50 bg-white/60 p-2 rounded">
-                                                                                            <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">Changes breakdown:</p>
-                                                                                            <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-700">
+                                                                                        <div className="pt-2 border-t border-amber-200/50 bg-white/80 p-2.5 rounded border border-amber-100/60">
+                                                                                            <p className="text-[10px] font-black text-amber-900 uppercase tracking-wider mb-1.5">Changes Breakdown ({detailedChanges.length}):</p>
+                                                                                            <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-700">
                                                                                                 {detailedChanges.map((changeText, cIdx) => (
-                                                                                                    <li key={cIdx} className="leading-snug">{changeText}</li>
+                                                                                                    <li key={cIdx} className="leading-snug font-medium">{changeText}</li>
                                                                                                 ))}
                                                                                             </ul>
                                                                                         </div>
