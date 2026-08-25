@@ -50,11 +50,11 @@ const SubNavButton: React.FC<NavButtonProps> = ({ isActive, onClick, children, i
 
 const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRole, onLogout }) => {
   const categories = useMemo(() => ({
-    home: ['home', 'help', 'webmail'] as View[],
+    home: ['home', 'help', 'webmail', 'mobile'] as View[],
     supplies: ['supplies'] as View[],
     operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage'] as View[],
     finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker', 'finance_ledger'] as View[],
-    admin: ['companies', 'users', 'employee_tasks', 'ai_assistant', 'reports', 'master', 'log'] as View[],
+    admin: ['companies', 'users', 'employee_tasks', 'ai_assistant', 'reports', 'master', 'log', 'mobile'] as View[],
   }), []);
 
   const currentCategory = useMemo(() => {
@@ -147,6 +147,15 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
 
           {/* USER PROFILE / LOGOUT */}
           <div className="flex items-center space-x-3 py-2 md:py-0 justify-end border-t md:border-t-0 border-slate-800">
+            <button
+              onClick={() => setView('mobile')}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#658C3E] to-[#8EBF45] text-slate-950 font-bold text-xs rounded-full shadow-md hover:scale-105 active:scale-95 transition"
+              title="Open Mobile Voice Assistant"
+            >
+              <span>🎙️</span>
+              <span>Mobile Voice</span>
+            </button>
+
             {username && (
               <div className="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800">
                 <div className="w-6 h-6 rounded-full bg-[#8EBF45] text-[#0D0D0D] font-extrabold flex items-center justify-center text-xs uppercase">
@@ -271,6 +280,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                 <SubNavButton isActive={currentView === 'reports'} onClick={() => setView('reports')}>Exports</SubNavButton>
                 <SubNavButton isActive={currentView === 'master'} onClick={() => setView('master')}>Traceability</SubNavButton>
                 <SubNavButton isActive={currentView === 'log'} onClick={() => setView('log')}>Logs</SubNavButton>
+                <SubNavButton isActive={currentView === 'mobile'} onClick={() => setView('mobile')}>🎙️ Mobile Voice</SubNavButton>
               </>
             )}
 

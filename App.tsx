@@ -22,6 +22,7 @@ import HelpGuide from './components/HelpGuide';
 import { EmployeeTasks } from './components/EmployeeTasks';
 import PlantAiAssistant from './components/PlantAiAssistant';
 import Webmail from './components/Webmail';
+import { MobileVoiceShell } from './components/mobile/MobileVoiceShell';
 import Footer from './components/Footer';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabase } from './hooks/useSupabase';
@@ -669,6 +670,24 @@ const App: React.FC = () => {
       case 'help':
         return <HelpGuide setView={setView} userRole={currentUser?.role} />;
 
+      case 'mobile':
+        return (
+          <MobileVoiceShell
+            currentUser={currentUser}
+            setView={setView}
+            users={users}
+            tasks={employeeTasks}
+            onAddTask={handleAddEmployeeTask}
+            onToggleTask={handleToggleEmployeeTask}
+            onDeleteTask={handleDeleteEmployeeTask}
+            onEditTask={handleEditEmployeeTask}
+            receivedGoods={receivedGoods}
+            finishedGoods={finishedGoods}
+            companyProfiles={companyProfiles}
+            addLogEntry={addLogEntry}
+          />
+        );
+
       default:
         return null;
     }
@@ -728,7 +747,7 @@ const App: React.FC = () => {
               rooms={rooms}
               storageUnits={storageUnits}
               storageItems={storageItems}
-           />
+            />
         </div>
       );
   }
@@ -740,6 +759,26 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return <Auth onLogin={handleLogin} />;
+  }
+
+  // --- MOBILE FULLSCREEN VIEW ---
+  if (view === 'mobile') {
+    return (
+      <MobileVoiceShell
+        currentUser={currentUser}
+        setView={setView}
+        users={users}
+        tasks={employeeTasks}
+        onAddTask={handleAddEmployeeTask}
+        onToggleTask={handleToggleEmployeeTask}
+        onDeleteTask={handleDeleteEmployeeTask}
+        onEditTask={handleEditEmployeeTask}
+        receivedGoods={receivedGoods}
+        finishedGoods={finishedGoods}
+        companyProfiles={companyProfiles}
+        addLogEntry={addLogEntry}
+      />
+    );
   }
 
   return (

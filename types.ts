@@ -23,7 +23,8 @@ export type View =
   | 'finance_ledger'
   | 'supplies'
   | 'help'
-  | 'webmail';
+  | 'webmail'
+  | 'mobile';
 
 export interface WebmailAccount {
   id: string;
@@ -458,3 +459,45 @@ export const EMPTY_INVOICE: ExtractedInvoice = {
   requires_review: true,
   image_link: ''
 };
+
+export type VoiceIntentType = 
+  | 'create_task'
+  | 'delete_task'
+  | 'complete_task'
+  | 'query_stock'
+  | 'query_tasks'
+  | 'download_invoice'
+  | 'finance_summary'
+  | 'unknown';
+
+export interface VoiceIntentResult {
+  intent: VoiceIntentType;
+  confidence: number;
+  spoken_query: string;
+  parameters: {
+    assigned_to?: string;
+    title?: string;
+    description?: string;
+    due_date?: string;
+    priority?: 'high' | 'medium' | 'low';
+    task_id?: string;
+    task_title_match?: string;
+    completed?: boolean;
+    item_name?: string;
+    category?: string;
+    low_stock_only?: boolean;
+    invoice_number?: string;
+    party_name?: string;
+  };
+  explanation?: string;
+}
+
+export interface MobileActionPreview {
+  id: string;
+  intent: VoiceIntentType;
+  title: string;
+  details: string;
+  params: VoiceIntentResult['parameters'];
+  status: 'pending' | 'executing' | 'success' | 'failed';
+  resultMessage?: string;
+}
