@@ -43,12 +43,24 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
   const [isSettingUpPin, setIsSettingUpPin] = useState<boolean>(false);
   const [newPinDraft, setNewPinDraft] = useState<string>('');
 
+  // --- PWA Installation State ---
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    }
+    return false;
+  });
+  const [showInstallHelpModal, setShowInstallHelpModal] = useState<boolean>(false);
+
   // --- Voice & Speech State ---
   const [isListening, setIsListening] = useState<boolean>(false);
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false);
   const [pendingAction, setPendingAction] = useState<MobileActionPreview | null>(null);
   const [voiceFeedbackMessage, setVoiceFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [textCommandInput, setTextCommandInput] = useState<string>('');
+  const [showTextQueryInput, setShowTextQueryInput] = useState<boolean>(false);
 
   // --- Search & Filter State ---
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -76,12 +88,45 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
 
   const speechControllerRef = useRef<MobileSpeechController | null>(null);
 
-  // Initialize Speech Controller
+  // Initialize Speech Controller & PWA event listeners
   useEffect(() => {
     speechControllerRef.current = new MobileSpeechController();
     fetchMonthlyFinance();
     fetchRecentInvoices();
+
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setDeferredInstallPrompt(null);
+      setVoiceFeedbackMessage({ text: '✓ App shortcut installed to your home screen!', type: 'success' });
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
+
+  const handleTriggerInstall = async () => {
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setDeferredInstallPrompt(null);
+        }
+      } catch (e) {
+        setShowInstallHelpModal(true);
+      }
+    } else {
+      setShowInstallHelpModal(true);
+    }
+  };
 
   const fetchMonthlyFinance = async () => {
     try {
@@ -173,45 +218,48 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
     });
   }, [tasks, selectedEmployeeFilter, taskFilter, searchQuery]);
 
-  // --- Voice Controls ---
+  // --- Continuous Voice Controls with Extended Timeout ---
   const handleToggleListening = () => {
     if (isListening) {
       speechControllerRef.current?.stopListening();
       setIsListening(false);
-      if (liveTranscript) {
-        processVoiceInput(liveTranscript);
+      const textToProcess = liveTranscript.trim();
+      if (textToProcess) {
+        processVoiceInput(textToProcess);
       }
     } else {
       if (!speechControllerRef.current?.isSupported()) {
-        setVoiceFeedbackMessage({ text: 'Speech recognition is not supported on this browser. Try Chrome or Safari.', type: 'error' });
+        setVoiceFeedbackMessage({ text: 'Speech recognition is not supported on this browser. Try Chrome on Android or Safari on iOS.', type: 'error' });
         return;
       }
       setLiveTranscript('');
       setVoiceFeedbackMessage(null);
+      // Use 4.5 seconds silence timeout so long spoken commands are never cut off prematurely
       speechControllerRef.current.startListening({
         onStart: () => setIsListening(true),
-        onResult: (text, isFinal) => {
+        onResult: (text, isAutoTimeout) => {
           setLiveTranscript(text);
-          if (isFinal) {
-            // Auto stop and process when final silence is detected
-            speechControllerRef.current?.stopListening();
+          if (isAutoTimeout && text.trim()) {
             setIsListening(false);
             processVoiceInput(text);
           }
         },
         onError: (err) => {
-          setIsListening(false);
-          setVoiceFeedbackMessage({ text: `Voice error: ${err}`, type: 'error' });
+          console.warn('[MobileVoice] Speech notice:', err);
+          if (err !== 'no-speech') {
+            setIsListening(false);
+            setVoiceFeedbackMessage({ text: `Voice notice: ${err}`, type: 'error' });
+          }
         },
         onEnd: () => setIsListening(false)
-      });
+      }, 4500);
     }
   };
 
   const processVoiceInput = async (spokenText: string) => {
     if (!spokenText.trim()) return;
     setIsAiProcessing(true);
-    setVoiceFeedbackMessage({ text: 'Processing voice command...', type: 'info' });
+    setVoiceFeedbackMessage({ text: `Analyzing: "${spokenText}"`, type: 'info' });
 
     try {
       const intentResult: VoiceIntentResult = await parseVoiceIntentWithAI(spokenText, {
@@ -361,16 +409,6 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
     }
   };
 
-  const handleSaveNewPin = () => {
-    if (newPinDraft.length === 4) {
-      localStorage.setItem('cnergy_mobile_pin', newPinDraft);
-      setIsSettingUpPin(false);
-      setIsLocked(false);
-      setNewPinDraft('');
-      setVoiceFeedbackMessage({ text: '✓ 4-digit PIN setup successful!', type: 'success' });
-    }
-  };
-
   const handleBiometricUnlock = async () => {
     if (window.PublicKeyCredential) {
       try {
@@ -392,7 +430,6 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       const grandTotal = Number(inv.totals?.grand_total || 0).toLocaleString('en-IN');
       const party = inv.receiver_details?.name || inv.issuer_details?.name || 'Customer';
 
-      // Check if Web Share API is available for direct mobile sharing
       if (navigator.share) {
         await navigator.share({
           title: `Invoice ${invNum} - Datlion Cnergy`,
@@ -401,7 +438,6 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
         });
         setVoiceFeedbackMessage({ text: `✓ Shared Invoice #${invNum}`, type: 'success' });
       } else {
-        // Fallback: Open image/document link or redirect to print view
         if (inv.image_link) {
           window.open(inv.image_link, '_blank');
         } else {
@@ -491,9 +527,9 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-28 font-sans selection:bg-[#8EBF45] selection:text-slate-950">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-32 font-sans selection:bg-[#8EBF45] selection:text-slate-950">
       {/* --- Top Mobile Header --- */}
-      <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#658C3E] to-[#8EBF45] flex items-center justify-center shadow-md shadow-[#8EBF45]/20">
             <span className="text-sm font-black text-slate-950">⚡</span>
@@ -508,6 +544,18 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct Install PWA Shortcut Button */}
+          {!isAppInstalled && (
+            <button
+              onClick={handleTriggerInstall}
+              className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-[#658C3E] to-[#8EBF45] text-slate-950 text-[11px] font-black shadow-md shadow-[#8EBF45]/20 active:scale-95 transition flex items-center gap-1"
+              title="Install Shortcut to Phone Home Screen"
+            >
+              <span>📲</span>
+              <span>Install App</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsLocked(true)}
             className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white active:scale-95 transition"
@@ -519,10 +567,29 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
             onClick={() => setView('home')}
             className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white active:scale-95 transition flex items-center gap-1"
           >
-            🖥️ Desktop
+            🖥️
           </button>
         </div>
       </header>
+
+      {/* --- In-App PWA Install Banner (If not yet installed) --- */}
+      {!isAppInstalled && (
+        <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-slate-900 via-slate-900 to-[#658C3E]/20 border border-[#8EBF45]/40 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl">📲</span>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white truncate">Add Shortcut to Home Screen</p>
+              <p className="text-[10px] text-slate-400">1-Tap instant access with offline voice</p>
+            </div>
+          </div>
+          <button
+            onClick={handleTriggerInstall}
+            className="px-3 py-1.5 bg-[#8EBF45] text-slate-950 text-xs font-black rounded-xl shrink-0 shadow active:scale-95"
+          >
+            Install
+          </button>
+        </div>
+      )}
 
       {/* --- Feedback Toast / Voice Status Banner --- */}
       {voiceFeedbackMessage && (
@@ -945,7 +1012,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
 
       {/* --- FLOATING ACTION CONFIRMATION CARD --- */}
       {pendingAction && (
-        <div className="fixed bottom-24 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md border-2 border-[#8EBF45] p-4 rounded-2xl shadow-2xl shadow-[#8EBF45]/20 animate-slideUp">
+        <div className="fixed bottom-28 left-4 right-4 z-40 bg-slate-900/95 backdrop-blur-md border-2 border-[#8EBF45] p-4 rounded-2xl shadow-2xl shadow-[#8EBF45]/20 animate-slideUp">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-black tracking-wider uppercase bg-[#8EBF45]/20 text-[#8EBF45] px-2 py-0.5 rounded">
               {pendingAction.intent.toUpperCase().replace('_', ' ')}
@@ -976,23 +1043,63 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       )}
 
       {/* --- FLOATING BOTTOM VOICE CONTROLLER --- */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80 px-4 py-3 flex items-center justify-between">
-        <div className="min-w-0 flex-1 pr-3">
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 px-4 py-3 flex items-center justify-between gap-3 shadow-2xl">
+        <div className="min-w-0 flex-1">
           {isListening ? (
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping shrink-0"></span>
-              <p className="text-xs text-rose-300 font-medium truncate">
-                {liveTranscript || 'Listening... Speak naturally'}
-              </p>
+              <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping shrink-0"></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-rose-400 truncate">
+                  {liveTranscript || 'Listening... Speak complete command'}
+                </p>
+                <p className="text-[9px] text-slate-400">Tap mic when done speaking</p>
+              </div>
             </div>
           ) : isAiProcessing ? (
-            <p className="text-xs text-[#8EBF45] animate-pulse truncate font-medium">
-              ⚡ AI Processing command...
+            <p className="text-xs text-[#8EBF45] animate-pulse truncate font-medium flex items-center gap-1.5">
+              <span>⚡</span> AI Analyzing command...
             </p>
+          ) : showTextQueryInput ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                placeholder="Type command (e.g. Assign task to Rahul)..."
+                value={textCommandInput}
+                onChange={(e) => setTextCommandInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && textCommandInput.trim()) {
+                    processVoiceInput(textCommandInput);
+                    setTextCommandInput('');
+                    setShowTextQueryInput(false);
+                  }
+                }}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#8EBF45]"
+              />
+              <button
+                onClick={() => {
+                  if (textCommandInput.trim()) {
+                    processVoiceInput(textCommandInput);
+                    setTextCommandInput('');
+                    setShowTextQueryInput(false);
+                  }
+                }}
+                className="px-2.5 py-1.5 bg-[#8EBF45] text-slate-950 font-bold text-xs rounded-xl"
+              >
+                ➔
+              </button>
+            </div>
           ) : (
-            <p className="text-xs text-slate-400 truncate">
-              Tap mic to speak (e.g. "Assign task to Suresh")
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-400 truncate">
+                Tap mic to speak (continuous listening)
+              </p>
+              <button
+                onClick={() => setShowTextQueryInput(true)}
+                className="text-[10px] text-slate-500 hover:text-slate-300 underline ml-2 shrink-0"
+              >
+                ⌨️ Type
+              </button>
+            </div>
           )}
         </div>
 
@@ -1001,12 +1108,12 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
           onClick={handleToggleListening}
           className={`w-14 h-14 rounded-full flex items-center justify-center text-xl shadow-xl transition-all duration-300 active:scale-90 shrink-0 ${
             isListening
-              ? 'bg-rose-500 text-white animate-pulse shadow-rose-500/50 scale-105'
+              ? 'bg-rose-500 text-white animate-pulse shadow-rose-500/50 scale-105 ring-4 ring-rose-500/30'
               : isAiProcessing
               ? 'bg-[#8EBF45] text-slate-950 animate-spin'
               : 'bg-gradient-to-tr from-[#658C3E] to-[#8EBF45] text-slate-950 shadow-[#8EBF45]/40 hover:scale-105'
           }`}
-          title={isListening ? 'Stop listening' : 'Start voice command'}
+          title={isListening ? 'Tap to finish speaking' : 'Start voice command'}
         >
           {isListening ? '⏹️' : isAiProcessing ? '⏳' : '🎙️'}
         </button>
@@ -1081,6 +1188,47 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- INSTALL HELP MODAL --- */}
+      {showInstallHelpModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>📲</span> Install Phone Shortcut
+              </h3>
+              <button onClick={() => setShowInstallHelpModal(false)} className="text-slate-400 text-sm">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <p className="font-bold text-[#8EBF45] mb-1">Android (Google Chrome):</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-400">
+                  <li>Tap the <strong>Three Dots (⋮)</strong> menu in Chrome top-right.</li>
+                  <li>Tap <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>.</li>
+                  <li>Tap <strong>Install</strong> to add the Cnergy Voice shortcut!</li>
+                </ol>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <p className="font-bold text-sky-400 mb-1">iPhone (Apple Safari):</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-400">
+                  <li>Tap the <strong>Share (⎙)</strong> button at the bottom.</li>
+                  <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
+                  <li>Tap <strong>Add</strong> in top-right corner.</li>
+                </ol>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowInstallHelpModal(false)}
+              className="w-full py-2 bg-slate-800 text-slate-200 font-bold text-xs rounded-xl"
+            >
+              Got it
+            </button>
           </div>
         </div>
       )}

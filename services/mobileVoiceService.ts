@@ -12,6 +12,12 @@ export interface SpeechRecognitionHandlers {
 export class MobileSpeechController {
   private recognition: any = null;
   private isListening: boolean = false;
+  private shouldKeepListening: boolean = false;
+  private accumulatedFinalText: string = '';
+  private currentInterimText: string = '';
+  private silenceTimer: any = null;
+  private handlers: SpeechRecognitionHandlers | null = null;
+  private silenceTimeoutMs: number = 4000; // 4 seconds of silence before auto-processing
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -20,7 +26,8 @@ export class MobileSpeechController {
         this.recognition = new SpeechRecognition();
         this.recognition.continuous = true;
         this.recognition.interimResults = true;
-        this.recognition.lang = 'en-IN'; // Optimized for Indian English
+        this.recognition.lang = 'en-IN'; // Optimized for Indian English & accent
+        this.recognition.maxAlternatives = 1;
       }
     }
   }
@@ -29,56 +36,122 @@ export class MobileSpeechController {
     return Boolean(this.recognition);
   }
 
-  public startListening(handlers: SpeechRecognitionHandlers) {
-    if (!this.recognition || this.isListening) return;
+  public startListening(handlers: SpeechRecognitionHandlers, silenceTimeoutMs: number = 4000) {
+    if (!this.recognition) return;
 
+    this.handlers = handlers;
+    this.silenceTimeoutMs = silenceTimeoutMs;
+    this.shouldKeepListening = true;
+    this.accumulatedFinalText = '';
+    this.currentInterimText = '';
+    this.clearSilenceTimer();
+
+    this.setupListeners();
+
+    try {
+      this.recognition.start();
+      this.isListening = true;
+    } catch (e: any) {
+      console.warn('[MobileSpeechController] Failed to start:', e.message);
+      // If already started, toggle state
+      this.isListening = true;
+    }
+  }
+
+  private clearSilenceTimer() {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
+  private resetSilenceTimer() {
+    this.clearSilenceTimer();
+    if (this.shouldKeepListening) {
+      this.silenceTimer = setTimeout(() => {
+        const fullText = this.getFullTranscript();
+        if (fullText) {
+          this.stopListening(true);
+        }
+      }, this.silenceTimeoutMs);
+    }
+  }
+
+  public getFullTranscript(): string {
+    return `${this.accumulatedFinalText} ${this.currentInterimText}`.trim();
+  }
+
+  private setupListeners() {
     this.recognition.onstart = () => {
       this.isListening = true;
-      handlers.onStart?.();
+      this.handlers?.onStart?.();
     };
 
     this.recognition.onresult = (event: any) => {
+      let newlyFinalized = '';
       let interim = '';
-      let final = '';
 
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         const item = event.results[i];
         if (item.isFinal) {
-          final += item[0].transcript;
+          newlyFinalized += ' ' + item[0].transcript;
         } else {
-          interim += item[0].transcript;
+          interim += ' ' + item[0].transcript;
         }
       }
 
-      const text = (final || interim).trim();
-      if (text) {
-        handlers.onResult?.(text, Boolean(final));
+      if (newlyFinalized.trim()) {
+        this.accumulatedFinalText = `${this.accumulatedFinalText} ${newlyFinalized}`.trim();
+      }
+      this.currentInterimText = interim.trim();
+
+      const fullText = this.getFullTranscript();
+      if (fullText) {
+        this.handlers?.onResult?.(fullText, false);
+        this.resetSilenceTimer();
       }
     };
 
     this.recognition.onerror = (event: any) => {
       console.warn('[MobileSpeechController] Recognition error:', event.error);
-      handlers.onError?.(event.error || 'Speech recognition error');
+      if (event.error === 'no-speech') {
+        // No speech detected yet, don't abort immediately while user is preparing to talk
+        return;
+      }
+      this.handlers?.onError?.(event.error || 'Speech recognition error');
     };
 
     this.recognition.onend = () => {
-      this.isListening = false;
-      handlers.onEnd?.();
-    };
+      // If browser prematurely stops while user hasn't explicitly tapped stop:
+      if (this.shouldKeepListening) {
+        try {
+          this.recognition.start();
+          return;
+        } catch (e) {}
+      }
 
-    try {
-      this.recognition.start();
-    } catch (e: any) {
-      console.warn('[MobileSpeechController] Failed to start:', e.message);
-    }
+      this.isListening = false;
+      this.shouldKeepListening = false;
+      this.clearSilenceTimer();
+      this.handlers?.onEnd?.();
+    };
   }
 
-  public stopListening() {
+  public stopListening(isAutoTimeout: boolean = false) {
+    this.shouldKeepListening = false;
+    this.clearSilenceTimer();
+    const finalTranscript = this.getFullTranscript();
+
     if (this.recognition && this.isListening) {
       try {
         this.recognition.stop();
       } catch (e) {}
       this.isListening = false;
+    }
+
+    if (this.handlers) {
+      this.handlers.onResult?.(finalTranscript, true);
+      this.handlers.onEnd?.();
     }
   }
 }
