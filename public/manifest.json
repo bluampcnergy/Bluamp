@@ -1,19 +1,31 @@
 {
+  "name": "Cnergy Voice Assistant",
   "short_name": "Cnergy Voice",
-  "name": "Cnergy Mobile Voice Assistant",
   "description": "Hands-free mobile voice assistant for tasks, inventory stock lookups, and invoice PDF downloads.",
   "icons": [
     {
-      "src": "https://supabase.cnergy.co.in/storage/v1/object/public/Logo/DC_Full_battery_black_bg.png",
+      "src": "/icon-192.png",
       "type": "image/png",
-      "sizes": "192x192 512x512",
-      "purpose": "any maskable"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
-      "src": "/vite.svg",
-      "type": "image/svg+xml",
-      "sizes": "192x192 512x512",
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
   "id": "/?view=mobile",
