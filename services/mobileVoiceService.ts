@@ -9,15 +9,47 @@ export interface SpeechRecognitionHandlers {
   onEnd?: () => void;
 }
 
+// Clean duplicate repeated phrases caused by speech recognition restarts
+export const cleanSpeechTranscript = (text: string): string => {
+  if (!text) return '';
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+  
+  // Remove immediately repeated duplicate phrases (e.g., "to order solar panel to order solar panel")
+  const words = cleaned.split(' ');
+  const resultWords: string[] = [];
+  
+  for (let i = 0; i < words.length; i++) {
+    // Check if 1, 2, 3, or 4 word phrases are immediately repeated
+    let isDuplicated = false;
+    for (let phraseLen = 4; phraseLen >= 1; phraseLen--) {
+      if (i >= phraseLen && i + phraseLen <= words.length) {
+        const prevPhrase = words.slice(i - phraseLen, i).join(' ').toLowerCase();
+        const currPhrase = words.slice(i, i + phraseLen).join(' ').toLowerCase();
+        if (prevPhrase === currPhrase) {
+          isDuplicated = true;
+          i += phraseLen - 1; // skip repeated phrase
+          break;
+        }
+      }
+    }
+    if (!isDuplicated) {
+      resultWords.push(words[i]);
+    }
+  }
+
+  return resultWords.join(' ');
+};
+
 export class MobileSpeechController {
   private recognition: any = null;
   private isListening: boolean = false;
   private shouldKeepListening: boolean = false;
-  private accumulatedFinalText: string = '';
-  private currentInterimText: string = '';
+  private baseHistoryText: string = '';
+  private currentSessionFinalText: string = '';
+  private currentSessionInterimText: string = '';
   private silenceTimer: any = null;
   private handlers: SpeechRecognitionHandlers | null = null;
-  private silenceTimeoutMs: number = 4000; // 4 seconds of silence before auto-processing
+  private silenceTimeoutMs: number = 3800; // 3.8s of silence before auto-submission
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -26,7 +58,7 @@ export class MobileSpeechController {
         this.recognition = new SpeechRecognition();
         this.recognition.continuous = true;
         this.recognition.interimResults = true;
-        this.recognition.lang = 'en-IN'; // Optimized for Indian English & accent
+        this.recognition.lang = 'en-IN'; // Indian English
         this.recognition.maxAlternatives = 1;
       }
     }
@@ -36,14 +68,15 @@ export class MobileSpeechController {
     return Boolean(this.recognition);
   }
 
-  public startListening(handlers: SpeechRecognitionHandlers, silenceTimeoutMs: number = 4000) {
+  public startListening(handlers: SpeechRecognitionHandlers, silenceTimeoutMs: number = 3800) {
     if (!this.recognition) return;
 
     this.handlers = handlers;
     this.silenceTimeoutMs = silenceTimeoutMs;
     this.shouldKeepListening = true;
-    this.accumulatedFinalText = '';
-    this.currentInterimText = '';
+    this.baseHistoryText = '';
+    this.currentSessionFinalText = '';
+    this.currentSessionInterimText = '';
     this.clearSilenceTimer();
 
     this.setupListeners();
@@ -53,7 +86,6 @@ export class MobileSpeechController {
       this.isListening = true;
     } catch (e: any) {
       console.warn('[MobileSpeechController] Failed to start:', e.message);
-      // If already started, toggle state
       this.isListening = true;
     }
   }
@@ -78,7 +110,13 @@ export class MobileSpeechController {
   }
 
   public getFullTranscript(): string {
-    return `${this.accumulatedFinalText} ${this.currentInterimText}`.trim();
+    const parts = [
+      this.baseHistoryText,
+      this.currentSessionFinalText,
+      this.currentSessionInterimText
+    ].filter(Boolean);
+    const raw = parts.join(' ').replace(/\s+/g, ' ').trim();
+    return cleanSpeechTranscript(raw);
   }
 
   private setupListeners() {
@@ -88,22 +126,21 @@ export class MobileSpeechController {
     };
 
     this.recognition.onresult = (event: any) => {
-      let newlyFinalized = '';
-      let interim = '';
+      let finalStr = '';
+      let interimStr = '';
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const item = event.results[i];
-        if (item.isFinal) {
-          newlyFinalized += ' ' + item[0].transcript;
+      // Standard Web Speech API: event.results contains the entire list of results for this recognition session
+      for (let i = 0; i < event.results.length; ++i) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalStr += ' ' + result[0].transcript;
         } else {
-          interim += ' ' + item[0].transcript;
+          interimStr += ' ' + result[0].transcript;
         }
       }
 
-      if (newlyFinalized.trim()) {
-        this.accumulatedFinalText = `${this.accumulatedFinalText} ${newlyFinalized}`.trim();
-      }
-      this.currentInterimText = interim.trim();
+      this.currentSessionFinalText = finalStr.trim();
+      this.currentSessionInterimText = interimStr.trim();
 
       const fullText = this.getFullTranscript();
       if (fullText) {
@@ -113,17 +150,23 @@ export class MobileSpeechController {
     };
 
     this.recognition.onerror = (event: any) => {
-      console.warn('[MobileSpeechController] Recognition error:', event.error);
+      console.warn('[MobileSpeechController] Recognition notice:', event.error);
       if (event.error === 'no-speech') {
-        // No speech detected yet, don't abort immediately while user is preparing to talk
         return;
       }
       this.handlers?.onError?.(event.error || 'Speech recognition error');
     };
 
     this.recognition.onend = () => {
-      // If browser prematurely stops while user hasn't explicitly tapped stop:
+      // If browser dropped session while user is still speaking:
       if (this.shouldKeepListening) {
+        // Save current finalized text into baseHistoryText before restarting
+        if (this.currentSessionFinalText) {
+          this.baseHistoryText = `${this.baseHistoryText} ${this.currentSessionFinalText}`.trim();
+        }
+        this.currentSessionFinalText = '';
+        this.currentSessionInterimText = '';
+
         try {
           this.recognition.start();
           return;
@@ -202,7 +245,8 @@ export const parseLocalVoiceIntent = (
   text: string,
   employees: string[] = []
 ): VoiceIntentResult | null => {
-  const lower = text.toLowerCase().trim();
+  const cleaned = cleanSpeechTranscript(text);
+  const lower = cleaned.toLowerCase().trim();
 
   // 1. Delete task pattern: "delete task [xyz]", "remove task [xyz]"
   if (lower.startsWith('delete task') || lower.startsWith('remove task')) {
@@ -210,7 +254,7 @@ export const parseLocalVoiceIntent = (
     return {
       intent: 'delete_task',
       confidence: 0.95,
-      spoken_query: text,
+      spoken_query: cleaned,
       parameters: { task_title_match: match },
       explanation: `Delete task matching "${match}"`
     };
@@ -222,7 +266,7 @@ export const parseLocalVoiceIntent = (
     return {
       intent: 'complete_task',
       confidence: 0.95,
-      spoken_query: text,
+      spoken_query: cleaned,
       parameters: { task_title_match: match, completed: true },
       explanation: `Mark task "${match}" as completed`
     };
@@ -240,7 +284,7 @@ export const parseLocalVoiceIntent = (
     return {
       intent: 'query_stock',
       confidence: 0.9,
-      spoken_query: text,
+      spoken_query: cleaned,
       parameters: { item_name: itemQuery, low_stock_only: isLow },
       explanation: isLow ? `Check low-stock items` : `Check stock count for "${itemQuery}"`
     };
@@ -253,18 +297,36 @@ export const parseLocalVoiceIntent = (
     return {
       intent: 'download_invoice',
       confidence: 0.9,
-      spoken_query: text,
-      parameters: { invoice_number: invNum, party_name: text.replace(/^(download|get|find|show)\s+(invoice|pdf)\s+/i, '').trim() },
-      explanation: invNum ? `Download Invoice #${invNum} PDF` : `Download Invoice PDF for query "${text}"`
+      spoken_query: cleaned,
+      parameters: { invoice_number: invNum, party_name: cleaned.replace(/^(download|get|find|show)\s+(invoice|pdf)\s+/i, '').trim() },
+      explanation: invNum ? `Download Invoice #${invNum} PDF` : `Download Invoice PDF for query "${cleaned}"`
     };
   }
 
-  // 5. Add / Assign task pattern: "add task [for employee] [title]"
-  if (lower.startsWith('add task') || lower.startsWith('assign task') || lower.startsWith('new task') || lower.startsWith('create task')) {
-    let clean = lower.replace(/^(add|assign|new|create)\s+task\s+(to|for)?\s*/i, '').trim();
+  // 5. Add / Assign / Order task pattern:
+  // Examples: "add task [x]", "assign task [x]", "to order solar panel from [x]", "order solar panel", "buy 50 battery boxes", "tell rahul to order [x]"
+  const isTaskInstruction = 
+    lower.startsWith('add task') || 
+    lower.startsWith('assign task') || 
+    lower.startsWith('new task') || 
+    lower.startsWith('create task') ||
+    lower.startsWith('to order') ||
+    lower.startsWith('order ') ||
+    lower.startsWith('buy ') ||
+    lower.startsWith('procure ') ||
+    lower.startsWith('tell ') ||
+    lower.startsWith('ask ');
+
+  if (isTaskInstruction) {
+    let clean = lower
+      .replace(/^(add|assign|new|create)\s+task\s+(to|for)?\s*/i, '')
+      .replace(/^(tell|ask)\s+/i, '')
+      .replace(/^to\s+/i, '')
+      .trim();
+
     let assigned = '';
     
-    // Check if starts with employee name
+    // Check if mentions employee name
     for (const emp of employees) {
       if (clean.toLowerCase().startsWith(emp.toLowerCase())) {
         assigned = emp;
@@ -273,16 +335,19 @@ export const parseLocalVoiceIntent = (
       }
     }
 
+    // Capitalize first letter of task title
+    const finalTitle = clean ? (clean.charAt(0).toUpperCase() + clean.slice(1)) : cleaned;
+
     return {
       intent: 'create_task',
       confidence: 0.85,
-      spoken_query: text,
+      spoken_query: cleaned,
       parameters: {
-        assigned_to: assigned || 'Unassigned',
-        title: clean || text,
+        assigned_to: assigned || (employees.length > 0 ? employees[0] : 'Unassigned'),
+        title: finalTitle,
         due_date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]
       },
-      explanation: `Create task for ${assigned || 'Unassigned'}: "${clean || text}"`
+      explanation: `Create task: "${finalTitle}"`
     };
   }
 
@@ -298,7 +363,8 @@ export const parseVoiceIntentWithAI = async (
     tasks: { id: string; title: string; assigned_to: string }[];
   }
 ): Promise<VoiceIntentResult> => {
-  const localMatch = parseLocalVoiceIntent(spokenText, context.employees);
+  const cleaned = cleanSpeechTranscript(spokenText);
+  const localMatch = parseLocalVoiceIntent(cleaned, context.employees);
   if (localMatch && localMatch.confidence >= 0.9) {
     return localMatch;
   }
@@ -316,16 +382,16 @@ SYSTEM CONTEXT:
 [PRODUCT_CATALOG_SAMPLE]: ${JSON.stringify(context.products.slice(0, 20))}
 
 INTENT RULES:
-1. **create_task**: Spoken request to create, add, or assign work/tasks to employees. Match closest employee in [EMPLOYEES]. Default due_date is within 1-3 days if not specified.
+1. **create_task**: Spoken request to create, add, or assign work/tasks, orders, or procurement to employees (e.g. "order solar panel from ...", "buy connectors", "ask Rahul to assemble packs"). Match closest employee in [EMPLOYEES] or default to first available.
 2. **delete_task**: Request to delete, remove, or cancel a task. Try to match task_id or title in [RECENT_TASKS].
 3. **complete_task**: Request to mark a task as finished, done, or complete.
 4. **query_stock**: Questions about quantity, stock, inventory, low stock alert count.
 5. **query_tasks**: Questions asking what tasks are pending, who has what tasks, or overdue tasks.
 6. **download_invoice**: Request to download, get, or view an invoice PDF by invoice number or client name.
 7. **finance_summary**: Questions about sales total, purchase total, or monthly revenue.
-8. **unknown**: If the voice query is unrelated or unrecognizable.
+8. **unknown**: If the voice query is completely unrelated or unrecognizable.
 
-User Spoken Query: "${spokenText}"`;
+User Spoken Query: "${cleaned}"`;
 
     const response = await fetch('/api/gemini', {
       method: 'POST',
@@ -352,7 +418,7 @@ User Spoken Query: "${spokenText}"`;
     return {
       intent: parsed.intent || 'unknown',
       confidence: parsed.confidence || 0.85,
-      spoken_query: spokenText,
+      spoken_query: cleaned,
       parameters: parsed.parameters || {},
       explanation: parsed.explanation
     };
@@ -361,9 +427,9 @@ User Spoken Query: "${spokenText}"`;
     return localMatch || {
       intent: 'unknown',
       confidence: 0,
-      spoken_query: spokenText,
-      parameters: { title: spokenText },
-      explanation: `Could not parse command: "${spokenText}"`
+      spoken_query: cleaned,
+      parameters: { title: cleaned },
+      explanation: `Could not parse command: "${cleaned}"`
     };
   }
 };
