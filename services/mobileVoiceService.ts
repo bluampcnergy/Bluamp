@@ -9,31 +9,41 @@ export interface SpeechRecognitionHandlers {
   onEnd?: () => void;
 }
 
-// Clean duplicate repeated phrases caused by speech recognition restarts
-export const cleanSpeechTranscript = (text: string): string => {
-  if (!text) return '';
-  let cleaned = text.replace(/\s+/g, ' ').trim();
+// Clean duplicate words and repeated echo phrases
+export const cleanSpeechTranscript = (rawText: string): string => {
+  if (!rawText) return '';
   
-  // Remove immediately repeated duplicate phrases (e.g., "to order solar panel to order solar panel")
-  const words = cleaned.split(' ');
+  // Normalize whitespace
+  let text = rawText.replace(/\s+/g, ' ').trim();
+  const words = text.split(' ').filter(Boolean);
+  if (words.length <= 1) return text;
+
   const resultWords: string[] = [];
-  
+
   for (let i = 0; i < words.length; i++) {
-    // Check if 1, 2, 3, or 4 word phrases are immediately repeated
-    let isDuplicated = false;
-    for (let phraseLen = 4; phraseLen >= 1; phraseLen--) {
+    const currentWord = words[i];
+
+    // 1. Remove immediate consecutive single-word repeat (e.g. "to to")
+    if (resultWords.length > 0 && resultWords[resultWords.length - 1].toLowerCase() === currentWord.toLowerCase()) {
+      continue;
+    }
+
+    // 2. Remove multi-word phrase repeats (e.g. "order solar panel from" repeated)
+    let isDuplicatePhrase = false;
+    for (let phraseLen = 6; phraseLen >= 2; phraseLen--) {
       if (i >= phraseLen && i + phraseLen <= words.length) {
-        const prevPhrase = words.slice(i - phraseLen, i).join(' ').toLowerCase();
-        const currPhrase = words.slice(i, i + phraseLen).join(' ').toLowerCase();
+        const prevPhrase = words.slice(i - phraseLen, i).map(w => w.toLowerCase()).join(' ');
+        const currPhrase = words.slice(i, i + phraseLen).map(w => w.toLowerCase()).join(' ');
         if (prevPhrase === currPhrase) {
-          isDuplicated = true;
-          i += phraseLen - 1; // skip repeated phrase
+          isDuplicatePhrase = true;
+          i += phraseLen - 1; // Skip the duplicate phrase
           break;
         }
       }
     }
-    if (!isDuplicated) {
-      resultWords.push(words[i]);
+
+    if (!isDuplicatePhrase) {
+      resultWords.push(currentWord);
     }
   }
 
@@ -44,12 +54,10 @@ export class MobileSpeechController {
   private recognition: any = null;
   private isListening: boolean = false;
   private shouldKeepListening: boolean = false;
-  private baseHistoryText: string = '';
-  private currentSessionFinalText: string = '';
-  private currentSessionInterimText: string = '';
+  private currentTranscript: string = '';
   private silenceTimer: any = null;
   private handlers: SpeechRecognitionHandlers | null = null;
-  private silenceTimeoutMs: number = 3800; // 3.8s of silence before auto-submission
+  private silenceTimeoutMs: number = 3500; // 3.5s of silence before auto-submission
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -68,15 +76,16 @@ export class MobileSpeechController {
     return Boolean(this.recognition);
   }
 
-  public startListening(handlers: SpeechRecognitionHandlers, silenceTimeoutMs: number = 3800) {
+  public startListening(handlers: SpeechRecognitionHandlers, silenceTimeoutMs: number = 3500) {
     if (!this.recognition) return;
+
+    // Reset previous instance cleanly
+    this.stopListening(false);
 
     this.handlers = handlers;
     this.silenceTimeoutMs = silenceTimeoutMs;
     this.shouldKeepListening = true;
-    this.baseHistoryText = '';
-    this.currentSessionFinalText = '';
-    this.currentSessionInterimText = '';
+    this.currentTranscript = '';
     this.clearSilenceTimer();
 
     this.setupListeners();
@@ -85,7 +94,7 @@ export class MobileSpeechController {
       this.recognition.start();
       this.isListening = true;
     } catch (e: any) {
-      console.warn('[MobileSpeechController] Failed to start:', e.message);
+      console.warn('[MobileSpeechController] Start error:', e.message);
       this.isListening = true;
     }
   }
@@ -101,8 +110,8 @@ export class MobileSpeechController {
     this.clearSilenceTimer();
     if (this.shouldKeepListening) {
       this.silenceTimer = setTimeout(() => {
-        const fullText = this.getFullTranscript();
-        if (fullText) {
+        const text = this.getFullTranscript();
+        if (text) {
           this.stopListening(true);
         }
       }, this.silenceTimeoutMs);
@@ -110,13 +119,7 @@ export class MobileSpeechController {
   }
 
   public getFullTranscript(): string {
-    const parts = [
-      this.baseHistoryText,
-      this.currentSessionFinalText,
-      this.currentSessionInterimText
-    ].filter(Boolean);
-    const raw = parts.join(' ').replace(/\s+/g, ' ').trim();
-    return cleanSpeechTranscript(raw);
+    return cleanSpeechTranscript(this.currentTranscript);
   }
 
   private setupListeners() {
@@ -129,28 +132,27 @@ export class MobileSpeechController {
       let finalStr = '';
       let interimStr = '';
 
-      // Standard Web Speech API: event.results contains the entire list of results for this recognition session
       for (let i = 0; i < event.results.length; ++i) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalStr += ' ' + result[0].transcript;
+          finalStr += result[0].transcript + ' ';
         } else {
-          interimStr += ' ' + result[0].transcript;
+          interimStr += result[0].transcript + ' ';
         }
       }
 
-      this.currentSessionFinalText = finalStr.trim();
-      this.currentSessionInterimText = interimStr.trim();
+      const combined = `${finalStr} ${interimStr}`.trim();
+      this.currentTranscript = combined;
 
-      const fullText = this.getFullTranscript();
-      if (fullText) {
-        this.handlers?.onResult?.(fullText, false);
+      const cleaned = this.getFullTranscript();
+      if (cleaned) {
+        this.handlers?.onResult?.(cleaned, false);
         this.resetSilenceTimer();
       }
     };
 
     this.recognition.onerror = (event: any) => {
-      console.warn('[MobileSpeechController] Recognition notice:', event.error);
+      console.warn('[MobileSpeechController] Recognition event notice:', event.error);
       if (event.error === 'no-speech') {
         return;
       }
@@ -158,15 +160,7 @@ export class MobileSpeechController {
     };
 
     this.recognition.onend = () => {
-      // If browser dropped session while user is still speaking:
       if (this.shouldKeepListening) {
-        // Save current finalized text into baseHistoryText before restarting
-        if (this.currentSessionFinalText) {
-          this.baseHistoryText = `${this.baseHistoryText} ${this.currentSessionFinalText}`.trim();
-        }
-        this.currentSessionFinalText = '';
-        this.currentSessionInterimText = '';
-
         try {
           this.recognition.start();
           return;
@@ -183,7 +177,7 @@ export class MobileSpeechController {
   public stopListening(isAutoTimeout: boolean = false) {
     this.shouldKeepListening = false;
     this.clearSilenceTimer();
-    const finalTranscript = this.getFullTranscript();
+    const finalCleaned = this.getFullTranscript();
 
     if (this.recognition && this.isListening) {
       try {
@@ -193,7 +187,7 @@ export class MobileSpeechController {
     }
 
     if (this.handlers) {
-      this.handlers.onResult?.(finalTranscript, true);
+      this.handlers.onResult?.(finalCleaned, true);
       this.handlers.onEnd?.();
     }
   }
@@ -304,7 +298,6 @@ export const parseLocalVoiceIntent = (
   }
 
   // 5. Add / Assign / Order task pattern:
-  // Examples: "add task [x]", "assign task [x]", "to order solar panel from [x]", "order solar panel", "buy 50 battery boxes", "tell rahul to order [x]"
   const isTaskInstruction = 
     lower.startsWith('add task') || 
     lower.startsWith('assign task') || 
@@ -335,7 +328,6 @@ export const parseLocalVoiceIntent = (
       }
     }
 
-    // Capitalize first letter of task title
     const finalTitle = clean ? (clean.charAt(0).toUpperCase() + clean.slice(1)) : cleaned;
 
     return {

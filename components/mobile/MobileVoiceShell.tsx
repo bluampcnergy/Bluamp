@@ -3,6 +3,17 @@ import { User, EmployeeTask, ReceivedGood, FinishedGood, CompanyProfile, View, V
 import { MobileSpeechController, parseVoiceIntentWithAI } from '../../services/mobileVoiceService';
 import { getDueDateBadgeInfo } from '../../utils';
 import { supabase } from '../../supabaseClient';
+import InvoicePrintView from '../invoices/InvoicePrintView';
+
+// Clean Minimalist Tasks Icon without background
+const TasksIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6 text-[#8EBF45]" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" fill="#18181B" />
+    <path d="m9 14 2 2 4-4" stroke="#8EBF45" strokeWidth="2.5" />
+    <path d="M9 9h6" stroke="#FFFFFF" strokeWidth="2" />
+  </svg>
+);
 
 interface MobileVoiceShellProps {
   currentUser: User | null;
@@ -40,8 +51,6 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
   });
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [pinError, setPinError] = useState<string>('');
-  const [isSettingUpPin, setIsSettingUpPin] = useState<boolean>(false);
-  const [newPinDraft, setNewPinDraft] = useState<string>('');
 
   // --- PWA Installation State ---
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
@@ -77,11 +86,11 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
   // --- Stock Details Modal ---
   const [selectedStockCategory, setSelectedStockCategory] = useState<'all' | 'low_stock' | 'raw' | 'finished'>('all');
 
-  // --- Invoices & PDF State ---
+  // --- Invoices & Official PDF Download View ---
   const [recentInvoices, setRecentInvoices] = useState<ExtractedInvoice[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState<boolean>(false);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState<string>('');
-  const [downloadingInvId, setDownloadingInvId] = useState<string | null>(null);
+  const [printInvoice, setPrintInvoice] = useState<ExtractedInvoice | null>(null);
 
   // --- Financial Totals (MTD) ---
   const [monthlyFinance, setMonthlyFinance] = useState<{ sales: number; purchase: number }>({ sales: 0, purchase: 0 });
@@ -162,7 +171,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
         .from('invoices')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(25);
+        .limit(30);
 
       if (!error && data) {
         setRecentInvoices(data as ExtractedInvoice[]);
@@ -218,7 +227,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
     });
   }, [tasks, selectedEmployeeFilter, taskFilter, searchQuery]);
 
-  // --- Continuous Voice Controls with Extended Timeout ---
+  // --- Voice Controls ---
   const handleToggleListening = () => {
     if (isListening) {
       speechControllerRef.current?.stopListening();
@@ -234,7 +243,6 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       }
       setLiveTranscript('');
       setVoiceFeedbackMessage(null);
-      // Use 4.5 seconds silence timeout so long spoken commands are never cut off prematurely
       speechControllerRef.current.startListening({
         onStart: () => setIsListening(true),
         onResult: (text, isAutoTimeout) => {
@@ -252,7 +260,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
           }
         },
         onEnd: () => setIsListening(false)
-      }, 4500);
+      }, 3500);
     }
   };
 
@@ -354,6 +362,11 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       setActiveTab('invoices');
       if (parameters.invoice_number) {
         setInvoiceSearchQuery(parameters.invoice_number);
+        // If exact match found, open directly
+        const matched = recentInvoices.find(inv => inv.invoice_metadata?.invoice_number?.toLowerCase().includes(parameters.invoice_number!.toLowerCase()));
+        if (matched) {
+          setPrintInvoice(matched);
+        }
         setVoiceFeedbackMessage({ text: `Found invoice #${parameters.invoice_number}`, type: 'info' });
       } else if (parameters.party_name) {
         setInvoiceSearchQuery(parameters.party_name);
@@ -422,44 +435,13 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
     }
   };
 
-  // --- Direct Invoice PDF Sharing / Downloading ---
-  const handleShareInvoicePdf = async (inv: ExtractedInvoice) => {
-    setDownloadingInvId(inv.id);
-    try {
-      const invNum = inv.invoice_metadata?.invoice_number || 'Invoice';
-      const grandTotal = Number(inv.totals?.grand_total || 0).toLocaleString('en-IN');
-      const party = inv.receiver_details?.name || inv.issuer_details?.name || 'Customer';
-
-      if (navigator.share) {
-        await navigator.share({
-          title: `Invoice ${invNum} - Datlion Cnergy`,
-          text: `Invoice #${invNum} for ${party} (Amount: ₹${grandTotal})`,
-          url: inv.image_link || window.location.origin + `/?view=finance_dashboard`
-        });
-        setVoiceFeedbackMessage({ text: `✓ Shared Invoice #${invNum}`, type: 'success' });
-      } else {
-        if (inv.image_link) {
-          window.open(inv.image_link, '_blank');
-        } else {
-          setView('finance_dashboard');
-        }
-      }
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
-        setVoiceFeedbackMessage({ text: `Share error: ${e.message}`, type: 'error' });
-      }
-    } finally {
-      setDownloadingInvId(null);
-    }
-  };
-
   // --- Render PIN Lock Screen ---
   if (isLocked) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 select-none font-sans">
         <div className="w-full max-w-xs flex flex-col items-center space-y-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#658C3E] to-[#8EBF45] flex items-center justify-center shadow-lg shadow-[#8EBF45]/20">
-            <span className="text-2xl font-black text-slate-950">⚡</span>
+          <div className="p-3">
+            <TasksIcon className="w-16 h-16 text-[#8EBF45]" />
           </div>
 
           <div className="text-center space-y-1">
@@ -531,9 +513,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       {/* --- Top Mobile Header --- */}
       <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#658C3E] to-[#8EBF45] flex items-center justify-center shadow-md shadow-[#8EBF45]/20">
-            <span className="text-sm font-black text-slate-950">⚡</span>
-          </div>
+          <TasksIcon className="w-8 h-8 text-[#8EBF45]" />
           <div>
             <h1 className="text-sm font-bold text-white leading-none">Cnergy Voice</h1>
             <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -576,10 +556,10 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
       {!isAppInstalled && (
         <div className="mx-4 mt-3 p-3 bg-gradient-to-r from-slate-900 via-slate-900 to-[#658C3E]/20 border border-[#8EBF45]/40 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="text-xl">📲</span>
+            <TasksIcon className="w-7 h-7 text-[#8EBF45] shrink-0" />
             <div className="min-w-0">
               <p className="text-xs font-bold text-white truncate">Add Shortcut to Home Screen</p>
-              <p className="text-[10px] text-slate-400">1-Tap instant access with offline voice</p>
+              <p className="text-[10px] text-slate-400">1-Tap instant access with voice tasks</p>
             </div>
           </div>
           <button
@@ -942,7 +922,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
         </div>
       )}
 
-      {/* --- TAB 3: INVOICES & DIRECT PDF DOWNLOAD --- */}
+      {/* --- TAB 3: INVOICES & OFFICIAL PDF VIEW/DOWNLOAD --- */}
       {activeTab === 'invoices' && (
         <div className="px-4 mt-3 space-y-3">
           <div className="flex items-center gap-2">
@@ -981,8 +961,8 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
                   const isPurchase = inv.source_type === 'purchase';
 
                   return (
-                    <div key={inv.id} className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
+                    <div key={inv.id} className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between gap-3 hover:border-slate-700 transition">
+                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setPrintInvoice(inv)}>
                         <div className="flex items-center gap-2">
                           <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${
                             isPurchase ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'
@@ -991,17 +971,29 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
                           </span>
                           <span className="text-xs font-bold text-white truncate">#{invNum}</span>
                         </div>
-                        <p className="text-xs text-slate-300 mt-1 truncate">{party}</p>
+                        <p className="text-xs text-slate-300 mt-1 truncate font-medium">{party}</p>
                         <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{date} • ₹{grandTotal}</p>
                       </div>
 
-                      <button
-                        onClick={() => handleShareInvoicePdf(inv)}
-                        disabled={downloadingInvId === inv.id}
-                        className="px-3 py-2 bg-gradient-to-r from-[#658C3E] to-[#8EBF45] text-slate-950 font-bold text-xs rounded-xl shadow active:scale-95 flex items-center gap-1 shrink-0"
-                      >
-                        {downloadingInvId === inv.id ? '...' : '📥 Share/PDF'}
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {inv.image_link && (
+                          <a
+                            href={inv.image_link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl text-xs"
+                            title="View Original Uploaded Bill"
+                          >
+                            📎
+                          </a>
+                        )}
+                        <button
+                          onClick={() => setPrintInvoice(inv)}
+                          className="px-3 py-2 bg-gradient-to-r from-[#658C3E] to-[#8EBF45] text-slate-950 font-bold text-xs rounded-xl shadow active:scale-95 flex items-center gap-1"
+                        >
+                          📥 Download PDF
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -1091,7 +1083,7 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
           ) : (
             <div className="flex items-center justify-between">
               <p className="text-xs text-slate-400 truncate">
-                Tap mic to speak (continuous listening)
+                Tap mic to speak (clean speech filter)
               </p>
               <button
                 onClick={() => setShowTextQueryInput(true)}
@@ -1192,13 +1184,18 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
         </div>
       )}
 
+      {/* --- OFFICIAL INVOICE PRINT / DOWNLOAD VIEW MODAL --- */}
+      {printInvoice && (
+        <InvoicePrintView invoice={printInvoice} onClose={() => setPrintInvoice(null)} />
+      )}
+
       {/* --- INSTALL HELP MODAL --- */}
       {showInstallHelpModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>📲</span> Install Phone Shortcut
+                <TasksIcon className="w-5 h-5 text-[#8EBF45]" /> Install Phone Shortcut
               </h3>
               <button onClick={() => setShowInstallHelpModal(false)} className="text-slate-400 text-sm">✕</button>
             </div>
