@@ -256,40 +256,6 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
         setActiveJobId(id);
     };
 
-    const handleSimulateSlack = async () => {
-        // Create a mock pending invoice in DB
-        const mockInv: any = {
-            ...EMPTY_INVOICE,
-            filename: 'https://supabase.cnergy.co.in/storage/v1/object/public/Invoices/sample_slack_invoice.pdf', // Using a placeholder URL
-            timestamp: new Date().toISOString(),
-            uploaded_by: 'slack_bot',
-            requires_review: true,
-            raw_text: 'Simulated Slack Import',
-            invoice_metadata: {
-                ...EMPTY_INVOICE.invoice_metadata,
-                invoice_number: `SLACK-${Math.floor(Math.random() * 1000)}`
-            }
-        };
-        delete mockInv.id; // ensure new ID
-
-        const { data, error } = await supabase.from('invoices').insert([mockInv]).select().single();
-
-        if (data && !error) {
-            alert("Simulated: Invoice received from Slack! Adding to queue...");
-            // Add to local queue
-            const job: BatchJob = {
-                id: data.id,
-                status: 'review',
-                data: data,
-                fromDb: true,
-                previewUrl: undefined // Placeholder URL is not valid PDF here usually, unless we implement PDF viewer properly for remote
-            };
-            setBatchQueue(prev => [job, ...prev]);
-        } else {
-            alert("Simulation failed: " + error?.message);
-        }
-    };
-
     const handleEditInvoice = (invoice: ExtractedInvoice) => {
         if (setInvoiceDraft && setView) {
             setInvoiceDraft(invoice);
@@ -362,7 +328,10 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                     <p className="text-slate-500 text-sm">Upload PDF or Images. AI will extract data automatically.</p>
                                 </div>
                                 <div className="flex gap-2 relative">
-                                    <button onClick={handleSimulateSlack} className="bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">Simulate Slack</button>
+                                    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>WhatsApp Ingestion Active</span>
+                                    </div>
                                     <button onClick={handleManualEntry} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-900 transition-colors">Manual Entry</button>
 
                                     <button
