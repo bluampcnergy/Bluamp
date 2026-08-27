@@ -17,7 +17,7 @@ const ALLOWED_WHATSAPP_NUMBERS = (process.env.ALLOWED_WHATSAPP_NUMBERS || '')
   .filter(Boolean);
 
 // Send WhatsApp text message
-async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNumberId?: string) {
+async function sendWhatsAppMessage(recipientPhone, text, phoneNumberId) {
   const phoneId = phoneNumberId || WHATSAPP_PHONE_NUMBER_ID;
   if (!WHATSAPP_ACCESS_TOKEN || !phoneId) {
     console.warn('[WhatsApp] Skip send: WHATSAPP_ACCESS_TOKEN or PHONE_NUMBER_ID missing');
@@ -40,13 +40,13 @@ async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNu
         text: { preview_url: true, body: text }
       })
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[WhatsApp] Send error:', err.message);
   }
 }
 
 // Download media buffer from Meta Graph API
-async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+async function downloadWhatsAppMedia(mediaId) {
   const metaUrl = `https://graph.facebook.com/v21.0/${mediaId}`;
   const metaRes = await fetch(metaUrl, {
     headers: { 'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}` }
@@ -56,7 +56,7 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
     throw new Error(`Failed to retrieve media URL (${metaRes.status})`);
   }
 
-  const metaJson: any = await metaRes.json();
+  const metaJson = await metaRes.json();
   const downloadUrl = metaJson.url;
   const mimeType = metaJson.mime_type || 'application/pdf';
 
@@ -79,7 +79,7 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
 }
 
 // Extract Invoice using Gemini
-async function extractInvoiceWithGemini(fileBuffer: Buffer, mimeType: string) {
+async function extractInvoiceWithGemini(fileBuffer, mimeType) {
   const base64Data = fileBuffer.toString('base64');
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
@@ -154,14 +154,7 @@ Auto-tag expense_category into: raw_materials, battery_cells_bms, logistics_tran
 }
 
 // Background Pipeline
-async function processInboundInvoice(
-  senderPhone: string,
-  senderName: string,
-  mediaId: string,
-  filename: string,
-  initialMimeType: string,
-  phoneNumberId: string
-) {
+async function processInboundInvoice(senderPhone, senderName, mediaId, filename, initialMimeType, phoneNumberId) {
   try {
     console.log(`[WhatsApp] Processing invoice from ${senderName} (${senderPhone})`);
 
@@ -183,7 +176,7 @@ async function processInboundInvoice(
     }
 
     // AI Extraction
-    const extracted: any = await extractInvoiceWithGemini(fileBuffer, mimeType);
+    const extracted = await extractInvoiceWithGemini(fileBuffer, mimeType);
 
     const vendorName = extracted.issuer_details?.name || 'Vendor';
     const invNumber = extracted.invoice_metadata?.invoice_number || `WA-${Date.now()}`;
@@ -233,7 +226,7 @@ ${invoiceLink}`;
     await sendWhatsAppMessage(senderPhone, confirmation, phoneNumberId);
     console.log(`[WhatsApp] Invoice #${invNumber} completed successfully!`);
 
-  } catch (err: any) {
+  } catch (err) {
     console.error('[WhatsApp] Processing error:', err);
     await sendWhatsAppMessage(
       senderPhone,
@@ -244,7 +237,7 @@ ${invoiceLink}`;
 }
 
 // Universal Request Handler for Vercel Serverless
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   try {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -372,7 +365,7 @@ export default async function handler(req: any, res: any) {
 
     res.statusCode = 405;
     return res.json({ error: 'Method Not Allowed' });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[WhatsApp Webhook Fatal Error]:', error);
     res.setHeader('Content-Type', 'text/plain');
     res.statusCode = 200;
