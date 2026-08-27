@@ -11,7 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'CNERGY_WA_INVOICE_HOOK_2026';
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_API_KEY || '';
 const ALLOWED_WHATSAPP_NUMBERS = (process.env.ALLOWED_WHATSAPP_NUMBERS || '')
   .split(',')
   .map(n => n.trim().replace(/\D/g, ''))
@@ -110,7 +110,7 @@ async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNu
 
   try {
     const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
-    await fetch(url, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
@@ -124,6 +124,11 @@ async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNu
         text: { preview_url: true, body: text }
       })
     });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error(`[WhatsApp] Send failed (${res.status}): ${errText}`);
+    }
   } catch (err: any) {
     console.error('[WhatsApp] Send error:', err.message);
   }
@@ -131,19 +136,29 @@ async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNu
 
 // Download media buffer from Meta Graph API
 async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  // Step 1: Get download URL from Meta Graph API
   const metaUrl = `https://graph.facebook.com/v21.0/${mediaId}`;
   const metaRes = await fetch(metaUrl, {
-    headers: { 'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}` }
+    headers: {
+      'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json'
+    }
   });
 
   if (!metaRes.ok) {
-    throw new Error(`Failed to retrieve media URL (${metaRes.status})`);
+    const errText = await metaRes.text().catch(() => '');
+    throw new Error(`Media metadata retrieval failed (${metaRes.status}): ${errText}`);
   }
 
   const metaJson: any = await metaRes.json();
   const downloadUrl = metaJson.url;
   const mimeType = metaJson.mime_type || 'application/pdf';
 
+  if (!downloadUrl) {
+    throw new Error(`Meta Graph API returned empty download URL for media ${mediaId}`);
+  }
+
+  // Step 2: Download raw binary bytes
   const mediaRes = await fetch(downloadUrl, {
     headers: {
       'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
@@ -152,7 +167,8 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
   });
 
   if (!mediaRes.ok) {
-    throw new Error(`Failed to download media content (${mediaRes.status})`);
+    const errText = await mediaRes.text().catch(() => '');
+    throw new Error(`Media binary download failed (${mediaRes.status}): ${errText}`);
   }
 
   const arrayBuffer = await mediaRes.arrayBuffer();
@@ -164,6 +180,10 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
 
 // Extract Invoice using Gemini
 async function extractInvoiceWithGemini(fileBuffer: Buffer, mimeType: string) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured on server.');
+  }
+
   const base64Data = fileBuffer.toString('base64');
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
@@ -202,12 +222,16 @@ async function processInboundInvoice(
   initialMimeType: string,
   phoneNumberId: string
 ) {
+  let currentStep = 'Downloading attachment from WhatsApp';
   try {
-    console.log(`[WhatsApp] Processing invoice from ${senderName} (${senderPhone})`);
+    console.log(`[WhatsApp] Processing invoice from ${senderName} (${senderPhone}) | Media: ${mediaId}`);
 
+    // 1. Download Media
+    currentStep = 'Downloading file from Meta Graph API';
     const { buffer: fileBuffer, mimeType } = await downloadWhatsAppMedia(mediaId);
 
-    // Upload to Supabase Storage
+    // 2. Upload to Supabase Storage
+    currentStep = 'Saving document to Supabase Storage';
     const fileExt = mimeType.includes('pdf') ? 'pdf' : mimeType.includes('png') ? 'png' : 'jpg';
     const cleanFilename = (filename || `wa_${Date.now()}.${fileExt}`).replace(/[^a-zA-Z0-9._-]/g, '_');
     const storagePath = `whatsapp_invoices/${Date.now()}_${cleanFilename}`;
@@ -220,9 +244,12 @@ async function processInboundInvoice(
     if (!uploadError) {
       const { data } = supabase.storage.from('Invoices').getPublicUrl(storagePath);
       publicFileUrl = data?.publicUrl || '';
+    } else {
+      console.warn('[WhatsApp] Storage upload warning:', uploadError.message);
     }
 
-    // AI Extraction
+    // 3. AI Extraction
+    currentStep = 'Extracting invoice data with Gemini 2.5 Flash';
     const extracted: any = await extractInvoiceWithGemini(fileBuffer, mimeType);
 
     const vendorName = extracted.issuer_details?.name || 'Vendor';
@@ -230,7 +257,8 @@ async function processInboundInvoice(
     const grandTotal = Number(extracted.totals?.grand_total) || 0;
     const category = extracted.expense_category || 'other';
 
-    // Insert to database
+    // 4. Insert to Database
+    currentStep = 'Inserting invoice record into database';
     const dbPayload = {
       document_type: extracted.document_type || 'invoice',
       source_type: extracted.source_type || 'purchase',
@@ -255,7 +283,8 @@ async function processInboundInvoice(
     const { error: dbError } = await supabase.from('invoices').insert([dbPayload]);
     if (dbError) throw dbError;
 
-    // Send confirmation message
+    // 5. Send Confirmation Message
+    currentStep = 'Sending confirmation reply';
     const appUrl = process.env.VITE_APP_URL || 'https://inventory.cnergy.co.in';
     const invoiceLink = `${appUrl}/?view=finance_dashboard`;
     const confirmation = `✅ *Invoice Recorded Successfully!*
@@ -271,13 +300,13 @@ async function processInboundInvoice(
 ${invoiceLink}`;
 
     await sendWhatsAppMessage(senderPhone, confirmation, phoneNumberId);
-    console.log(`[WhatsApp] Invoice #${invNumber} completed successfully!`);
+    console.log(`[WhatsApp] Invoice #${invNumber} processed successfully!`);
 
   } catch (err: any) {
-    console.error('[WhatsApp] Processing error:', err);
+    console.error(`[WhatsApp Error during ${currentStep}]:`, err);
     await sendWhatsAppMessage(
       senderPhone,
-      `⚠️ *Invoice Processing Alert*\nCould not process invoice: _${err.message}_`,
+      `⚠️ *Invoice Processing Alert*\nFailed during: *${currentStep}*\nDetails: _${err.message || 'Unknown error'}_`,
       phoneNumberId
     );
   }
@@ -285,7 +314,6 @@ ${invoiceLink}`;
 
 // Main Request Handler
 export default async function handler(req: any, res: any) {
-  // Allow CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
