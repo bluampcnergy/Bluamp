@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI, Type } from '@google/genai';
+import { waitUntil } from '@vercel/functions';
 
 // Supabase Configuration
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://supabase.cnergy.co.in';
@@ -282,65 +283,39 @@ ${invoiceLink}`;
   }
 }
 
-// Robust Universal Request Handler
+// Main Request Handler
 export default async function handler(req: any, res: any) {
-  try {
-    if (res?.setHeader) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // Allow CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // --- GET: Meta Webhook Verification Handshake ---
+  if (req.method === 'GET') {
+    const mode = req.query?.['hub.mode'];
+    const token = req.query?.['hub.verify_token'];
+    const challenge = req.query?.['hub.challenge'];
+
+    if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
+      console.log('[WhatsApp Webhook] Verified successfully with challenge:', challenge);
+      res.setHeader('Content-Type', 'text/plain');
+      return res.status(200).send(challenge);
+    } else {
+      console.warn('[WhatsApp Webhook] Mismatch token:', { mode, token, expected: WHATSAPP_VERIFY_TOKEN });
+      return res.status(403).send('Forbidden');
     }
+  }
 
-    if (req.method === 'OPTIONS') {
-      return res.status ? res.status(200).end() : new Response(null, { status: 200 });
-    }
-
-    // --- GET: Meta Webhook Verification Handshake ---
-    if (req.method === 'GET') {
-      let mode = '';
-      let token = '';
-      let challenge = '';
-
-      if (req.query) {
-        mode = req.query['hub.mode'] || '';
-        token = req.query['hub.verify_token'] || '';
-        challenge = req.query['hub.challenge'] || '';
-      }
-
-      if (!mode && req.url) {
-        try {
-          const u = new URL(req.url, 'http://localhost');
-          mode = u.searchParams.get('hub.mode') || '';
-          token = u.searchParams.get('hub.verify_token') || '';
-          challenge = u.searchParams.get('hub.challenge') || '';
-        } catch (e) {}
-      }
-
-      if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
-        console.log('[WhatsApp Webhook] Handshake verified successfully with challenge:', challenge);
-        if (res.status) {
-          return res.status(200).send(challenge);
-        }
-        return new Response(challenge, { status: 200 });
-      } else {
-        console.warn('[WhatsApp Webhook] Handshake mismatch:', { mode, token, expected: WHATSAPP_VERIFY_TOKEN });
-        if (res.status) {
-          return res.status(403).send('Forbidden');
-        }
-        return new Response('Forbidden', { status: 403 });
-      }
-    }
-
-    // --- POST: Incoming WhatsApp Message Event ---
-    if (req.method === 'POST') {
-      let body = req.body;
-      if (typeof body === 'string') {
-        try { body = JSON.parse(body); } catch (e) {}
-      }
-
+  // --- POST: Incoming WhatsApp Message Event ---
+  if (req.method === 'POST') {
+    try {
+      const body = req.body;
       if (!body || body.object !== 'whatsapp_business_account') {
-        if (res.status) return res.status(200).send('EVENT_RECEIVED');
-        return new Response('EVENT_RECEIVED', { status: 200 });
+        return res.status(200).send('EVENT_RECEIVED');
       }
 
       const entry = body.entry?.[0];
@@ -350,21 +325,19 @@ export default async function handler(req: any, res: any) {
       const phoneNumberId = change?.metadata?.phone_number_id || '';
 
       if (!message) {
-        if (res.status) return res.status(200).send('EVENT_RECEIVED');
-        return new Response('EVENT_RECEIVED', { status: 200 });
+        return res.status(200).send('EVENT_RECEIVED');
       }
 
       const senderPhone = message.from;
       const senderName = contact?.profile?.name || 'User';
 
-      // Whitelist Security Check
+      // Whitelist Check
       if (ALLOWED_WHATSAPP_NUMBERS.length > 0) {
         const cleanSender = senderPhone.replace(/\D/g, '');
         const isAllowed = ALLOWED_WHATSAPP_NUMBERS.some(allowed => cleanSender.endsWith(allowed) || allowed.endsWith(cleanSender));
         if (!isAllowed) {
-          console.warn('[WhatsApp] Rejected unauthorized sender:', senderPhone);
-          if (res.status) return res.status(200).send('SENDER_NOT_AUTHORIZED');
-          return new Response('SENDER_NOT_AUTHORIZED', { status: 200 });
+          console.warn('[WhatsApp] Unauthorized sender:', senderPhone);
+          return res.status(200).send('SENDER_NOT_AUTHORIZED');
         }
       }
 
@@ -380,19 +353,19 @@ export default async function handler(req: any, res: any) {
             phoneNumberId
           ).catch(() => {});
 
-          // Execute processing asynchronously without awaiting to ensure instant 200 response
-          processInboundInvoice(
-            senderPhone,
-            senderName,
-            mediaId,
-            filename,
-            mimeType,
-            phoneNumberId
-          ).catch(err => console.error('[WhatsApp Background Error]:', err));
+          waitUntil(
+            processInboundInvoice(
+              senderPhone,
+              senderName,
+              mediaId,
+              filename,
+              mimeType,
+              phoneNumberId
+            )
+          );
         }
 
-        if (res.status) return res.status(200).send('EVENT_RECEIVED');
-        return new Response('EVENT_RECEIVED', { status: 200 });
+        return res.status(200).send('EVENT_RECEIVED');
       }
 
       if (message.type === 'text') {
@@ -403,15 +376,12 @@ export default async function handler(req: any, res: any) {
         }
       }
 
-      if (res.status) return res.status(200).send('EVENT_RECEIVED');
-      return new Response('EVENT_RECEIVED', { status: 200 });
+      return res.status(200).send('EVENT_RECEIVED');
+    } catch (err: any) {
+      console.error('[WhatsApp Webhook Error]:', err);
+      return res.status(200).send('EVENT_RECEIVED');
     }
-
-    if (res.status) return res.status(405).json({ error: 'Method Not Allowed' });
-    return new Response('Method Not Allowed', { status: 405 });
-  } catch (error: any) {
-    console.error('[WhatsApp Webhook Fatal Error]:', error);
-    if (res.status) return res.status(200).send('EVENT_RECEIVED');
-    return new Response('EVENT_RECEIVED', { status: 200 });
   }
+
+  return res.status(405).json({ error: 'Method Not Allowed' });
 }
