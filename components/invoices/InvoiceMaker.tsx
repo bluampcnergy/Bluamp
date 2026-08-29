@@ -30,6 +30,7 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     visibleColumns?: {
         index: boolean;
         description: boolean;
+        image?: boolean;
         hsn: boolean;
         quantity: boolean;
         rate: boolean;
@@ -39,6 +40,9 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     };
     billedToLabel?: string;
     shippedToLabel?: string;
+    customTitle?: string;
+    selectedTemplateId?: string;
+    printMode?: 'single' | 'dual';
 };
 
 const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry, setInvoiceDraft }) => {
@@ -53,7 +57,6 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     }, [initialData]);
 
     const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(() => {
-        if (draft?.docType) return draft.docType;
         if (initialData?.document_type) {
             const dt = initialData.document_type;
             if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') return 'po';
@@ -63,9 +66,18 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             if (dt === 'generated_credit_note' || dt === 'credit_note') return 'credit_note';
             return 'invoice';
         }
+        if (draft?.docType) return draft.docType;
         return 'invoice';
     });
-    const [customTitle, setCustomTitle] = useState(draft?.customTitle || (docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE'));
+
+    const [customTitle, setCustomTitle] = useState(() => {
+        if (initialData?.invoice_metadata?.ui_config?.customTitle) return initialData.invoice_metadata.ui_config.customTitle;
+        if ((initialData?.invoice_metadata as any)?.custom_title) return (initialData?.invoice_metadata as any).custom_title;
+        if ((initialData?.invoice_metadata as any)?.title) return (initialData?.invoice_metadata as any).title;
+        if (draft?.customTitle) return draft.customTitle;
+        return (docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
+    });
+
     const [doc, setDoc] = useState<ExtractedInvoice>(() => {
         const base = initialData || draft?.doc || EMPTY_INVOICE;
         const computedSourceType = (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
@@ -80,29 +92,52 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 ...(base.issuer_details || {}),
                 bank_details: { upi_id: '8956340980@ibl', ...(base.issuer_details?.bank_details || {}) } 
             },
-            shipped_to_details: base.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
-            supplier_details: base.supplier_details || EMPTY_INVOICE.supplier_details,
+            shipped_to_details: base.shipped_to_details || (base.invoice_metadata as any)?.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
+            supplier_details: base.supplier_details || (base.invoice_metadata as any)?.supplier_details || EMPTY_INVOICE.supplier_details,
             invoice_metadata: base.invoice_metadata || EMPTY_INVOICE.invoice_metadata
         };
     });
 
-    // Default config with showReceiverSign
-    const [config, setConfig] = useState<ExtendedConfig>(draft?.config || {
-        font: 'font-sans',
-        color: '#000000',
-        headerText: '',
-        footerText: 'This is a system generated invoice.',
-        terms: '1. Payment due within 30 days.',
-        logoSize: 64,
-        showReceiverSign: true,
-        showQRCode: true,
-        showTotalsTable: true,
-        showTaxTable: true
+    // Default config with accurate state restoration
+    const [config, setConfig] = useState<ExtendedConfig>(() => {
+        const savedUi = initialData?.invoice_metadata?.ui_config;
+        if (savedUi) {
+            return {
+                font: savedUi.font || 'font-sans',
+                color: savedUi.color || '#000000',
+                headerText: savedUi.headerText ?? '',
+                footerText: savedUi.footerText ?? '',
+                terms: savedUi.terms !== undefined ? savedUi.terms : (initialData?.invoice_metadata?.terms_conditions || initialData?.invoice_metadata?.terms || initialData?.invoice_metadata?.notes || ''),
+                logoSize: savedUi.logoSize || 64,
+                showReceiverSign: savedUi.showReceiverSign ?? true,
+                showQRCode: savedUi.showQRCode ?? true,
+                showTotalsTable: savedUi.showTotalsTable ?? true,
+                showTaxTable: savedUi.showTaxTable ?? false
+            };
+        }
+        if (draft?.config) return draft.config;
+
+        const hasTaxes = (initialData?.items || []).some(
+            it => Number(it.cgst_amount || 0) > 0 || Number(it.sgst_amount || 0) > 0 || Number(it.igst_amount || 0) > 0
+        );
+
+        return {
+            font: 'font-sans',
+            color: '#000000',
+            headerText: '',
+            footerText: initialData ? '' : 'This is a system generated invoice.',
+            terms: initialData?.invoice_metadata?.terms_conditions || initialData?.invoice_metadata?.terms || initialData?.invoice_metadata?.notes || (initialData ? '' : '1. Payment due within 30 days.'),
+            logoSize: 64,
+            showReceiverSign: docType === 'po' ? false : true,
+            showQRCode: true,
+            showTotalsTable: true,
+            showTaxTable: hasTaxes
+        };
     });
 
-    const [logo, setLogo] = useState<string | null>(draft?.logo || null);
-    const [stamp, setStamp] = useState<string | null>(draft?.stamp || null);
-    const [signature, setSignature] = useState<string | null>(draft?.signature || null);
+    const [logo, setLogo] = useState<string | null>(initialData?.invoice_metadata?.ui_config?.logoUrl || draft?.logo || null);
+    const [stamp, setStamp] = useState<string | null>(initialData?.invoice_metadata?.ui_config?.stampUrl || draft?.stamp || null);
+    const [signature, setSignature] = useState<string | null>(initialData?.invoice_metadata?.ui_config?.signatureUrl || draft?.signature || null);
     const [isSaving, setIsSaving] = useState(false);
 
     // Baseline reference of document before edits to compute exact diffs
@@ -119,28 +154,39 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const [showNoteSection, setShowNoteSection] = useState(false);
 
     // Editable labels for Billed To / Shipped To
-    const [billedToLabel, setBilledToLabel] = useState(draft?.billedToLabel || 'Billed To');
-    const [shippedToLabel, setShippedToLabel] = useState(draft?.shippedToLabel || 'Shipped To');
+    const [billedToLabel, setBilledToLabel] = useState(initialData?.invoice_metadata?.ui_config?.billedToLabel || draft?.billedToLabel || 'Billed To');
+    const [shippedToLabel, setShippedToLabel] = useState(initialData?.invoice_metadata?.ui_config?.shippedToLabel || draft?.shippedToLabel || 'Shipped To');
 
     // Total visibility control for all columns
-    const [visibleColumns, setVisibleColumns] = useState(draft?.visibleColumns || {
-        index: true,
-        description: true,
-        image: false,
-        hsn: true,
-        quantity: true,
-        rate: true,
-        discount: false,
-        taxableValue: true,
-        total: true
+    const [visibleColumns, setVisibleColumns] = useState(() => {
+        if (initialData?.invoice_metadata?.ui_config?.visibleColumns) {
+            return initialData.invoice_metadata.ui_config.visibleColumns;
+        }
+        if (draft?.visibleColumns) return draft.visibleColumns;
+
+        const hasTaxes = (initialData?.items || []).some(
+            it => Number(it.cgst_amount || 0) > 0 || Number(it.sgst_amount || 0) > 0 || Number(it.igst_amount || 0) > 0
+        );
+
+        return {
+            index: true,
+            description: true,
+            image: false,
+            hsn: true,
+            quantity: true,
+            rate: true,
+            discount: false,
+            taxableValue: hasTaxes,
+            total: true
+        };
     });
 
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
     const [templateName, setTemplateName] = useState('');
-    const [selectedTemplateId, setSelectedTemplateId] = useState(draft?.selectedTemplateId || '');
+    const [selectedTemplateId, setSelectedTemplateId] = useState(initialData?.invoice_metadata?.ui_config?.selectedTemplateId || draft?.selectedTemplateId || '');
     const [amountInWordsStr, setAmountInWordsStr] = useState('');
-    const [printMode, setPrintMode] = useState<'single' | 'dual'>(draft?.printMode || 'dual');
+    const [printMode, setPrintMode] = useState<'single' | 'dual'>(initialData?.invoice_metadata?.ui_config?.printMode || draft?.printMode || 'dual');
 
     // Smart Pricing autocomplete state
     const [priceDropdownIdx, setPriceDropdownIdx] = useState<number | null>(null);
@@ -321,61 +367,129 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         setDoc(prev => ({ ...prev, shipped_to_details: { ...prev.receiver_details } }));
     };
 
+    const loadDocumentIntoEditor = (loadedData: ExtractedInvoice) => {
+        if (!loadedData) return;
+
+        const dataToLoad: ExtractedInvoice = {
+            ...EMPTY_INVOICE,
+            ...loadedData,
+            receiver_details: loadedData.receiver_details || EMPTY_INVOICE.receiver_details,
+            issuer_details: {
+                ...EMPTY_INVOICE.issuer_details,
+                ...(loadedData.issuer_details || {}),
+                bank_details: { ...EMPTY_INVOICE.issuer_details.bank_details, ...(loadedData.issuer_details?.bank_details || {}) }
+            },
+            shipped_to_details: loadedData.shipped_to_details || (loadedData.invoice_metadata as any)?.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
+            supplier_details: loadedData.supplier_details || (loadedData.invoice_metadata as any)?.supplier_details || EMPTY_INVOICE.supplier_details,
+            invoice_metadata: loadedData.invoice_metadata || EMPTY_INVOICE.invoice_metadata
+        };
+        setDoc(dataToLoad);
+
+        // Determine Document Type
+        const dt = String(loadedData.document_type || 'invoice');
+        let targetType: 'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note' = 'invoice';
+        if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') targetType = 'po';
+        else if (dt === 'generated_quotation' || dt === 'quotation') targetType = 'quotation';
+        else if (dt === 'generated_proforma_invoice' || dt === 'proforma_invoice' || dt === 'proforma') targetType = 'proforma';
+        else if (dt === 'generated_debit_note' || dt === 'debit_note') targetType = 'debit_note';
+        else if (dt === 'generated_credit_note' || dt === 'credit_note') targetType = 'credit_note';
+        setDocType(targetType);
+
+        const defaultTitleMap: Record<string, string> = {
+            invoice: 'INVOICE',
+            po: 'PURCHASE ORDER',
+            quotation: 'QUOTATION',
+            proforma: 'PROFORMA INVOICE',
+            debit_note: 'DEBIT NOTE',
+            credit_note: 'CREDIT NOTE'
+        };
+
+        const savedUi = loadedData.invoice_metadata?.ui_config as ExtendedConfig | undefined;
+
+        // Restore Custom Title
+        const savedTitle = savedUi?.customTitle || (loadedData.invoice_metadata as any)?.custom_title || (loadedData.invoice_metadata as any)?.title || defaultTitleMap[targetType] || 'INVOICE';
+        setCustomTitle(savedTitle);
+
+        // Restore Template selection if any
+        if (savedUi?.selectedTemplateId) {
+            setSelectedTemplateId(savedUi.selectedTemplateId);
+        }
+
+        // Restore Print Mode if any
+        if (savedUi?.printMode) {
+            setPrintMode(savedUi.printMode as any);
+        }
+
+        // Check if document line items actually contain tax amounts
+        const hasTaxes = (loadedData.items || []).some(
+            it => Number(it.cgst_amount || 0) > 0 || Number(it.sgst_amount || 0) > 0 || Number(it.igst_amount || 0) > 0 || Number(it.igst_rate || 0) > 0
+        );
+
+        // Restore Config
+        const restoredTerms = savedUi?.terms !== undefined 
+            ? savedUi.terms 
+            : (loadedData.invoice_metadata?.terms_conditions || loadedData.invoice_metadata?.terms || loadedData.invoice_metadata?.notes || '');
+
+        const restoredConfig: ExtendedConfig = {
+            font: savedUi?.font || 'font-sans',
+            color: savedUi?.color || '#000000',
+            headerText: savedUi?.headerText ?? '',
+            footerText: savedUi?.footerText !== undefined ? savedUi.footerText : 'This is a system generated invoice.',
+            terms: restoredTerms,
+            logoSize: savedUi?.logoSize || 64,
+            showReceiverSign: savedUi?.showReceiverSign ?? (targetType === 'po' ? false : true),
+            showQRCode: savedUi?.showQRCode ?? true,
+            showTotalsTable: savedUi?.showTotalsTable ?? true,
+            showTaxTable: savedUi?.showTaxTable !== undefined ? savedUi.showTaxTable : hasTaxes, // Only default true if taxes actually exist!
+            billedToLabel: savedUi?.billedToLabel || 'Billed To',
+            shippedToLabel: savedUi?.shippedToLabel || 'Shipped To'
+        };
+        setConfig(restoredConfig);
+
+        // Restore Column Visibility
+        if (savedUi?.visibleColumns) {
+            setVisibleColumns(savedUi.visibleColumns);
+        } else {
+            // Smart defaults when no ui_config exists
+            setVisibleColumns({
+                index: true,
+                description: true,
+                image: false,
+                hsn: true,
+                quantity: true,
+                rate: true,
+                discount: false,
+                taxableValue: hasTaxes, // If no taxes (e.g. standard quotation), don't clutter with redundant Taxable Value column!
+                total: true
+            });
+        }
+
+        // Restore Labels
+        if (savedUi?.billedToLabel) setBilledToLabel(savedUi.billedToLabel);
+        if (savedUi?.shippedToLabel) setShippedToLabel(savedUi.shippedToLabel);
+
+        // Restore Media Assets
+        setLogo(savedUi?.logoUrl || null);
+        setStamp(savedUi?.stampUrl || null);
+        setSignature(savedUi?.signatureUrl || null);
+
+        // Note section visibility
+        if (targetType === 'debit_note' || targetType === 'credit_note' || (loadedData.invoice_metadata as any)?.note_reason) {
+            setShowNoteSection(true);
+        }
+
+        baselineDocRef.current = JSON.parse(JSON.stringify(dataToLoad));
+        baselineConfigRef.current = JSON.parse(JSON.stringify(restoredConfig));
+
+        // Hydrate from Slack AI payload if present
+        if ((loadedData.invoice_metadata as any)?.slack_ai_payload) {
+            setPendingAiData((loadedData.invoice_metadata as any).slack_ai_payload);
+        }
+    };
+
     useEffect(() => {
         if (initialData) {
-            const dataToLoad = {
-                ...EMPTY_INVOICE,
-                ...initialData,
-                receiver_details: initialData.receiver_details || EMPTY_INVOICE.receiver_details,
-                issuer_details: {
-                    ...EMPTY_INVOICE.issuer_details,
-                    ...(initialData.issuer_details || {}),
-                    bank_details: { ...EMPTY_INVOICE.issuer_details.bank_details, ...(initialData.issuer_details?.bank_details || {}) }
-                },
-                shipped_to_details: initialData.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
-                supplier_details: initialData.supplier_details || EMPTY_INVOICE.supplier_details,
-                invoice_metadata: initialData.invoice_metadata || EMPTY_INVOICE.invoice_metadata
-            };
-            if ((dataToLoad.invoice_metadata as any)?.shipped_to_details) {
-                dataToLoad.shipped_to_details = (dataToLoad.invoice_metadata as any).shipped_to_details;
-            }
-            if ((dataToLoad.invoice_metadata as any)?.supplier_details) {
-                dataToLoad.supplier_details = (dataToLoad.invoice_metadata as any).supplier_details;
-            }
-            setDoc(dataToLoad);
-            const type = initialData.document_type === 'generated_po' ? 'po' : initialData.document_type === 'generated_quotation' ? 'quotation' : initialData.document_type === 'generated_proforma_invoice' ? 'proforma' : initialData.document_type === 'generated_debit_note' ? 'debit_note' : initialData.document_type === 'generated_credit_note' ? 'credit_note' : 'invoice';
-            setDocType(type);
-            setCustomTitle(type === 'invoice' ? 'INVOICE' : type === 'po' ? 'PURCHASE ORDER' : type === 'quotation' ? 'QUOTATION' : type === 'debit_note' ? 'DEBIT NOTE' : type === 'credit_note' ? 'CREDIT NOTE' : 'PROFORMA INVOICE');
-
-            if (initialData.invoice_metadata?.ui_config) {
-                const loadedConfig = initialData.invoice_metadata.ui_config;
-                setConfig(prev => ({
-                    ...prev,
-                    ...loadedConfig,
-                    logoSize: loadedConfig.logoSize || 64,
-                    showReceiverSign: loadedConfig.showReceiverSign ?? true,
-                    showQRCode: loadedConfig.showQRCode ?? true,
-                    showTotalsTable: loadedConfig.showTotalsTable ?? true,
-                    showTaxTable: loadedConfig.showTaxTable ?? true
-                }));
-                if (loadedConfig.visibleColumns) setVisibleColumns(loadedConfig.visibleColumns);
-                if (loadedConfig.billedToLabel) setBilledToLabel(loadedConfig.billedToLabel);
-                if (loadedConfig.shippedToLabel) setShippedToLabel(loadedConfig.shippedToLabel);
-                // Load images if present
-                setLogo(loadedConfig.logoUrl || null);
-                setStamp(loadedConfig.stampUrl || null);
-                setSignature(loadedConfig.signatureUrl || null);
-                baselineConfigRef.current = JSON.parse(JSON.stringify(loadedConfig));
-            } else {
-                baselineConfigRef.current = JSON.parse(JSON.stringify(config));
-            }
-
-            baselineDocRef.current = JSON.parse(JSON.stringify(dataToLoad));
-
-            // Hydrate from Slack AI payload if present
-            if ((initialData.invoice_metadata as any)?.slack_ai_payload) {
-                setPendingAiData((initialData.invoice_metadata as any).slack_ai_payload);
-            }
+            loadDocumentIntoEditor(initialData);
         }
     }, [initialData]);
 
@@ -557,6 +671,12 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             type: docType as any,
             config: {
                 ...config,
+                customTitle,
+                selectedTemplateId,
+                printMode,
+                visibleColumns,
+                billedToLabel,
+                shippedToLabel,
                 logoUrl: logo || undefined,
                 stampUrl: stamp || undefined,
                 signatureUrl: signature || undefined,
@@ -615,18 +735,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     const loadPreviousDocument = (selectedDoc: ExtractedInvoice) => {
         if (!confirm("This will overwrite your current invoice data. Proceed?")) return;
-        const targetDocType = selectedDoc.document_type === 'generated_po' || selectedDoc.document_type === 'purchase_order' || (selectedDoc.document_type as string) === 'po' ? 'po' : 'invoice';
-        const clonedDoc: ExtractedInvoice = {
-            ...selectedDoc,
-            source_type: targetDocType === 'po' ? 'purchase' : 'sales'
-        };
-        setDoc(clonedDoc);
-        baselineDocRef.current = JSON.parse(JSON.stringify(clonedDoc));
-        baselineConfigRef.current = JSON.parse(JSON.stringify(config));
-        if (selectedDoc.document_type) {
-            setDocType(targetDocType as any);
-            setCustomTitle(selectedDoc.document_type === 'generated_invoice' ? 'INVOICE' : (selectedDoc.document_type === 'purchase_order' || selectedDoc.document_type === 'generated_po' || (selectedDoc.document_type as string) === 'po') ? 'PURCHASE ORDER' : selectedDoc.document_type === 'quotation' ? 'QUOTATION' : 'PROFORMA INVOICE');
-        }
+        loadDocumentIntoEditor(selectedDoc);
         setSearchDocTerm('');
         setDocSearchResults([]);
     };
@@ -634,28 +743,51 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const loadTemplate = (tmpl: InvoiceTemplate) => {
         // Cast tmpl.config to include potential new properties
         const loadedConfig = tmpl.config as ExtendedConfig;
+        const isQuotation = (tmpl.type as any) === 'quotation';
+        
         setConfig({
             ...loadedConfig,
+            terms: loadedConfig.terms !== undefined ? loadedConfig.terms : '',
             logoSize: loadedConfig.logoSize || 64,
-            showReceiverSign: loadedConfig.showReceiverSign ?? true
+            showReceiverSign: loadedConfig.showReceiverSign ?? true,
+            showQRCode: loadedConfig.showQRCode ?? true,
+            showTotalsTable: loadedConfig.showTotalsTable ?? true,
+            showTaxTable: loadedConfig.showTaxTable !== undefined ? loadedConfig.showTaxTable : (isQuotation ? false : true)
         });
 
         // Handle legacy type mapping or new type
-        if ((tmpl.type as any) === 'quotation') {
+        if (isQuotation) {
             setDocType('quotation');
-            setCustomTitle('QUOTATION');
+            setCustomTitle(loadedConfig.customTitle || 'QUOTATION');
         } else {
             setDocType(tmpl.type as 'invoice' | 'po');
-            setCustomTitle(tmpl.type === 'invoice' ? 'INVOICE' : 'PURCHASE ORDER');
+            setCustomTitle(loadedConfig.customTitle || (tmpl.type === 'invoice' ? 'INVOICE' : 'PURCHASE ORDER'));
         }
 
         setLogo(loadedConfig.logoUrl || null);
         setStamp(loadedConfig.stampUrl || null);
         setSignature(loadedConfig.signatureUrl || null);
 
-        if (loadedConfig.visibleColumns) setVisibleColumns(loadedConfig.visibleColumns);
+        if (loadedConfig.visibleColumns) {
+            setVisibleColumns(loadedConfig.visibleColumns);
+        } else if (isQuotation) {
+            setVisibleColumns({
+                index: true,
+                description: true,
+                image: false,
+                hsn: true,
+                quantity: true,
+                rate: true,
+                discount: false,
+                taxableValue: false,
+                total: true
+            });
+        }
+
         if (loadedConfig.billedToLabel) setBilledToLabel(loadedConfig.billedToLabel);
         if (loadedConfig.shippedToLabel) setShippedToLabel(loadedConfig.shippedToLabel);
+        if (loadedConfig.printMode) setPrintMode(loadedConfig.printMode as any);
+
         if (loadedConfig.issuer_details) {
             setDoc(prev => {
                 const updatedIssuer = { ...loadedConfig.issuer_details! };
@@ -1032,11 +1164,17 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 source_type: docType === 'po' ? 'purchase' : 'sales',
                 invoice_metadata: {
                     ...doc.invoice_metadata,
+                    terms: config.terms,
+                    terms_conditions: config.terms,
+                    custom_title: customTitle,
                     edit_history: updatedHistory,
                     shipped_to_details: doc.shipped_to_details,
                     supplier_details: doc.supplier_details,
                     ui_config: {
                         ...config,
+                        customTitle,
+                        selectedTemplateId,
+                        printMode,
                         logoUrl: logo || undefined,
                         stampUrl: stamp || undefined,
                         signatureUrl: signature || undefined,
@@ -1116,10 +1254,16 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 source_type: docType === 'po' ? 'purchase' : 'sales',
                 invoice_metadata: {
                     ...doc.invoice_metadata,
+                    terms: config.terms,
+                    terms_conditions: config.terms,
+                    custom_title: customTitle,
                     shipped_to_details: doc.shipped_to_details,
                     supplier_details: doc.supplier_details,
                     ui_config: {
                         ...config,
+                        customTitle,
+                        selectedTemplateId,
+                        printMode,
                         logoUrl: logo || undefined,
                         stampUrl: stamp || undefined,
                         signatureUrl: signature || undefined,

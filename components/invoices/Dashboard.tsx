@@ -356,6 +356,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         return () => clearTimeout(timer);
     }, [filterStart, filterEnd, invoiceType, documentCategory]);
 
+    const [filteredInvoicesCount, setFilteredInvoicesCount] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 10;
+
     const filteredInvoices = React.useMemo(() => {
         if (!searchTerm.trim()) return invoices;
         const term = searchTerm.toLowerCase();
@@ -366,6 +370,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
             return invNo.includes(term) || issuer.includes(term) || receiver.includes(term);
         });
     }, [invoices, searchTerm]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
+    const paginatedInvoices = React.useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        return filteredInvoices.slice(start, start + PAGE_SIZE);
+    }, [filteredInvoices, currentPage]);
+
+    // Reset to page 1 whenever filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStart, filterEnd, invoiceType, documentCategory, searchTerm]);
 
     const handleExport = (format: 'csv' | 'json') => {
         setExporting(true);
@@ -657,7 +672,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                             ) : filteredInvoices.length === 0 ? (
                                 <tr><td colSpan={9} className="p-8 text-center text-slate-400">No {invoiceType} invoices found matching filters.</td></tr>
                             ) : (
-                                filteredInvoices.map((inv) => (
+                                paginatedInvoices.map((inv) => (
                                     <React.Fragment key={inv.id}>
                                         <tr className={`hover:bg-slate-50 transition-colors group cursor-pointer ${expandedRowId === inv.id ? 'bg-[#8EBF45]/5' : ''} ${selectedIds.has(inv.id as string) ? 'bg-indigo-50/50' : ''}`} onClick={() => toggleRow(inv.id)}>
                                             <td className="p-4" onClick={(e) => { e.stopPropagation(); toggleSelect(inv.id as string); }}>
@@ -802,6 +817,58 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination Controls */}
+                {filteredInvoices.length > 0 && (
+                    <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-xs text-slate-500 font-medium">
+                            Showing <span className="font-bold text-slate-700">{((currentPage - 1) * PAGE_SIZE) + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)}</span> of <span className="font-bold text-slate-700">{filteredInvoices.length}</span> {documentCategory === 'quotation' ? 'quotations' : documentCategory === 'po' ? 'purchase orders' : 'invoices'}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs"
+                            >
+                                « Previous
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                                    .map((pageNum, idx, arr) => {
+                                        const prevPage = arr[idx - 1];
+                                        const showEllipsis = prevPage && pageNum - prevPage > 1;
+                                        return (
+                                            <React.Fragment key={pageNum}>
+                                                {showEllipsis && <span className="px-1 text-slate-400 text-xs">...</span>}
+                                                <button
+                                                    onClick={() => setCurrentPage(pageNum)}
+                                                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                                                        currentPage === pageNum
+                                                            ? 'bg-[#8EBF45] text-[#0D0D0D] shadow-xs'
+                                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                                    }`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            </React.Fragment>
+                                        );
+                                    })
+                                }
+                            </div>
+
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs"
+                            >
+                                Next »
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Floating Bulk Action Bar */}

@@ -398,6 +398,14 @@ export interface ExtractedInvoice {
     expense_category?: string;
     tax_mode?: 'intra' | 'inter';
     mail_sent?: boolean;
+    terms?: string;
+    terms_conditions?: string;
+    custom_terms?: string;
+    custom_title?: string;
+    title?: string;
+    notes?: string;
+    template_id?: string;
+    template_name?: string;
     ui_config?: Record<string, any>;
     edit_history?: InvoiceEditHistoryEntry[];
   };

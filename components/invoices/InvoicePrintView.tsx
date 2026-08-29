@@ -53,25 +53,36 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
     const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        const hasTaxes = (invoice.items || []).some(
+            it => Number(it.cgst_amount || 0) > 0 || Number(it.sgst_amount || 0) > 0 || Number(it.igst_amount || 0) > 0 || Number(it.igst_rate || 0) > 0
+        );
+        const isQuotation = invoice.document_type === 'generated_quotation' || invoice.document_type === 'quotation';
+
         // First try to load from invoice metadata ui_config
         if (invoice.invoice_metadata?.ui_config) {
             const ui = invoice.invoice_metadata.ui_config as any;
+            const metaTerms = ui.terms !== undefined ? ui.terms : (invoice.invoice_metadata?.terms_conditions || invoice.invoice_metadata?.terms || invoice.invoice_metadata?.notes || '');
             setLogo(ui.logoUrl || null);
             setStamp(ui.stampUrl || null);
             setSignature(ui.signatureUrl || null);
             setConfig(prev => ({
                 ...prev,
                 ...ui,
+                terms: metaTerms,
                 logoSize: ui.logoSize || 64,
                 showReceiverSign: ui.showReceiverSign ?? true,
                 showQRCode: ui.showQRCode ?? true,
                 showTotalsTable: ui.showTotalsTable ?? true,
-                showTaxTable: ui.showTaxTable ?? true,
+                showTaxTable: ui.showTaxTable !== undefined ? ui.showTaxTable : hasTaxes,
                 billedToLabel: ui.billedToLabel || prev.billedToLabel,
                 shippedToLabel: ui.shippedToLabel || prev.shippedToLabel,
-                visibleColumns: ui.visibleColumns || prev.visibleColumns
+                visibleColumns: ui.visibleColumns || {
+                    ...prev.visibleColumns,
+                    taxableValue: hasTaxes
+                }
             }));
         } else {
+            const metaTerms = invoice.invoice_metadata?.terms_conditions || invoice.invoice_metadata?.terms || invoice.invoice_metadata?.notes || '';
             // Load template for branding fallback
             const loadTemplate = async () => {
                 const { data } = await supabase.from('invoice_templates').select('*').limit(1);
@@ -86,12 +97,23 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                         font: c.font || prev.font,
                         color: c.color || prev.color,
                         footerText: c.footerText || prev.footerText,
-                        terms: c.terms || prev.terms,
+                        terms: metaTerms || c.terms || prev.terms,
                         logoSize: c.logoSize || prev.logoSize,
                         showReceiverSign: c.showReceiverSign ?? true,
                         showQRCode: c.showQRCode ?? true,
                         showTotalsTable: c.showTotalsTable ?? true,
-                        showTaxTable: c.showTaxTable ?? true
+                        showTaxTable: isQuotation ? false : (c.showTaxTable !== undefined ? c.showTaxTable : hasTaxes),
+                        visibleColumns: {
+                            ...prev.visibleColumns,
+                            taxableValue: hasTaxes
+                        }
+                    }));
+                } else if (metaTerms) {
+                    setConfig(prev => ({
+                        ...prev,
+                        terms: metaTerms,
+                        showTaxTable: hasTaxes,
+                        visibleColumns: { ...prev.visibleColumns, taxableValue: hasTaxes }
                     }));
                 }
             };
@@ -244,7 +266,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                     <div className={`mx-auto ${config.font} invoice-print-container`}>
                         {docsWithPages.map(({ doc, paginatedPages }, docIdx) => {
                             const docType = doc.document_type || 'invoice';
-                            const customTitle = docType === 'generated_po' ? 'PURCHASE ORDER' : docType === 'generated_quotation' ? 'QUOTATION' : docType === 'generated_proforma_invoice' ? 'PROFORMA INVOICE' : 'INVOICE';
+                            const customTitle = doc.invoice_metadata?.ui_config?.customTitle || (doc.invoice_metadata as any)?.custom_title || (doc.invoice_metadata as any)?.title || (docType === 'generated_po' || docType === 'po' ? 'PURCHASE ORDER' : docType === 'generated_quotation' || docType === 'quotation' ? 'QUOTATION' : docType === 'generated_proforma_invoice' || docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'generated_debit_note' || docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'generated_credit_note' || docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
                             const amountInWordsStr = amountToWords(doc.totals?.grand_total || 0, doc.totals?.currency);
                             const currencySymbol = getCurrencySymbol(doc.totals?.currency);
                             const items = doc.items || [];
