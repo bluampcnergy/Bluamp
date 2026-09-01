@@ -3,6 +3,7 @@ import { ExtractedInvoice, InvoiceItem } from '../../types';
 import { validateGSTIN, recalculateInvoiceTotals } from '../../utils/invoiceUtils';
 import { Plus, Trash2, AlertTriangle, CheckCircle, FileText, Building } from './Icons';
 import { supabase } from '../../supabaseClient';
+import { findSimilarStockItems, normalizeText } from '../../utils/textMatcher';
 
 interface InvoiceFormProps {
   data: ExtractedInvoice;
@@ -11,16 +12,40 @@ interface InvoiceFormProps {
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
   const [masterItemNames, setMasterItemNames] = useState<string[]>([]);
+  const [stockSummaryMap, setStockSummaryMap] = useState<Record<string, { name: string; totalQty: number; uom?: string; makeModel?: string; category?: string }>>({});
 
   useEffect(() => {
-    const fetchMasterNames = async () => {
-      const { data: rgData } = await supabase.from('received_goods').select('name');
+    const fetchMasterData = async () => {
+      const { data: rgData } = await supabase.from('received_goods').select('name, category, makeModel, quantity, uom');
       if (rgData) {
-        const unique = Array.from(new Set(rgData.map((g: any) => (g.name || '').trim()).filter(Boolean))) as string[];
-        setMasterItemNames(unique.sort());
+        const map: Record<string, { name: string; totalQty: number; uom?: string; makeModel?: string; category?: string }> = {};
+        const namesSet = new Set<string>();
+
+        rgData.forEach((rg: any) => {
+          const rawName = (rg.name || '').trim();
+          if (!rawName) return;
+          namesSet.add(rawName);
+          const key = rawName.toLowerCase();
+          const qty = Number(rg.quantity) || 0;
+
+          if (!map[key]) {
+            map[key] = {
+              name: rawName,
+              totalQty: qty,
+              uom: rg.uom || 'qty',
+              makeModel: rg.makeModel,
+              category: rg.category
+            };
+          } else {
+            map[key].totalQty += qty;
+          }
+        });
+
+        setStockSummaryMap(map);
+        setMasterItemNames(Array.from(namesSet).sort());
       }
     };
-    fetchMasterNames();
+    fetchMasterData();
   }, []);
 
   const updateField = (section: keyof ExtractedInvoice, field: string, value: any) => {
@@ -233,13 +258,50 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                   <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3 text-[10px] text-slate-400 font-mono">{idx + 1}</td>
                     <td className="p-3">
-                      <input
-                        list="master-invoice-items"
-                        className="w-full bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-bold text-slate-800 placeholder-slate-300 py-0.5"
-                        value={item.description || ''}
-                        onChange={(e) => updateItem(idx, 'description', e.target.value)}
-                        placeholder="Item Description"
-                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          list="master-invoice-items"
+                          className="w-full bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-bold text-slate-800 placeholder-slate-300 py-0.5"
+                          value={item.description || ''}
+                          onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                          placeholder="Item Description"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.description) {
+                              navigator.clipboard.writeText(item.description);
+                            }
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 shrink-0"
+                          title="Copy Item Description"
+                        >
+                          📋
+                        </button>
+                      </div>
+
+                      {/* Non-AI Similar Master SKU Suggestions */}
+                      {(() => {
+                        const suggestions = findSimilarStockItems(item.description || '', stockSummaryMap, 2, 30);
+                        const nonExact = suggestions.filter(s => normalizeText(s.name) !== normalizeText(item.description || ''));
+                        if (nonExact.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {nonExact.map((s, sIdx) => (
+                              <button
+                                key={sIdx}
+                                type="button"
+                                onClick={() => updateItem(idx, 'description', s.name)}
+                                className="text-[9px] font-bold bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 rounded px-1.5 py-0.5 flex items-center gap-1 text-left"
+                                title={`Apply master name "${s.name}" (${s.score}% match)`}
+                              >
+                                <span>💡 {s.name}</span>
+                                <span className="text-amber-600 font-mono">({s.score}%)</span>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-3">
                       <input
