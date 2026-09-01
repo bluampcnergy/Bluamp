@@ -299,7 +299,15 @@ async function processInboundInvoice(
     const grandTotal = Number(extracted.totals?.grand_total) || 0;
     const category = extracted.expense_category || 'other';
 
-    // 4. Insert to Database
+    // 4. Threshold & Verification Check (Threshold = ₹5,000)
+    const AUTO_APPROVE_THRESHOLD_INR = 5000;
+    const hasLineItems = Array.isArray(extracted.items) && extracted.items.length > 0;
+    const isAboveThreshold = grandTotal > AUTO_APPROVE_THRESHOLD_INR;
+    
+    // Requires review in 'Scan Invoice' tab if amount > ₹5,000 or missing line items
+    const requiresReview = isAboveThreshold || !hasLineItems || grandTotal <= 0;
+
+    // Insert to Database
     currentStep = 'Inserting invoice record into database';
     const dbPayload = {
       document_type: extracted.document_type || 'invoice',
@@ -314,11 +322,12 @@ async function processInboundInvoice(
         expense_category: category,
         ingested_via: 'whatsapp_cloud_api',
         sender_phone: senderPhone,
-        sender_name: senderName
+        sender_name: senderName,
+        auto_approved: !requiresReview
       },
       items: extracted.items || [],
       totals: extracted.totals || {},
-      requires_review: false,
+      requires_review: requiresReview,
       uploaded_by: `whatsapp:${senderPhone}`
     };
 
@@ -327,8 +336,14 @@ async function processInboundInvoice(
 
     // 5. Send Confirmation Message
     currentStep = 'Sending confirmation reply';
-    const invoiceLink = `${APP_URL}/?view=finance_dashboard`;
-    const confirmation = `✅ *Invoice Recorded Successfully!*
+    let confirmation = '';
+    if (requiresReview) {
+      const reviewLink = `${APP_URL}/?view=finance_upload`;
+      const reason = isAboveThreshold 
+        ? `Amount (₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) > ₹${AUTO_APPROVE_THRESHOLD_INR.toLocaleString('en-IN')} Threshold` 
+        : 'Line items verification needed';
+
+      confirmation = `⏳ *Invoice Queued for Verification*
 
 📄 *Invoice #:* ${invNumber}
 🏢 *Vendor:* ${vendorName}
@@ -336,12 +351,28 @@ async function processInboundInvoice(
 📂 *Category:* ${category.replace(/_/g, ' ').toUpperCase()}
 📅 *Date:* ${extracted.invoice_metadata?.invoice_date || new Date().toISOString().split('T')[0]}
 📦 *Items:* ${extracted.items?.length || 0} line item(s) extracted
+⚠️ *Status:* Pending Approval (${reason})
+
+🔗 *Review & Approve in Scan Invoice:*
+${reviewLink}`;
+    } else {
+      const invoiceLink = `${APP_URL}/?view=finance_dashboard`;
+      confirmation = `✅ *Invoice Auto-Approved & Recorded!*
+
+📄 *Invoice #:* ${invNumber}
+🏢 *Vendor:* ${vendorName}
+💰 *Grand Total:* ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+📂 *Category:* ${category.replace(/_/g, ' ').toUpperCase()}
+📅 *Date:* ${extracted.invoice_metadata?.invoice_date || new Date().toISOString().split('T')[0]}
+📦 *Items:* ${extracted.items?.length || 0} line item(s) extracted
+⚡ *Status:* Auto-Approved (Amount ≤ ₹${AUTO_APPROVE_THRESHOLD_INR.toLocaleString('en-IN')})
 
 🔗 *View in Finance Dashboard:*
 ${invoiceLink}`;
+    }
 
     await sendWhatsAppMessage(senderPhone, confirmation, phoneNumberId);
-    console.log(`[WhatsApp] Invoice #${invNumber} processed successfully!`);
+    console.log(`[WhatsApp] Invoice #${invNumber} processed (requires_review: ${requiresReview})`);
 
   } catch (err: any) {
     console.error(`[WhatsApp Error during ${currentStep}]:`, err);

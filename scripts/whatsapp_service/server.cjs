@@ -190,6 +190,14 @@ async function processInvoiceTask(senderPhone, senderName, mediaId, filename, in
     const grandTotal = Number(extracted.totals?.grand_total) || 0;
     const category = extracted.expense_category || 'other';
 
+    // 4. Threshold & Verification Check (Threshold = ₹5,000)
+    const AUTO_APPROVE_THRESHOLD_INR = 5000;
+    const hasLineItems = Array.isArray(extracted.items) && extracted.items.length > 0;
+    const isAboveThreshold = grandTotal > AUTO_APPROVE_THRESHOLD_INR;
+    
+    // Requires review in 'Scan Invoice' tab if amount > ₹5,000 or missing line items
+    const requiresReview = isAboveThreshold || !hasLineItems || grandTotal <= 0;
+
     // Insert into DB
     const dbPayload = {
       document_type: extracted.document_type || 'invoice',
@@ -204,30 +212,55 @@ async function processInvoiceTask(senderPhone, senderName, mediaId, filename, in
         expense_category: category,
         ingested_via: 'whatsapp_vps_service',
         sender_phone: senderPhone,
-        sender_name: senderName
+        sender_name: senderName,
+        auto_approved: !requiresReview
       },
       items: extracted.items || [],
       totals: extracted.totals || {},
-      requires_review: false,
+      requires_review: requiresReview,
       uploaded_by: `whatsapp:${senderPhone}`
     };
 
     const { error: dbError } = await supabase.from('invoices').insert([dbPayload]);
     if (dbError) throw dbError;
 
-    const confirmationMsg = `✅ *Invoice Recorded Successfully!*
+    let confirmationMsg = '';
+    if (requiresReview) {
+      const reviewLink = `${APP_URL}/?view=finance_upload`;
+      const reason = isAboveThreshold 
+        ? `Amount (₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) > ₹${AUTO_APPROVE_THRESHOLD_INR.toLocaleString('en-IN')} Threshold` 
+        : 'Line items verification needed';
+
+      confirmationMsg = `⏳ *Invoice Queued for Verification*
 
 📄 *Invoice #:* ${invNumber}
 🏢 *Vendor:* ${vendorName}
 💰 *Grand Total:* ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
 📂 *Category:* ${category.replace(/_/g, ' ').toUpperCase()}
 📅 *Date:* ${extracted.invoice_metadata?.invoice_date || new Date().toISOString().split('T')[0]}
+📦 *Items:* ${extracted.items?.length || 0} line item(s) extracted
+⚠️ *Status:* Pending Approval (${reason})
+
+🔗 *Review & Approve in Scan Invoice:*
+${reviewLink}`;
+    } else {
+      const invoiceLink = `${APP_URL}/?view=finance_dashboard`;
+      confirmationMsg = `✅ *Invoice Auto-Approved & Recorded!*
+
+📄 *Invoice #:* ${invNumber}
+🏢 *Vendor:* ${vendorName}
+💰 *Grand Total:* ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+📂 *Category:* ${category.replace(/_/g, ' ').toUpperCase()}
+📅 *Date:* ${extracted.invoice_metadata?.invoice_date || new Date().toISOString().split('T')[0]}
+📦 *Items:* ${extracted.items?.length || 0} line item(s) extracted
+⚡ *Status:* Auto-Approved (Amount ≤ ₹${AUTO_APPROVE_THRESHOLD_INR.toLocaleString('en-IN')})
 
 🔗 *View in Dashboard:*
-${APP_URL}/?view=finance_dashboard`;
+${invoiceLink}`;
+    }
 
     await sendWhatsAppMessage(senderPhone, confirmationMsg, phoneNumberId);
-    console.log(`[VPS Worker] Done invoice #${invNumber}`);
+    console.log(`[VPS Worker] Done invoice #${invNumber} (requires_review: ${requiresReview})`);
   } catch (err) {
     console.error('[VPS Worker] Ingestion Error:', err.message);
     await sendWhatsAppMessage(
