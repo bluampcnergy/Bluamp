@@ -3,25 +3,48 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { waitUntil } from '@vercel/functions';
 
 // --- Supabase Configuration ---
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://supabase.cnergy.co.in';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q';
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Always use Service Role Key for serverless backend API to guarantee full authorized access
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://supabase.cnergy.co.in';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
 
 // --- WhatsApp & Gemini Configuration ---
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'CNERGY_WA_INVOICE_HOOK_2026';
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.VITE_API_KEY || '';
+
+// Internal Authorized Numbers (Format: digits only, e.g. 919876543210 or 9876543210)
 const ALLOWED_WHATSAPP_NUMBERS = (process.env.ALLOWED_WHATSAPP_NUMBERS || '')
   .split(',')
   .map(n => n.trim().replace(/\D/g, ''))
   .filter(Boolean);
 
 const APP_URL = process.env.VITE_APP_URL || 'https://inventory.cnergy.co.in';
+const AUTO_APPROVE_THRESHOLD_INR = 5000;
+
+// --- Helper: Verify Internal Staff Access ---
+function isInternalSender(senderPhone: string): boolean {
+  if (ALLOWED_WHATSAPP_NUMBERS.length === 0) {
+    // If no whitelist is configured, default to true for development or open mode
+    return true;
+  }
+  const cleanSender = senderPhone.replace(/\D/g, '');
+  return ALLOWED_WHATSAPP_NUMBERS.some(allowed => 
+    cleanSender === allowed ||
+    cleanSender.endsWith(allowed) || 
+    allowed.endsWith(cleanSender)
+  );
+}
 
 // --- Schemas for Structured Gemini Calls ---
 
-// 1. Invoice Extraction Schema
 const invoiceSchema = {
   type: Type.OBJECT,
   properties: {
@@ -104,7 +127,6 @@ const invoiceSchema = {
   required: ["document_type", "source_type", "issuer_details", "receiver_details", "invoice_metadata", "items", "totals"]
 };
 
-// 2. Task Extraction Schema
 const taskExtractionSchema = {
   type: Type.OBJECT,
   properties: {
@@ -116,7 +138,6 @@ const taskExtractionSchema = {
   required: ["title", "assigned_to"]
 };
 
-// 3. Quotation / PO Draft Schema
 const quotationDraftSchema = {
   type: Type.OBJECT,
   properties: {
@@ -178,7 +199,6 @@ async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNu
 
 // Download media buffer from Meta Graph API
 async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
-  // Step 1: Get download URL from Meta Graph API
   const metaUrl = `https://graph.facebook.com/v21.0/${mediaId}`;
   const metaRes = await fetch(metaUrl, {
     headers: {
@@ -200,7 +220,6 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
     throw new Error(`Meta Graph API returned empty download URL for media ${mediaId}`);
   }
 
-  // Step 2: Download raw binary bytes
   const mediaRes = await fetch(downloadUrl, {
     headers: {
       'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
@@ -255,7 +274,7 @@ Auto-tag expense_category into: raw_materials, battery_cells_bms, logistics_tran
   return JSON.parse(raw);
 }
 
-// --- Automation 1: Inbound Invoice / Bill Processing Pipeline ---
+// --- WORKFLOW 1: Internal Inbound Invoice / Bill Processing ---
 async function processInboundInvoice(
   senderPhone: string,
   senderName: string,
@@ -300,14 +319,11 @@ async function processInboundInvoice(
     const category = extracted.expense_category || 'other';
 
     // 4. Threshold & Verification Check (Threshold = ₹5,000)
-    const AUTO_APPROVE_THRESHOLD_INR = 5000;
     const hasLineItems = Array.isArray(extracted.items) && extracted.items.length > 0;
     const isAboveThreshold = grandTotal > AUTO_APPROVE_THRESHOLD_INR;
-    
-    // Requires review in 'Scan Invoice' tab if amount > ₹5,000 or missing line items
     const requiresReview = isAboveThreshold || !hasLineItems || grandTotal <= 0;
 
-    // Insert to Database
+    // 5. Insert into Database
     currentStep = 'Inserting invoice record into database';
     const dbPayload = {
       document_type: extracted.document_type || 'invoice',
@@ -334,7 +350,7 @@ async function processInboundInvoice(
     const { error: dbError } = await supabase.from('invoices').insert([dbPayload]);
     if (dbError) throw dbError;
 
-    // 5. Send Confirmation Message
+    // 6. Send Confirmation Message
     currentStep = 'Sending confirmation reply';
     let confirmation = '';
     if (requiresReview) {
@@ -384,43 +400,56 @@ ${invoiceLink}`;
   }
 }
 
-// --- Automation 2: Task Management (List, Add, Complete) ---
+// --- WORKFLOW 2: Internal Task Management ---
 async function handleListTasks(senderPhone: string, phoneNumberId: string, filterUser?: string) {
   try {
-    let query = supabase
+    const { data: tasks, error } = await supabase
       .from('employee_tasks')
       .select('*')
       .or('completed.is.null,completed.eq.false')
       .order('due_date', { ascending: true, nullsFirst: false });
 
-    const { data: tasks, error } = await query;
     if (error) throw error;
 
     const validTasks = (tasks || []).filter(t => t.assigned_to !== 'general' && t.assigned_to !== 'chitale');
-    const filtered = filterUser 
-      ? validTasks.filter(t => t.assigned_to?.toLowerCase().includes(filterUser.toLowerCase()))
-      : validTasks;
+    
+    let filtered = validTasks;
+    if (filterUser && filterUser.trim()) {
+      const cleanTarget = filterUser.toLowerCase().replace('@cnergy.co.in', '').trim();
+      filtered = validTasks.filter(t => {
+        const assigned = (t.assigned_to || '').toLowerCase();
+        const assignedClean = assigned.replace('@cnergy.co.in', '').trim();
+        return assigned.includes(cleanTarget) || 
+               assignedClean.includes(cleanTarget) || 
+               cleanTarget.includes(assignedClean);
+      });
+    }
 
     if (filtered.length === 0) {
+      const targetLabel = filterUser ? ` assigned to *${filterUser}*` : '';
       return await sendWhatsAppMessage(
         senderPhone,
-        `🎉 *No Pending Tasks!*\nAll tasks are currently completed.`,
+        `🎉 *No Pending Tasks!*${targetLabel}\nAll tasks are currently completed. Have a productive day! 🔋`,
         phoneNumberId
       );
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const taskLines = filtered.slice(0, 15).map((t, idx) => {
+    const taskLines = filtered.slice(0, 20).map((t, idx) => {
       let badge = '⚪';
       if (t.due_date) {
         if (t.due_date < todayStr) badge = '🚨 [OVERDUE]';
         else if (t.due_date === todayStr) badge = '🔴 [TODAY]';
         else badge = '🟡';
       }
-      return `${idx + 1}. ${badge} *${t.title}*\n   👤 Assigned: *${t.assigned_to}* | Due: _${t.due_date || 'None'}_ | ID: \`${t.id}\``;
+      return `${idx + 1}. ${badge} *${t.title}*\n   👤 Assigned: *${t.assigned_to}* | Due: _${t.due_date || 'No Due Date'}_ | ID: \`${t.id}\``;
     });
 
-    const msg = `📋 *Datlion Cnergy Pending Tasks (${filtered.length})*\n\n${taskLines.join('\n\n')}\n\n💡 _To complete a task, reply: "Done <task ID or task name>"_`;
+    const header = filterUser 
+      ? `📋 *Datlion Cnergy Tasks for ${filterUser} (${filtered.length})*`
+      : `📋 *Datlion Cnergy Pending Tasks (${filtered.length})*`;
+
+    const msg = `${header}\n\n${taskLines.join('\n\n')}\n\n💡 _To complete a task, reply: "Done <task ID or task name>"_`;
     await sendWhatsAppMessage(senderPhone, msg, phoneNumberId);
   } catch (err: any) {
     await sendWhatsAppMessage(senderPhone, `⚠️ Could not fetch tasks: ${err.message}`, phoneNumberId);
@@ -429,13 +458,11 @@ async function handleListTasks(senderPhone: string, phoneNumberId: string, filte
 
 async function handleCompleteTask(senderPhone: string, text: string, phoneNumberId: string) {
   try {
-    // Extract task ID or search term
     const cleanText = text.replace(/^(complete|done|finish|mark done|mark completed|closed)\s*(task)?/i, '').trim();
     if (!cleanText) {
-      return await sendWhatsAppMessage(senderPhone, `❓ Please specify the task ID or name to complete. E.g., *"Done task 12"*`, phoneNumberId);
+      return await sendWhatsAppMessage(senderPhone, `❓ Please specify the task ID or name to complete. E.g., *"Done task-1787768203255"* or *"Done Discuss with Neeraj"*.`, phoneNumberId);
     }
 
-    // Try finding by exact ID or partial title in pending tasks
     const { data: pendingTasks } = await supabase
       .from('employee_tasks')
       .select('id, title, assigned_to')
@@ -493,7 +520,7 @@ Assign to the person mentioned, or 'Team' if unspecified. Extract a clear title,
     raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
     const taskData = JSON.parse(raw);
 
-    const taskId = 'task_' + Date.now();
+    const taskId = 'task-' + Date.now();
     const newTask = {
       id: taskId,
       title: taskData.title || 'New Task',
@@ -515,7 +542,7 @@ Assign to the person mentioned, or 'Team' if unspecified. Extract a clear title,
   }
 }
 
-// --- Automation 3: Quotation & Purchase Order Draft Generator ---
+// --- WORKFLOW 3: Fast Quotations & PO Generator ---
 async function handleCreateQuotationDraft(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
   try {
     const [companiesRes, pricesRes] = await Promise.all([
@@ -633,41 +660,40 @@ ${editorLink}`;
   }
 }
 
-// --- Automation 4: Real-time Plant AI Assistant (Inventory, WIP, Finished Goods) ---
+// --- WORKFLOW 4: Real-time Plant & Stock Intelligence ---
 async function handlePlantAiQuery(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
   try {
-    // 1. Fetch live snapshot across plant modules
-    const [rgRes, wipRes, fgRes, tasksRes, suppliesRes] = await Promise.all([
-      supabase.from('received_goods').select('name, category, makeModel, supplier, quantity, status, damagedCount').limit(30),
-      supabase.from('wip_items').select('batch_number, model, quantity, current_stage, target_quantity').limit(20),
-      supabase.from('finished_goods').select('recipeId, quantity, deliveredTo, qualityRemarks').limit(20),
-      supabase.from('employee_tasks').select('title, assigned_to, due_date').or('completed.is.null,completed.eq.false').limit(15),
-      supabase.from('supplies_records').select('item_name, specification, target_quantity, status').limit(20)
+    const [rgRes, wipRes, fgRes, tasksRes, pricesRes] = await Promise.all([
+      supabase.from('received_goods').select('name, category, makeModel, supplier, quantity, status').limit(50),
+      supabase.from('wip_items').select('batch_number, model, quantity, current_stage, target_quantity').limit(30),
+      supabase.from('finished_goods').select('recipeId, quantity, deliveredTo, qualityRemarks').limit(40),
+      supabase.from('employee_tasks').select('title, assigned_to, due_date').or('completed.is.null,completed.eq.false').limit(30),
+      supabase.from('price_list').select('model_name, price_without_gst').limit(30)
     ]);
 
+    const totalRawUnits = (rgRes.data || []).reduce((acc: number, item: any) => acc + (Number(item.quantity) || 0), 0);
+    const totalFinishedUnits = (fgRes.data || []).reduce((acc: number, item: any) => acc + (Number(item.quantity) || 0), 0);
+
     const plantContext = {
-      raw_materials: {
-        total_batches: rgRes.data?.length || 0,
-        samples: rgRes.data || []
+      summary: {
+        total_raw_material_units: totalRawUnits,
+        total_finished_battery_units: totalFinishedUnits,
+        total_active_wip_batches: wipRes.data?.length || 0,
+        total_pending_tasks: tasksRes.data?.length || 0
       },
-      work_in_progress: {
-        active_batches: wipRes.data?.length || 0,
-        samples: wipRes.data || []
-      },
-      finished_goods: {
-        total_records: fgRes.data?.length || 0,
-        samples: fgRes.data || []
-      },
+      raw_materials: rgRes.data || [],
+      work_in_progress: wipRes.data || [],
+      finished_goods: fgRes.data || [],
       pending_tasks: tasksRes.data || [],
-      supplies: suppliesRes.data || []
+      available_battery_models: pricesRes.data || []
     };
 
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    const systemPrompt = `You are the AI Assistant for Datlion Cnergy Plant OS (Lithium Battery Pack Manufacturing Plant).
-Respond to the user's WhatsApp message accurately and concisely based ONLY on the provided REAL-TIME PLANT CONTEXT.
+    const systemPrompt = `You are the AI Assistant for Datlion Cnergy Plant OS (Lithium Battery Pack & Clean Energy Manufacturing Plant).
+Respond to the user's WhatsApp message accurately and concisely based on the REAL-TIME PLANT CONTEXT.
 
-Format your response cleanly for WhatsApp using standard markdown formatting (*bold*, _italic_, bullet points, emojis).
-Do not use unsupported HTML. Keep answers actionable, clear, and professional.
+Format your response cleanly for WhatsApp using standard formatting (*bold*, _italic_, bullet points, emojis).
+Do not use raw HTML. Keep answers clear, accurate, and actionable.
 
 REAL-TIME PLANT CONTEXT:
 ${JSON.stringify(plantContext, null, 2)}`;
@@ -676,7 +702,7 @@ ${JSON.stringify(plantContext, null, 2)}`;
       model: 'gemini-2.5-flash',
       contents: [
         { text: systemPrompt },
-        { text: `User (${senderName}): "${text}"` }
+        { text: `Staff User (${senderName}): "${text}"` }
       ],
       config: {
         temperature: 0.2,
@@ -691,14 +717,84 @@ ${JSON.stringify(plantContext, null, 2)}`;
   }
 }
 
-// --- Welcome / Help Menu ---
-async function sendHelpMenu(senderPhone: string, phoneNumberId: string) {
+// --- WORKFLOW 5: External Customer Assistant ---
+async function handleExternalCustomerMessage(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+  const clean = text.trim();
+  const lower = clean.toLowerCase();
+
+  // If greeting or generic inquiry, send standard branded portal menu
+  if (['hi', 'hello', 'hey', 'start', 'help', 'menu', 'contact', 'support', 'warranty', 'calculator', 'solar', 'battery'].some(w => lower.includes(w)) || clean.length < 15) {
+    const customerMenu = `⚡ *Welcome to Datlion Cnergy!*
+_Powering India's Clean Energy & Battery Future_ 🔋
+
+Hello *${senderName}*! How can we assist you today?
+
+🛡️ *1. Warranty & Support Portal*
+For warranty claims, product service, RMA, or ticket tracking:
+👉 https://support.cnergy.co.in
+
+⚡ *2. Lithium Batteries & Solar Solutions*
+Explore our lithium battery packs, solar inverters, and specs:
+👉 https://cnergy.co.in
+
+☀️ *3. Solar Installation & Payback Calculator*
+Calculate your solar power requirements and cost savings:
+👉 https://solarcalculator.cnergy.co.in
+
+📧 *Direct Assistance:*
+• Sales: sales@cnergy.co.in
+• Service: support@cnergy.co.in
+
+_Feel free to ask any question about our clean energy products!_`;
+
+    return await sendWhatsAppMessage(senderPhone, customerMenu, phoneNumberId);
+  }
+
+  // Use Gemini to answer customer product/solar questions politely and guide to links
+  try {
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const customerPrompt = `You are the Customer Support Assistant for Datlion Cnergy (a leading Indian manufacturer of Lithium Iron Phosphate (LiFePO4) Battery Packs, Solar Inverters, and Clean Energy Storage Systems).
+
+Your goal: Provide helpful, courteous, and accurate customer guidance.
+Always guide customers to our official portals when relevant:
+- Warranty / RMA / Service Support: https://support.cnergy.co.in
+- Product Catalog & Specs: https://cnergy.co.in
+- Solar Sizing & Savings Calculator: https://solarcalculator.cnergy.co.in
+- Sales Email: sales@cnergy.co.in
+
+IMPORTANT SECURITY RULE: Never disclose internal factory secrets, raw material procurement costs, supplier names, internal batch IDs, or employee tasks.
+
+Format cleanly for WhatsApp with *bold* and bullet points.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        { text: customerPrompt },
+        { text: `Customer (${senderName}): "${clean}"` }
+      ],
+      config: {
+        temperature: 0.3,
+        maxOutputTokens: 1024
+      }
+    });
+
+    const reply = response.text || 'Thank you for contacting Datlion Cnergy! Please visit https://cnergy.co.in or contact support@cnergy.co.in.';
+    await sendWhatsAppMessage(senderPhone, reply, phoneNumberId);
+  } catch (err: any) {
+    const fallback = `👋 Thank you for contacting Datlion Cnergy! For warranty and support, please visit https://support.cnergy.co.in or explore products at https://cnergy.co.in.`;
+    await sendWhatsAppMessage(senderPhone, fallback, phoneNumberId);
+  }
+}
+
+// --- Internal Welcome / Help Menu ---
+async function sendInternalHelpMenu(senderPhone: string, phoneNumberId: string) {
   const menu = `⚡ *Datlion Cnergy Plant Assistant*
 
 Here is what you can do directly from this WhatsApp chat:
 
 📄 *1. Invoicing & Expense OCR*
-• Forward any *Invoice PDF*, *Supplier Bill*, or *Receipt Photo* to automatically record it in the ledger.
+• Forward any *Invoice PDF*, *Supplier Bill*, or *Receipt Photo*.
+• Bills ≤ ₹5,000 auto-approve directly to the ledger; > ₹5,000 queue for review.
 
 📦 *2. Plant & Stock Intelligence*
 • Ask questions like:
@@ -707,9 +803,10 @@ Here is what you can do directly from this WhatsApp chat:
   - _"How many finished battery packs are in stock?"_
 
 📋 *3. Employee Task Manager*
-• View tasks: _"Show pending tasks"_ or _"Tasks for Rahul"_
+• View all tasks: _"Show pending tasks"_
+• View specific tasks: _"Tasks for indrajeet.date@cnergy.co.in"_ or _"Tasks for Ajay"_
 • Add task: _"Add task: Cell sorting for batch 102 to Sanjay due tomorrow"_
-• Complete task: _"Done task <ID or title>"_
+• Complete task: _"Done <task ID or task name>"_
 
 🧾 *4. Fast Quotations & POs*
 • Create drafts: _"Create quotation for 10 units 48V 100Ah for Tata Power"_
@@ -719,20 +816,41 @@ Here is what you can do directly from this WhatsApp chat:
   await sendWhatsAppMessage(senderPhone, menu, phoneNumberId);
 }
 
-// --- Central Text Message Router ---
-async function processInboundText(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+// --- Central Text Message Router for Internal Staff ---
+async function processInternalText(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
   const clean = text.trim();
   const lower = clean.toLowerCase();
 
   // 1. Help & Greetings
   if (['hi', 'hello', 'hey', 'help', 'menu', 'options', 'start', 'commands'].includes(lower)) {
-    return await sendHelpMenu(senderPhone, phoneNumberId);
+    return await sendInternalHelpMenu(senderPhone, phoneNumberId);
   }
 
-  // 2. Task Listing
-  if (lower === 'tasks' || lower === 'my tasks' || lower === 'pending tasks' || lower.startsWith('show tasks') || lower.startsWith('list tasks') || lower.includes('todays tasks') || lower.includes("today's tasks")) {
-    const userMatch = lower.includes('for ') ? lower.split('for ')[1].trim() : undefined;
-    return await handleListTasks(senderPhone, phoneNumberId, userMatch);
+  // 2. Task Listing (Handles "tasks for ...", "my tasks", "pending tasks", etc.)
+  if (
+    lower.startsWith('task') || 
+    lower.startsWith('show task') || 
+    lower.startsWith('list task') || 
+    lower.includes('tasks for') ||
+    lower.includes('my tasks') || 
+    lower.includes('pending tasks') ||
+    lower.includes("today's tasks") ||
+    lower.includes("todays tasks")
+  ) {
+    // If it's a creation command like "add task" or "create task", route to creation
+    if (lower.startsWith('add task') || lower.startsWith('create task') || lower.startsWith('new task') || lower.startsWith('assign task')) {
+      return await handleCreateTask(senderPhone, senderName, clean, phoneNumberId);
+    }
+
+    // Extract user filter if present
+    let filterUser: string | undefined;
+    if (lower.includes('for ')) {
+      filterUser = lower.split('for ')[1].trim();
+    } else if (lower.includes('tasks of ')) {
+      filterUser = lower.split('tasks of ')[1].trim();
+    }
+
+    return await handleListTasks(senderPhone, phoneNumberId, filterUser);
   }
 
   // 3. Task Completion
@@ -799,20 +917,28 @@ export default async function handler(req: any, res: any) {
       }
 
       const senderPhone = message.from;
-      const senderName = contact?.profile?.name || 'User';
+      const senderName = contact?.profile?.name || 'Customer';
 
-      // Whitelist Check
-      if (ALLOWED_WHATSAPP_NUMBERS.length > 0) {
-        const cleanSender = senderPhone.replace(/\D/g, '');
-        const isAllowed = ALLOWED_WHATSAPP_NUMBERS.some(allowed => cleanSender.endsWith(allowed) || allowed.endsWith(cleanSender));
-        if (!isAllowed) {
-          console.warn('[WhatsApp] Unauthorized sender:', senderPhone);
-          return res.status(200).send('SENDER_NOT_AUTHORIZED');
-        }
-      }
+      // Check whether sender is Internal Team or External Customer
+      const isInternal = isInternalSender(senderPhone);
 
-      // Branch A: Document or Image (Invoice / Bill / Receipt)
+      // --- BRANCH 1: Document / Image Sent ---
       if (message.type === 'document' || message.type === 'image') {
+        if (!isInternal) {
+          // External customer sent a document
+          const externalDocMsg = `📄 *Document Received!*
+
+Thank you *${senderName}* for reaching out to Datlion Cnergy.
+
+If this document is for *Warranty, RMA, or Service Support*, please upload it to our dedicated support portal:
+👉 https://support.cnergy.co.in
+
+For Sales inquiries, please email sales@cnergy.co.in.`;
+          await sendWhatsAppMessage(senderPhone, externalDocMsg, phoneNumberId);
+          return res.status(200).send('EVENT_RECEIVED');
+        }
+
+        // Internal staff sent an invoice or bill
         const mediaId = message.document?.id || message.image?.id;
         const mimeType = message.document?.mime_type || message.image?.mime_type || 'application/pdf';
         const filename = message.document?.filename || (message.type === 'image' ? 'bill.jpg' : 'invoice.pdf');
@@ -839,17 +965,31 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('EVENT_RECEIVED');
       }
 
-      // Branch B: Text Message (Multi-Automation Router)
+      // --- BRANCH 2: Text Message Sent ---
       if (message.type === 'text') {
         const textBody = message.text?.body || '';
-        waitUntil(
-          processInboundText(
-            senderPhone,
-            senderName,
-            textBody,
-            phoneNumberId
-          )
-        );
+
+        if (isInternal) {
+          // Internal DC Workflows (Tasks, Invoices, Plant AI, Quotations)
+          waitUntil(
+            processInternalText(
+              senderPhone,
+              senderName,
+              textBody,
+              phoneNumberId
+            )
+          );
+        } else {
+          // External Customer Workflow (Support, Products, Solar Calculator)
+          waitUntil(
+            handleExternalCustomerMessage(
+              senderPhone,
+              senderName,
+              textBody,
+              phoneNumberId
+            )
+          );
+        }
 
         return res.status(200).send('EVENT_RECEIVED');
       }
