@@ -1,180 +1,498 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { ExtractedInvoice, InvoiceItem } from '../../types';
-import { Download, Package, Plus, Trash2 } from './Icons';
-import { ArrowRightIcon } from '../icons/ArrowRightIcon';
-import { downloadFile } from '../../utils/invoiceUtils';
+import { Package, Trash2, CheckCircle, AlertCircle, RefreshCw, Plus, ArrowRight, Loader2 } from './Icons';
 import { supabase } from '../../supabaseClient';
 
 interface InventoryPanelProps {
   data: ExtractedInvoice;
   onUpdate: (items: InvoiceItem[]) => void;
   setView?: (view: any) => void;
+  addLogEntry?: (action: string, details: string) => void;
 }
 
-const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Uncategorized'];
+const CATEGORIES = [
+  'Cell',
+  'BMS',
+  'Bat-misc',
+  'Nickel Strip',
+  'Wire',
+  'Connector',
+  'Holder',
+  'Epoxy Sheet',
+  'Sleeve',
+  'Tape',
+  'Screw',
+  'Cabinet',
+  'Charger',
+  'Tools & Consumables',
+  'Logistics & Service',
+  'Other'
+];
 
-const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView }) => {
-  const [items, setItems] = useState<any[]>([]);
+interface StockItemRow {
+  index: number;
+  name: string;
+  category: string;
+  make_model: string;
+  quantity: number;
+  uom: string;
+  status: string;
+  includeInStock: boolean;
+  isSynced: boolean;
+  currentStock: number;
+  projectedStock: number;
+  original_item: InvoiceItem;
+}
+
+const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView, addLogEntry }) => {
+  const [items, setItems] = useState<StockItemRow[]>([]);
+  const [stockSummaryMap, setStockSummaryMap] = useState<Record<string, { totalQty: number; uom?: string; makeModel?: string; category?: string }>>({});
   const [existingItemNames, setExistingItemNames] = useState<string[]>([]);
+  const [isLoadingStock, setIsLoadingStock] = useState(false);
+  const [isSyncingStock, setIsSyncingStock] = useState(false);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
-  // Fetch unique item names already in system to suggest to user
+  // Fetch full inventory from received_goods to compute live stock quantities
+  const fetchStockData = async () => {
+    setIsLoadingStock(true);
+    try {
+      const { data: rgData, error } = await supabase
+        .from('received_goods')
+        .select('name, category, makeModel, quantity, uom');
+
+      if (!error && rgData) {
+        const map: Record<string, { totalQty: number; uom?: string; makeModel?: string; category?: string }> = {};
+        const namesSet = new Set<string>();
+
+        rgData.forEach((rg: any) => {
+          const rawName = (rg.name || '').trim();
+          if (!rawName) return;
+          namesSet.add(rawName);
+          const key = rawName.toLowerCase();
+          const qty = Number(rg.quantity) || 0;
+
+          if (!map[key]) {
+            map[key] = {
+              totalQty: qty,
+              uom: rg.uom || 'qty',
+              makeModel: rg.makeModel,
+              category: rg.category
+            };
+          } else {
+            map[key].totalQty += qty;
+          }
+        });
+
+        setStockSummaryMap(map);
+        setExistingItemNames(Array.from(namesSet).sort());
+      }
+    } catch (err) {
+      console.error('[InventoryPanel] Error fetching stock data:', err);
+    } finally {
+      setIsLoadingStock(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchNames = async () => {
-        const { data: rgData } = await supabase.from('received_goods').select('name');
-        if (rgData) {
-            const unique = Array.from(new Set(rgData.map((g: any) => g.name))) as string[];
-            setExistingItemNames(unique);
-        }
-    };
-    fetchNames();
+    fetchStockData();
   }, []);
 
   const guessCategory = (item: InvoiceItem): string => {
-      if (item.item_type && CATEGORIES.includes(item.item_type)) return item.item_type;
-      const text = ((item.description || '') + ' ' + (item.item_type || '')).toLowerCase();
-      if (text.includes('cell') || text.includes('lfp') || text.includes('nmc') || text.includes('battery')) return 'Cell';
-      if (text.includes('bms') || text.includes('pcb') || text.includes('protection') || text.includes('circuit')) return 'BMS';
-      if (text.includes('tape') || text.includes('nickel') || text.includes('holder') || text.includes('connector') || text.includes('screw')) return 'Bat-misc';
-      return 'Uncategorized';
+    if (item.item_type && CATEGORIES.includes(item.item_type)) return item.item_type;
+    const text = `${item.description || ''} ${item.item_type || ''}`.toLowerCase();
+    if (text.includes('cell') || text.includes('32700') || text.includes('18650') || text.includes('lfp') || text.includes('nmc') || text.includes('battery')) return 'Cell';
+    if (text.includes('bms') || text.includes('pcb') || text.includes('protection board') || text.includes('circuit')) return 'BMS';
+    if (text.includes('nickel') || text.includes('strip')) return 'Nickel Strip';
+    if (text.includes('wire') || text.includes('cable') || text.includes('awg')) return 'Wire';
+    if (text.includes('connector') || text.includes('anderson') || text.includes('xt60') || text.includes('xt90')) return 'Connector';
+    if (text.includes('holder') || text.includes('bracket') || text.includes('spacer')) return 'Holder';
+    if (text.includes('epoxy') || text.includes('insulation sheet') || text.includes('fr4')) return 'Epoxy Sheet';
+    if (text.includes('sleeve') || text.includes('shrink')) return 'Sleeve';
+    if (text.includes('tape') || text.includes('kapton')) return 'Tape';
+    if (text.includes('screw') || text.includes('nut') || text.includes('bolt')) return 'Screw';
+    if (text.includes('cabinet') || text.includes('enclosure') || text.includes('box') || text.includes('case')) return 'Cabinet';
+    if (text.includes('charger') || text.includes('adapter')) return 'Charger';
+    if (text.includes('freight') || text.includes('transport') || text.includes('delivery') || text.includes('courier') || text.includes('handling') || text.includes('service')) return 'Logistics & Service';
+    return 'Other';
   };
 
+  // Map incoming invoice items with live stock metrics
   useEffect(() => {
-    const mappedItems = data.items.map(item => {
+    const mapped: StockItemRow[] = (data.items || []).map((item, idx) => {
+      const itemName = (item.description || '').trim() || 'Item';
       const category = item.item_type || guessCategory(item);
+      const isNonStock = category === 'Logistics & Service' || itemName.toLowerCase().includes('freight') || itemName.toLowerCase().includes('delivery');
+
+      const stockMatch = stockSummaryMap[itemName.toLowerCase()];
+      const currentStock = stockMatch ? stockMatch.totalQty : 0;
+      const addingQty = Number(item.quantity) || 0;
+      const projectedStock = currentStock + (isNonStock ? 0 : addingQty);
+
       return {
-        name: item.description || 'Unknown Item',
-        category: category,
-        make_model: item.make_model || '',
-        quantity: item.quantity || 0,
-        status: item.status || 'Not Damaged',
-        original_item: item 
+        index: idx,
+        name: itemName,
+        category,
+        make_model: item.make_model || stockMatch?.makeModel || '',
+        quantity: addingQty,
+        uom: stockMatch?.uom || 'qty',
+        status: item.status || 'ND',
+        includeInStock: !isNonStock,
+        isSynced: false,
+        currentStock,
+        projectedStock,
+        original_item: item
       };
     });
 
+    setItems(mapped);
+  }, [data.items, stockSummaryMap]);
+
+  const syncToParent = (updatedRows: StockItemRow[]) => {
+    const updatedInvoiceItems: InvoiceItem[] = updatedRows.map(row => ({
+      ...row.original_item,
+      description: row.name,
+      item_type: row.category,
+      make_model: row.make_model,
+      quantity: Number(row.quantity) || 0,
+      status: row.status
+    }));
+    onUpdate(updatedInvoiceItems);
+  };
+
+  const handleRowChange = (index: number, field: keyof StockItemRow, value: any) => {
     setItems(prev => {
-        const prevJson = JSON.stringify(prev.map(({original_item, ...rest}) => rest));
-        const nextJson = JSON.stringify(mappedItems.map(({original_item, ...rest}) => rest));
-        if (prevJson !== nextJson) return mappedItems;
-        return prev;
+      const next = [...prev];
+      const current = { ...next[index], [field]: value };
+
+      if (field === 'name') {
+        const stockMatch = stockSummaryMap[(value || '').toLowerCase().trim()];
+        current.currentStock = stockMatch ? stockMatch.totalQty : 0;
+        if (stockMatch?.category && !current.category) current.category = stockMatch.category;
+        if (stockMatch?.makeModel && !current.make_model) current.make_model = stockMatch.makeModel;
+      }
+
+      current.projectedStock = (current.currentStock || 0) + (current.includeInStock ? (Number(current.quantity) || 0) : 0);
+      next[index] = current;
+      syncToParent(next);
+      return next;
     });
-  }, [data.items]);
-
-  const syncToParent = (newLocalItems: any[]) => {
-      const invoiceItems: InvoiceItem[] = newLocalItems.map(local => {
-          const base = local.original_item || {};
-          return {
-              ...base,
-              description: local.name,
-              item_type: local.category,
-              make_model: local.make_model,
-              quantity: Number(local.quantity),
-              status: local.status,
-              hsn_sac: base.hsn_sac || '',
-              unit_price: base.unit_price || 0,
-              taxable_value: base.taxable_value || 0,
-              cgst_rate: base.cgst_rate || 0,
-              cgst_amount: base.cgst_amount || 0,
-              sgst_rate: base.sgst_rate || 0,
-              sgst_amount: base.sgst_amount || 0,
-              igst_rate: base.igst_rate || 0,
-              igst_amount: base.igst_amount || 0,
-              total_value: base.total_value || 0
-          };
-      });
-      onUpdate(invoiceItems);
   };
 
-  const handleFieldChange = (index: number, field: string, value: string | number) => {
-    const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
-    setItems(updated);
-    syncToParent(updated);
-  };
+  // Direct sync items to received_goods in Supabase
+  const handleSyncToRawMaterials = async () => {
+    const itemsToSync = items.filter(it => it.includeInStock && !it.isSynced && it.quantity > 0);
+    if (itemsToSync.length === 0) {
+      alert("No pending inventory items selected to sync. Check the 'Sync to Stock' toggle on line items.");
+      return;
+    }
 
-  const handleSendToStorage = () => {
-      const exportData = items.map(item => ({
-          name: item.name,
-          category: item.category,
-          makeModel: item.make_model,
-          supplier: data.issuer_details?.name || 'Unknown',
-          invoiceNumber: data.invoice_metadata?.invoice_number || 'Unknown',
-          quantity: Number(item.quantity),
-          status: item.status
+    setIsSyncingStock(true);
+    setSyncSuccessMsg(null);
+
+    try {
+      const supplierName = data.issuer_details?.name || 'Vendor';
+      const invoiceNum = data.invoice_metadata?.invoice_number || `WA-${Date.now()}`;
+      const now = Date.now();
+
+      const payload = itemsToSync.map((it, idx) => ({
+        id: `rg-${now}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+        name: it.name.trim(),
+        category: it.category || 'Other',
+        makeModel: it.make_model || '',
+        supplier: supplierName,
+        quantity: Number(it.quantity) || 0,
+        initialQuantity: Number(it.quantity) || 0,
+        uom: it.uom || 'qty',
+        status: it.status || 'ND',
+        damagedCount: 0,
+        invoiceNumber: invoiceNum,
+        serials: [],
+        timestamp: now,
+        notes: `Imported via Scan & Import (Invoice #${invoiceNum})`
       }));
-      localStorage.setItem('pendingInventoryImport', JSON.stringify(exportData));
-      if (setView) setView('received');
+
+      const { error } = await supabase.from('received_goods').insert(payload);
+      if (error) throw error;
+
+      // Mark synced in local state
+      const syncedNames = new Set(itemsToSync.map(i => i.index));
+      setItems(prev => prev.map(item => syncedNames.has(item.index) ? { ...item, isSynced: true } : item));
+
+      addLogEntry?.('Import Raw Materials', `Added ${itemsToSync.length} items (${itemsToSync.reduce((s, i) => s + i.quantity, 0)} units) from Invoice #${invoiceNum} to Raw Materials`);
+
+      setSyncSuccessMsg(`✅ Successfully added ${itemsToSync.length} items directly into Raw Materials (received_goods)!`);
+      fetchStockData(); // Refresh stock map
+    } catch (err: any) {
+      alert(`Failed to add items to stock: ${err.message}`);
+    } finally {
+      setIsSyncingStock(false);
+    }
   };
+
+  const totalStockUnitsAdding = items
+    .filter(i => i.includeInStock && !i.isSynced)
+    .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+
+  const syncedCount = items.filter(i => i.isSynced).length;
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mt-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      {/* Header & Quick Action Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-            <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2"><Package className="w-5 h-5 text-indigo-600"/> Master Item Mapping</h3>
-            <p className="text-xs text-slate-500 mt-1">Review item names before import. Ensure names match existing Master Items for SKU recipes.</p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <Package className="w-5 h-5 text-[#658C3E]" />
+              <span>Plant Stock & Master Inventory Mapping</span>
+            </h3>
+            {isLoadingStock && <Loader2 className="animate-spin text-slate-400" size={14} />}
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Verify extracted items, match against Master Raw Material SKUs, and view live plant stock.
+          </p>
         </div>
-        <button onClick={handleSendToStorage} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 shadow-sm"><ArrowRightIcon size={16} /> Add to Stock</button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchStockData}
+            disabled={isLoadingStock}
+            className="p-2 text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold transition-all shadow-xs"
+            title="Refresh Live Stock from Database"
+          >
+            <RefreshCw size={14} className={isLoadingStock ? 'animate-spin' : ''} />
+          </button>
+
+          <button
+            onClick={handleSyncToRawMaterials}
+            disabled={isSyncingStock || totalStockUnitsAdding === 0}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md transition-all ${
+              totalStockUnitsAdding > 0
+                ? 'bg-gradient-to-r from-[#658C3E] to-[#8EBF45] text-slate-950 hover:opacity-95 cursor-pointer'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+            }`}
+          >
+            {isSyncingStock ? (
+              <>
+                <Loader2 className="animate-spin" size={14} />
+                <span>Syncing to Stock...</span>
+              </>
+            ) : (
+              <>
+                <Package size={14} />
+                <span>Add {totalStockUnitsAdding} Units to Stock</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto border rounded-md border-slate-200">
-        <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-indigo-50 text-indigo-900 font-medium border-b">
-                <tr>
-                    <th className="p-3 w-8">#</th>
-                    <th className="p-3 min-w-[200px]">Item Name (Master ID)</th>
-                    <th className="p-3 min-w-[120px]">Category</th>
-                    <th className="p-3 min-w-[120px]">Make / Model</th>
-                    <th className="p-3 w-20 text-right">Qty</th>
-                    <th className="p-3 w-32">Status</th>
-                    <th className="p-3 w-10"></th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-                {items.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 text-xs text-slate-400">{idx + 1}</td>
-                        <td className="p-3">
-                            <input list="master-names-list" className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-800 font-bold" value={item.name || ''} onChange={(e) => handleFieldChange(idx, 'name', e.target.value)} />
-                            <datalist id="master-names-list">
-                                {existingItemNames.map(name => <option key={name} value={name} />)}
-                            </datalist>
-                        </td>
-                        <td className="p-3">
-                            <input list={`cat-options-${idx}`} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-800" value={item.category || ''} onChange={(e) => handleFieldChange(idx, 'category', e.target.value)} />
-                            <datalist id={`cat-options-${idx}`}>{CATEGORIES.map(c => <option key={c} value={c} />)}</datalist>
-                        </td>
-                        <td className="p-3">
-                            <input 
-                                className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-800" 
-                                placeholder="Manufacturer..."
-                                value={item.make_model || ''} 
-                                onChange={(e) => handleFieldChange(idx, 'make_model', e.target.value)} 
-                            />
-                        </td>
-                        <td className="p-3 text-right">
-                            <input type="number" className="w-full text-right border border-slate-200 bg-slate-50 rounded px-2 py-1 outline-none font-bold" value={item.quantity} onChange={(e) => handleFieldChange(idx, 'quantity', e.target.value)} />
-                        </td>
-                        <td className="p-3">
-                            <select 
-                                className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-slate-800 text-xs" 
-                                value={item.status || 'Not Damaged'} 
-                                onChange={(e) => handleFieldChange(idx, 'status', e.target.value)}
-                            >
-                                <option value="Not Damaged">Not Damaged</option>
-                                <option value="Damaged">Damaged</option>
-                                <option value="Partially Received">Partially Received</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </td>
-                        <td className="p-3 text-center">
-                            <button onClick={() => { const updated = items.filter((_, i) => i !== idx); setItems(updated); syncToParent(updated); }} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
+      {/* Success Notification Alert */}
+      {syncSuccessMsg && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold flex items-center justify-between animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+            <span>{syncSuccessMsg}</span>
+          </div>
+          <button onClick={() => setSyncSuccessMsg(null)} className="text-emerald-600 hover:text-emerald-800 text-xs">✕</button>
+        </div>
+      )}
+
+      {/* Stock Cards / Items Table */}
+      <div className="space-y-4">
+        {items.length === 0 ? (
+          <div className="bg-white p-8 rounded-2xl border border-slate-100 text-center text-slate-400 text-xs italic">
+            No line items extracted from this invoice. Click "Add Item" in the Invoice Breakdown tab to add manually.
+          </div>
+        ) : (
+          items.map((item, idx) => {
+            const hasStock = item.currentStock > 0;
+            return (
+              <div
+                key={idx}
+                className={`bg-white rounded-2xl border p-5 shadow-sm transition-all ${
+                  item.isSynced
+                    ? 'border-emerald-200 bg-emerald-50/20'
+                    : item.includeInStock
+                    ? 'border-slate-200 hover:border-[#8EBF45]'
+                    : 'border-slate-100 opacity-75 bg-slate-50/50'
+                }`}
+              >
+                {/* Card Header: Item Name, Category, Stock Status Badge */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-black flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <input
+                        list="master-names-list"
+                        className="font-black text-sm text-slate-900 bg-transparent border-b border-dashed border-slate-300 hover:border-slate-500 focus:border-[#658C3E] outline-none w-full max-w-md py-0.5"
+                        value={item.name}
+                        onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
+                        placeholder="Master Item SKU Name..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sync Status Badge */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {item.isSynced ? (
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1 border border-emerald-200">
+                        <CheckCircle size={12} />
+                        <span>Added to Stock</span>
+                      </span>
+                    ) : item.includeInStock ? (
+                      <span className="bg-blue-50 text-blue-700 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border border-blue-200">
+                        Ready for Stock Import
+                      </span>
+                    ) : (
+                      <span className="bg-slate-100 text-slate-500 text-[10px] font-bold uppercase px-2.5 py-1 rounded-full">
+                        Non-Stock / Expense Only
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        const updated = items.filter((_, i) => i !== idx);
+                        setItems(updated);
+                        syncToParent(updated);
+                      }}
+                      className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                      title="Remove Item"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stock Math & Quantity Indicator Widget */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  {/* Current In-Stock */}
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${
+                      hasStock ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      📦
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Current Plant Stock</p>
+                      <p className="text-sm font-black text-slate-800 font-mono">
+                        {hasStock ? `${item.currentStock.toLocaleString('en-IN')} ${item.uom}` : '0 (New Item)'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Quantity from this Invoice */}
+                  <div className="flex items-center gap-3 border-t md:border-t-0 md:border-l border-slate-200 md:pl-3 pt-2 md:pt-0">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-xs font-black">
+                      ➕
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Adding from Invoice</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <input
+                          type="number"
+                          className="w-20 font-black text-sm text-blue-600 bg-white border border-slate-200 rounded px-1.5 py-0.5 outline-none font-mono"
+                          value={item.quantity}
+                          onChange={(e) => handleRowChange(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                        />
+                        <span className="text-xs text-slate-500 font-medium">{item.uom}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Projected Stock after Import */}
+                  <div className="flex items-center gap-3 border-t md:border-t-0 md:border-l border-slate-200 md:pl-3 pt-2 md:pt-0">
+                    <div className="w-8 h-8 rounded-lg bg-[#8EBF45]/20 text-[#658C3E] flex items-center justify-center text-xs font-black">
+                      🚀
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Projected New Stock</p>
+                      <p className="text-sm font-black text-[#658C3E] font-mono">
+                        {item.includeInStock ? `${item.projectedStock.toLocaleString('en-IN')} ${item.uom}` : `${item.currentStock} (Unchanged)`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form Controls: Category, Make/Model, Status, Stock Toggle */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Category</label>
+                    <select
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-800 outline-none focus:border-[#658C3E]"
+                      value={item.category}
+                      onChange={(e) => handleRowChange(idx, 'category', e.target.value)}
+                    >
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Make / Model</label>
+                    <input
+                      type="text"
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 font-medium text-slate-800 outline-none focus:border-[#658C3E]"
+                      placeholder="Brand, Grade, Cell Spec..."
+                      value={item.make_model}
+                      onChange={(e) => handleRowChange(idx, 'make_model', e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">QC / Warehouse Status</label>
+                    <select
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-800 outline-none focus:border-[#658C3E]"
+                      value={item.status}
+                      onChange={(e) => handleRowChange(idx, 'status', e.target.value)}
+                    >
+                      <option value="ND">Not Damaged (ND)</option>
+                      <option value="PR">Partially Received (PR)</option>
+                      <option value="D">Damaged (D)</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col justify-end">
+                    <label className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={item.includeInStock}
+                        onChange={(e) => handleRowChange(idx, 'includeInStock', e.target.checked)}
+                        className="rounded text-[#658C3E] focus:ring-[#658C3E]"
+                      />
+                      <span className="text-xs font-bold text-slate-700 select-none">
+                        Sync to Stock
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
-      <p className="text-[10px] text-slate-400 mt-4 italic">* Consistent naming is key. If a "32700 Cell" arrives, ensure the name exactly matches your existing "32700 Cell" Master Item to keep SKU recipes working automatically.</p>
+
+      {/* Datalist for existing master item autocomplete */}
+      <datalist id="master-names-list">
+        {existingItemNames.map(name => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+
+      {/* Helper Footer Note */}
+      <div className="p-4 bg-blue-50/70 border border-blue-100 rounded-2xl text-xs text-blue-900 flex items-start gap-3">
+        <span className="text-lg">💡</span>
+        <div className="space-y-1">
+          <p className="font-bold">Master SKU Consistency Tip:</p>
+          <p className="text-blue-700 leading-relaxed text-[11px]">
+            Ensure item names match your standard plant BOM definitions (e.g. <code>32700 Cell</code> or <code>BMS 4S 100A</code>).
+            Matching master names allows production batch recipes and assembly consumption to track stock automatically.
+          </p>
+        </div>
+      </div>
     </div>
   );
 };

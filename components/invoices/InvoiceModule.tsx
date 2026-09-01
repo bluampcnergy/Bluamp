@@ -58,6 +58,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
     const [isQueueRunning, setIsQueueRunning] = useState(false);
     const [queueFilter, setQueueFilter] = useState<'all' | 'review' | 'saved' | 'error'>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const [reviewRightTab, setReviewRightTab] = useState<'stock' | 'invoice'>('stock');
 
     // Price List State
     const [priceList, setPriceList] = useState<PriceListItem[]>([]);
@@ -949,17 +950,54 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                             </div>
                                         </div>
 
-                                        {/* Right: Editable Extraction Form & Stock Panel */}
-                                        <div className="overflow-y-auto h-full p-5 space-y-6">
-                                            <InvoiceForm
-                                                data={job.data}
-                                                onChange={(updated) => setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, data: updated } : j))}
-                                            />
-                                            <InventoryPanel
-                                                data={job.data}
-                                                onUpdate={(items) => setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, data: { ...j.data!, items } } : j))}
-                                                setView={setView}
-                                            />
+                                        {/* Right: Tabbed Review Panel (Stock Mapping vs Invoice Breakdown) */}
+                                        <div className="overflow-y-auto h-full p-5 space-y-5 bg-slate-50/50">
+                                            {/* Right Panel Sub-tab Toggle */}
+                                            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10">
+                                                <div className="inline-flex bg-slate-200/70 p-1 rounded-xl text-xs font-bold text-slate-600">
+                                                    <button
+                                                        onClick={() => setReviewRightTab('stock')}
+                                                        className={`px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                                                            reviewRightTab === 'stock'
+                                                                ? 'bg-white text-slate-950 shadow-xs font-black'
+                                                                : 'hover:text-slate-900'
+                                                        }`}
+                                                    >
+                                                        <span>📦</span>
+                                                        <span>Plant Stock & Master Mapping</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setReviewRightTab('invoice')}
+                                                        className={`px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                                                            reviewRightTab === 'invoice'
+                                                                ? 'bg-white text-slate-950 shadow-xs font-black'
+                                                                : 'hover:text-slate-900'
+                                                        }`}
+                                                    >
+                                                        <span>📄</span>
+                                                        <span>Invoice & Tax Breakdown</span>
+                                                    </button>
+                                                </div>
+
+                                                <div className="text-[11px] font-bold text-slate-400">
+                                                    {reviewRightTab === 'stock' ? '💡 Verify stock & SKUs' : '🏛️ Verify GST & Amounts'}
+                                                </div>
+                                            </div>
+
+                                            {/* Active Sub-tab View */}
+                                            {reviewRightTab === 'stock' ? (
+                                                <InventoryPanel
+                                                    data={job.data}
+                                                    onUpdate={(items) => setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, data: { ...j.data!, items } } : j))}
+                                                    setView={setView}
+                                                    addLogEntry={addLogEntry}
+                                                />
+                                            ) : (
+                                                <InvoiceForm
+                                                    data={job.data}
+                                                    onChange={(updated) => setBatchQueue(prev => prev.map(j => j.id === job.id ? { ...j, data: updated } : j))}
+                                                />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
