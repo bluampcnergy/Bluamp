@@ -30,7 +30,13 @@ const APP_URL = process.env.APP_URL || 'https://inventory.cnergy.co.in';
 const AUTO_APPROVE_THRESHOLD_INR = 5000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false }
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    headers: {
+      'apikey': SUPABASE_SERVICE_ROLE_KEY,
+      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    }
+  }
 });
 
 function isInternalSender(senderPhone) {
