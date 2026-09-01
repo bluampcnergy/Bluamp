@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { ReceivedGood, WIPItem, FinishedGood, CompanyProfile, TestResult, User, ExtractedInvoice, Recipe } from '../types';
 import { ReceivedGoodStatus, EMPTY_INVOICE } from '../types';
@@ -8,7 +7,7 @@ import { PencilIcon } from './icons/PencilIcon';
 import { DuplicateIcon } from './icons/DuplicateIcon';
 import { ArrowRightIcon } from './icons/ArrowRightIcon';
 import { MergeIcon } from './icons/MergeIcon';
-import { RefreshCw, Trash2, Download } from './invoices/Icons';
+import { RefreshCw, Trash2, Download, Package, FileText, CheckCircle, AlertTriangle } from './invoices/Icons';
 import { ImportIcon } from './icons/ImportIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { getItemStockAlertInfo } from '../utils/stockAlerts';
@@ -31,15 +30,50 @@ interface ReceivedGoodsProps {
     setInvoiceDraft?: (draft: ExtractedInvoice) => void;
 }
 
-const statusInfo = {
+export interface MasterGroupedGood {
+    masterKey: string;
+    name: string;
+    category: string;
+    totalQuantity: number;
+    totalInitialQuantity: number;
+    uom: string;
+    lowStockThresholdPercent: number;
+    isIgnoredForAlerts: boolean;
+    status: ReceivedGoodStatus | string;
+    suppliers: string[];
+    makeModels: string[];
+    batches: ReceivedGood[];
+    latestTimestamp: number;
+    earliestTimestamp: number;
+    totalSerials: number;
+    notes?: string;
+    isOutOfStock: boolean;
+    isLowStock: boolean;
+}
+
+const statusInfo: Record<string, { text: string; color: string }> = {
     [ReceivedGoodStatus.ND]: { text: 'Not Damaged', color: 'bg-[#A8BF75]/20 text-[#658C3E] border border-[#A8BF75]/50' },
     [ReceivedGoodStatus.PR]: { text: 'Partially Received', color: 'bg-yellow-50 text-yellow-800 border border-yellow-200' },
     [ReceivedGoodStatus.D]: { text: 'Damaged', color: 'bg-red-50 text-red-800 border border-red-200' },
     [ReceivedGoodStatus.Other]: { text: 'Other', color: 'bg-gray-100 text-gray-800 border border-gray-200' },
 };
 
-const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { serials: string[] } = {
-    name: '', category: '', makeModel: '', supplier: '', quantity: 0, initialQuantity: 0, uom: 'qty', lowStockThresholdPercent: 20, isIgnoredForAlerts: false, status: ReceivedGoodStatus.ND, damagedCount: 0, invoiceNumber: '', serials: [], notes: 'actual physical qty = '
+const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { serials: string[]; invoiceDate?: string } = {
+    name: '',
+    category: '',
+    makeModel: '',
+    supplier: '',
+    quantity: 0,
+    initialQuantity: 0,
+    uom: 'qty',
+    lowStockThresholdPercent: 20,
+    isIgnoredForAlerts: false,
+    status: ReceivedGoodStatus.ND,
+    damagedCount: 0,
+    invoiceNumber: '',
+    serials: [],
+    notes: 'actual physical qty = ',
+    invoiceDate: new Date().toISOString().split('T')[0]
 };
 
 const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
@@ -61,12 +95,14 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingGood, setEditingGood] = useState<ReceivedGood | null>(null);
+    const [inwardBatchMasterTarget, setInwardBatchMasterTarget] = useState<MasterGroupedGood | null>(null);
     const [formData, setFormData] = useState(initialFormState);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [filterNotes, setFilterNotes] = useState(false);
     const [filterLowStock, setFilterLowStock] = useState(false);
     const [filterIgnored, setFilterIgnored] = useState(false);
+    const [expandedMasterKeys, setExpandedMasterKeys] = useState<Set<string>>(new Set());
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [serialEntries, setSerialEntries] = useState<SerialGridRow[]>([]);
@@ -110,7 +146,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     // Helper to determine if category requires serial tracking (Only Cells with 'qty' UOM)
     const isTrackedCategory = (cat: string, uom?: string) => (cat || '').toLowerCase() === 'cell' && (!uom || uom === 'qty');
 
-    // Populate form when editing
+    // Populate form when editing an existing batch or adding an inward batch to an existing master item
     useEffect(() => {
         if (editingGood) {
             let localInitialMap: Record<string, number> = {};
@@ -119,6 +155,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             } catch (e) {}
 
             const fixedInitialQty = editingGood.initialQuantity ?? localInitialMap[editingGood.id] ?? editingGood.quantity;
+            const dateStr = new Date(editingGood.timestamp).toISOString().split('T')[0];
 
             setFormData({
                 name: editingGood.name,
@@ -135,6 +172,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 invoiceNumber: editingGood.invoiceNumber,
                 notes: editingGood.notes ?? 'actual physical qty = ',
                 serials: editingGood.serials,
+                invoiceDate: dateStr
             });
 
             // Merge Serials with Test Results
@@ -151,7 +189,6 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     };
                 });
 
-                // Fill remaining if quantity > serials count
                 if (entries.length < editingGood.quantity) {
                     const diff = editingGood.quantity - entries.length;
                     for (let i = 0; i < diff; i++) entries.push({ serial: '', voltage: '', resistance: '', capacity: '', grade: '', location: '' });
@@ -160,11 +197,24 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             } else {
                 setSerialEntries([]);
             }
+        } else if (inwardBatchMasterTarget) {
+            // Pre-fill master item details for adding a new inward batch to this item
+            setFormData({
+                ...initialFormState,
+                name: inwardBatchMasterTarget.name,
+                category: inwardBatchMasterTarget.category,
+                uom: inwardBatchMasterTarget.uom || 'qty',
+                lowStockThresholdPercent: inwardBatchMasterTarget.lowStockThresholdPercent ?? 20,
+                supplier: inwardBatchMasterTarget.suppliers[0] || '',
+                makeModel: inwardBatchMasterTarget.makeModels[0] || '',
+                invoiceDate: new Date().toISOString().split('T')[0]
+            });
+            setSerialEntries([]);
         } else {
             setFormData(initialFormState);
             setSerialEntries([]);
         }
-    }, [editingGood]);  // FIX #4: Only re-populate when opening a different batch, not on every testResults change
+    }, [editingGood, inwardBatchMasterTarget]);
 
     // Adjust serial entries when quantity changes (Only for Cell with 'qty' UOM)
     useEffect(() => {
@@ -174,7 +224,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         setSerialEntries(prev => {
             if (prev.length === qty) return prev;
             if (prev.length > qty) {
-                return prev.slice(0, qty);  // Trim excess rows
+                return prev.slice(0, qty);
             } else {
                 const diff = qty - prev.length;
                 return [...prev, ...Array(diff).fill(null).map(() => ({ serial: '', voltage: '', resistance: '', capacity: '', grade: '', location: '' }))];
@@ -182,7 +232,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         });
     }, [formData.quantity, formData.category, formData.uom]);
 
-    // Handle Inventory Import
+    // Handle LocalStorage Invoice Import
     useEffect(() => {
         const checkImport = () => {
             const pendingImport = localStorage.getItem('pendingInventoryImport');
@@ -229,58 +279,144 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         checkImport();
     }, []);
 
-    const filteredGoods = receivedGoods.filter(good => {
-        const term = searchTerm.toLowerCase();
-        const matchesSearch = good.name.toLowerCase().includes(term) ||
-            (good.category || '').toLowerCase().includes(term) ||
-            (good.makeModel || '').toLowerCase().includes(term) ||
-            (good.invoiceNumber || '').toLowerCase().includes(term) ||
-            (good.supplier || '').toLowerCase().includes(term);
+    // Group Raw Materials into Master Item Cards
+    const masterGroupedGoods: MasterGroupedGood[] = useMemo(() => {
+        const map = new Map<string, MasterGroupedGood>();
 
-        const matchesCategory = selectedCategory === 'All' || good.category === selectedCategory;
+        receivedGoods.forEach(good => {
+            const rawName = (good.name || '').trim();
+            if (!rawName) return;
+            const key = rawName.toLowerCase();
 
-        const matchesNotes = !filterNotes || (good.notes && good.notes !== 'actual physical qty = ');
+            const existing = map.get(key);
+            if (!existing) {
+                const qty = Number(good.quantity) || 0;
+                const initQty = Number(good.initialQuantity || good.quantity) || 0;
+                const threshold = good.lowStockThresholdPercent ?? 20;
+                const isOutOfStock = qty <= 0;
+                const isLowStock = !good.isIgnoredForAlerts && (qty <= (initQty * (threshold / 100)));
 
-        const stockAlert = getItemStockAlertInfo(good);
-        const matchesLowStock = !filterLowStock || stockAlert.isLowStock;
-        const matchesIgnored = !filterIgnored || Boolean(good.isIgnoredForAlerts);
+                map.set(key, {
+                    masterKey: key,
+                    name: rawName,
+                    category: good.category || 'Other',
+                    totalQuantity: qty,
+                    totalInitialQuantity: initQty,
+                    uom: good.uom || 'qty',
+                    lowStockThresholdPercent: threshold,
+                    isIgnoredForAlerts: Boolean(good.isIgnoredForAlerts),
+                    status: good.status,
+                    suppliers: good.supplier ? [good.supplier] : [],
+                    makeModels: good.makeModel ? [good.makeModel] : [],
+                    batches: [good],
+                    latestTimestamp: good.timestamp,
+                    earliestTimestamp: good.timestamp,
+                    totalSerials: (good.serials || []).length,
+                    notes: good.notes,
+                    isOutOfStock,
+                    isLowStock
+                });
+            } else {
+                existing.totalQuantity += Number(good.quantity) || 0;
+                existing.totalInitialQuantity += Number(good.initialQuantity || good.quantity) || 0;
+                if (good.supplier && !existing.suppliers.includes(good.supplier)) {
+                    existing.suppliers.push(good.supplier);
+                }
+                if (good.makeModel && !existing.makeModels.includes(good.makeModel)) {
+                    existing.makeModels.push(good.makeModel);
+                }
+                existing.batches.push(good);
+                existing.latestTimestamp = Math.max(existing.latestTimestamp, good.timestamp);
+                existing.earliestTimestamp = Math.min(existing.earliestTimestamp, good.timestamp);
+                existing.totalSerials += (good.serials || []).length;
+                if (good.notes && (!existing.notes || existing.notes === 'actual physical qty = ')) {
+                    existing.notes = good.notes;
+                }
+            }
+        });
 
-        return matchesSearch && matchesCategory && matchesNotes && matchesLowStock && matchesIgnored;
-    }).sort((a, b) => b.timestamp - a.timestamp);
+        // Recalculate status & sort batches newest first
+        map.forEach(group => {
+            group.batches.sort((a, b) => b.timestamp - a.timestamp);
+            group.isOutOfStock = group.totalQuantity <= 0;
+            group.isLowStock = !group.isIgnoredForAlerts && (group.totalQuantity <= (group.totalInitialQuantity * (group.lowStockThresholdPercent / 100)));
+        });
 
-    const handleEditClick = (good: ReceivedGood) => {
-        setEditingGood(good);
-        setIsModalOpen(true);
+        return Array.from(map.values()).sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+    }, [receivedGoods]);
+
+    // Filter master grouped goods
+    const filteredMasterGoods = useMemo(() => {
+        return masterGroupedGoods.filter(group => {
+            const matchesCategory = selectedCategory === 'All' || group.category === selectedCategory;
+            const term = searchTerm.toLowerCase().trim();
+            const matchesSearch = !term ||
+                group.name.toLowerCase().includes(term) ||
+                group.category.toLowerCase().includes(term) ||
+                group.suppliers.some(s => s.toLowerCase().includes(term)) ||
+                group.makeModels.some(m => m.toLowerCase().includes(term)) ||
+                group.batches.some(b => (b.invoiceNumber || '').toLowerCase().includes(term) || (b.serials || []).some(s => s.toLowerCase().includes(term)));
+
+            const matchesNotes = !filterNotes || (group.notes && group.notes !== 'actual physical qty = ');
+            const matchesLowStock = !filterLowStock || group.isLowStock || group.isOutOfStock;
+            const matchesIgnored = !filterIgnored || group.isIgnoredForAlerts;
+
+            return matchesCategory && matchesSearch && matchesNotes && matchesLowStock && matchesIgnored;
+        });
+    }, [masterGroupedGoods, selectedCategory, searchTerm, filterNotes, filterLowStock, filterIgnored]);
+
+    const toggleExpandMaster = (masterKey: string) => {
+        setExpandedMasterKeys(prev => {
+            const next = new Set(prev);
+            if (next.has(masterKey)) next.delete(masterKey);
+            else next.add(masterKey);
+            return next;
+        });
     };
 
-    const handleToggleIgnoreReplenish = (good: ReceivedGood) => {
-        const updatedStatus = !good.isIgnoredForAlerts;
-        
-        // Update persistent localStorage map
-        try {
-            const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
-            currentMap[good.id] = updatedStatus;
-            localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
-        } catch (e) {
-            console.warn('Failed to save ignored stock map to localStorage', e);
-        }
-
-        setReceivedGoods(prev => prev.map(g => g.id === good.id ? { ...g, isIgnoredForAlerts: updatedStatus } : g));
-        addLogEntry('Updated Replenish Policy', `${good.name}: ${updatedStatus ? 'Ignored (Do Not Replenish)' : 'Active Replenishment'}`);
-    };
-
-    const handleCreateNew = () => {
+    const handleCreateNewMaster = () => {
         setEditingGood(null);
+        setInwardBatchMasterTarget(null);
         setFormData(initialFormState);
         setSerialEntries([]);
         setIsModalOpen(true);
+    };
+
+    const handleAddBatchToMaster = (masterGroup: MasterGroupedGood) => {
+        setEditingGood(null);
+        setInwardBatchMasterTarget(masterGroup);
+        setIsModalOpen(true);
+    };
+
+    const handleEditBatch = (batch: ReceivedGood) => {
+        setEditingGood(batch);
+        setInwardBatchMasterTarget(null);
+        setIsModalOpen(true);
+    };
+
+    const handleToggleIgnoreReplenish = (masterKey: string, currentStatus: boolean) => {
+        const updatedStatus = !currentStatus;
+        const matchingBatches = receivedGoods.filter(g => g.name.trim().toLowerCase() === masterKey);
+
+        try {
+            const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
+            matchingBatches.forEach(b => {
+                currentMap[b.id] = updatedStatus;
+            });
+            localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
+        } catch (e) {
+            console.warn('Failed to save ignored stock map', e);
+        }
+
+        const idsToUpdate = new Set(matchingBatches.map(b => b.id));
+        setReceivedGoods(prev => prev.map(g => idsToUpdate.has(g.id) ? { ...g, isIgnoredForAlerts: updatedStatus } : g));
+        addLogEntry('Updated Replenish Policy', `Master Item [${masterKey}]: ${updatedStatus ? 'Ignored' : 'Active Replenishment'}`);
     };
 
     const handleAutoGenerate = () => {
         const count = Number(formData.quantity) || 0;
         setSerialEntries(prev => {
             const newEntries = [...prev];
-            // Ensure length matches count before generating
             if (newEntries.length < count) {
                 const diff = count - newEntries.length;
                 for (let k = 0; k < diff; k++) newEntries.push({ serial: '', voltage: '', resistance: '', capacity: '', grade: '', location: '' });
@@ -298,15 +434,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         });
     };
 
-    // Smart Paste: Handles pasting a block of data starting from any cell
     const handleGridPaste = (e: React.ClipboardEvent, startRowIndex: number, startColKey: typeof GRID_COLUMNS[number]) => {
         e.preventDefault();
         const text = e.clipboardData.getData('text');
         const rows = text.split(/\r?\n/).filter(line => line.trim() !== '');
-
         if (rows.length === 0) return;
 
-        // Auto-expand quantity if paste is larger than current table
         let currentEntries = [...serialEntries];
         if (startRowIndex + rows.length > currentEntries.length) {
             const needed = startRowIndex + rows.length - currentEntries.length;
@@ -318,7 +451,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
         rows.forEach((line, i) => {
             const rowIndex = startRowIndex + i;
-            const cells = line.split('\t'); // Tab delimited for Excel/Sheets
+            const cells = line.split('\t');
 
             cells.forEach((cellValue, j) => {
                 const colIdx = startColIdx + j;
@@ -345,31 +478,26 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const goodId = editingGood ? editingGood.id : `rec-${Date.now()}`;
+        const goodId = editingGood ? editingGood.id : `rec-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const isCell = isTrackedCategory(formData.category, formData.uom);
 
-        // Only capture serials if category is Cell and UOM is 'qty'
         const validSerials = isCell
             ? serialEntries.map(e => e.serial.trim()).filter(s => s !== '')
             : [];
 
-        // Build persistent serialIndexMap: preserve existing indices, assign new ones for new serials
         let serialIndexMap: Record<string, number> = {};
         if (isCell && validSerials.length > 0) {
             const existingMap = editingGood?.serialIndexMap || {};
-            // Find the highest existing index to continue from
             const existingValues = Object.values(existingMap) as number[];
-            const maxExisting = existingValues.length > 0
-                ? Math.max(...existingValues)
-                : 0;
+            const maxExisting = existingValues.length > 0 ? Math.max(...existingValues) : 0;
             let nextIdx = maxExisting;
 
             validSerials.forEach(serial => {
                 if (existingMap[serial] !== undefined) {
-                    serialIndexMap[serial] = existingMap[serial]; // Preserve existing #
+                    serialIndexMap[serial] = existingMap[serial];
                 } else {
                     nextIdx++;
-                    serialIndexMap[serial] = nextIdx; // New serial gets next available #
+                    serialIndexMap[serial] = nextIdx;
                 }
             });
         }
@@ -383,17 +511,10 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             ? (editingGood.initialQuantity || localInitialMap[goodId] || editingGood.quantity || formData.quantity || 1)
             : (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (formData.quantity || 1));
 
-        // Sync to persistent localStorage maps
-        try {
-            const currentMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
-            currentMap[goodId] = Boolean(formData.isIgnoredForAlerts);
-            localStorage.setItem('dc_ignored_stock_alerts_map', JSON.stringify(currentMap));
-
-            localInitialMap[goodId] = initialQty;
-            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialMap));
-        } catch (e) {
-            console.warn('Failed to save stock map to localStorage', e);
-        }
+        // Date timestamp from invoiceDate or fallback to now
+        const batchTimestamp = formData.invoiceDate
+            ? new Date(formData.invoiceDate).getTime() || Date.now()
+            : (editingGood ? editingGood.timestamp : Date.now());
 
         // Prepare Received Good
         const newGood: ReceivedGood = {
@@ -402,18 +523,17 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             initialQuantity: initialQty,
             lowStockThresholdPercent: formData.lowStockThresholdPercent ?? 20,
             isIgnoredForAlerts: Boolean(formData.isIgnoredForAlerts),
-            timestamp: editingGood ? editingGood.timestamp : Date.now(),
+            timestamp: batchTimestamp,
             serials: validSerials,
             serialIndexMap: isCell ? serialIndexMap : undefined
         };
 
-        // Prepare Test Results (Only for Cells) — now includes grade/location for round-tripping
+        // Prepare Test Results (Only for Cells)
         const newTestResults: TestResult[] = [];
         if (isCell) {
             serialEntries.forEach(entry => {
                 if (!entry.serial) return;
 
-                // Check if there is any data to save (V/R/C or grade/location)
                 if (entry.voltage || entry.resistance || entry.capacity || entry.grade || entry.location) {
                     const safeSerial = entry.serial.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -435,10 +555,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         }
 
         if (editingGood) {
-            // DATA SAFETY #2: Check for removed serials BEFORE any state changes
-            // Cancel aborts the entire save — no changes made at all
             const removedSerials = isCell ? editingGood.serials.filter(s => !validSerials.includes(s)) : [];
-            let shouldDeleteOrphans = false;
             if (removedSerials.length > 0) {
                 const orphanedResults = testResults.filter(r => r.receivedGoodId === goodId && removedSerials.includes(r.serialNumber));
                 if (orphanedResults.length > 0) {
@@ -447,56 +564,29 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         `${orphanedResults.length} test result(s) with grading data exist for these serials.\n` +
                         `Click OK to proceed and delete orphaned test data, or Cancel to abort save.`
                     );
-                    if (!confirmRemove) return; // Cancel → abort the entire save, NO changes made
-                    shouldDeleteOrphans = true;
+                    if (!confirmRemove) return;
                 }
             }
 
-            setReceivedGoods(prev => prev.map(g => g.id === editingGood.id ? newGood : g));
+            setReceivedGoods(prev => prev.map(g => g.id === goodId ? newGood : g));
 
-            // --- MASTER DATA INTEGRITY CHECK ---
-            if (editingGood.name !== newGood.name && recipes && setRecipes) {
-                const affectedRecipes = recipes.filter(r =>
-                    r.components.some(c => c.masterItemName === editingGood.name)
-                );
-
-                if (affectedRecipes.length > 0) {
-                    const confirmUpdate = window.confirm(
-                        `You renamed '${editingGood.name}' to '${newGood.name}'.\n\n` +
-                        `This item is used in ${affectedRecipes.length} Product SKUs (e.g. ${affectedRecipes[0].name}).\n` +
-                        `Do you want to update these SKUs to use the new name automatically?`
-                    );
-
-                    if (confirmUpdate) {
-                        setRecipes(prevRecipes => prevRecipes.map(r => ({
-                            ...r,
-                            components: r.components.map(c =>
-                                c.masterItemName === editingGood.name
-                                    ? { ...c, masterItemName: newGood.name }
-                                    : c
-                            )
-                        })));
-                        addLogEntry('Master Data Update', `Auto-updated ${affectedRecipes.length} recipes due to item rename: ${editingGood.name} -> ${newGood.name}`);
-                    }
-                }
-            }
-            // -----------------------------------
-
-            // FIX #1: MERGE test results instead of destructive replace
             setTestResults(prev => {
-                let updated = [...prev];
+                let updated = removedSerials.length > 0
+                    ? prev.filter(r => !(r.receivedGoodId === goodId && removedSerials.includes(r.serialNumber)))
+                    : [...prev];
 
-                // If user confirmed orphan deletion, clean them out
-                if (shouldDeleteOrphans) {
-                    const orphanSet = new Set(removedSerials);
-                    updated = updated.filter(r => !(r.receivedGoodId === goodId && orphanSet.has(r.serialNumber)));
-                }
-
-                // Standard merge path — preserve existing fields not in the grid
                 newTestResults.forEach(newResult => {
-                    const idx = updated.findIndex(r => r.id === newResult.id);
-                    if (idx > -1) {
-                        updated[idx] = { ...updated[idx], ...newResult };
+                    const existingIndex = updated.findIndex(r => r.receivedGoodId === goodId && r.serialNumber === newResult.serialNumber);
+                    if (existingIndex >= 0) {
+                        updated[existingIndex] = {
+                            ...updated[existingIndex],
+                            ...newResult,
+                            voltage: newResult.voltage ?? updated[existingIndex].voltage,
+                            resistance: newResult.resistance ?? updated[existingIndex].resistance,
+                            capacity: newResult.capacity ?? updated[existingIndex].capacity,
+                            grade: newResult.grade ?? updated[existingIndex].grade,
+                            location: newResult.location ?? updated[existingIndex].location,
+                        };
                     } else {
                         updated.push(newResult);
                     }
@@ -504,35 +594,34 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 return updated;
             });
 
-            addLogEntry('Updated Raw Material', `Updated ${newGood.name}`);
+            addLogEntry('Updated Raw Material Batch', `Updated batch for ${newGood.name} (Invoice: ${newGood.invoiceNumber || 'N/A'})`);
         } else {
             setReceivedGoods(prev => [newGood, ...prev]);
             setTestResults(prev => [...prev, ...newTestResults]);
-            addLogEntry('Added Raw Material', `Registered ${newGood.quantity} of ${newGood.name}`);
+            addLogEntry('Added Raw Material Batch', `Added batch of ${newGood.quantity} units for ${newGood.name} (Invoice: ${newGood.invoiceNumber || 'N/A'})`);
         }
         setIsModalOpen(false);
     };
 
-    // DATA SAFETY #1: Delete confirmation shows exact count of test results that will be destroyed
     const handleDelete = () => {
         if (editingGood) {
             const affectedResults = testResults.filter(r => r.receivedGoodId === editingGood.id);
             const testedCount = affectedResults.filter(r => r.voltage || r.resistance || r.capacity || r.grade).length;
 
             const message = testedCount > 0
-                ? `Delete "${editingGood.name}"?\n\n⚠️ This will permanently destroy ${affectedResults.length} test result(s), including ${testedCount} with grading/test data.\n\nThis action cannot be undone.`
-                : `Delete "${editingGood.name}"?`;
+                ? `Delete batch "${editingGood.name}" (Invoice: ${editingGood.invoiceNumber || 'N/A'})?\n\n⚠️ This will remove ${affectedResults.length} test result(s) for this batch.\n\nThis action cannot be undone.`
+                : `Delete batch "${editingGood.name}"?`;
 
             if (confirm(message)) {
                 setReceivedGoods(prev => prev.filter(g => g.id !== editingGood.id));
                 setTestResults(prev => prev.filter(r => r.receivedGoodId !== editingGood.id));
-                addLogEntry('Deleted Raw Material', `Deleted ${editingGood.name} (${affectedResults.length} test results removed)`);
+                addLogEntry('Deleted Raw Material Batch', `Deleted batch for ${editingGood.name} (${editingGood.quantity} units)`);
                 setIsModalOpen(false);
             }
         }
     };
 
-    // CSV EXPORT: Export all inventory data with test results
+    // CSV Export
     const handleExportCsv = () => {
         const headers = ['Name', 'Category', 'Make/Model', 'Supplier', 'Invoice #', 'Quantity', 'UOM', 'Status', 'Date', 'Serial Number', '#', 'Voltage', 'Resistance (mΩ)', 'Capacity (Ah)', 'Grade', 'Location', 'Notes'];
         const rows: string[][] = [];
@@ -583,50 +672,29 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `inventory_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        link.download = `raw_materials_inventory_${new Date().toISOString().slice(0, 10)}.csv`;
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     };
 
-    // CSV TEMPLATE DOWNLOADER FOR INVENTORY
     const downloadInventoryCSVTemplate = () => {
         const csvContent = [
             'Item Name,Category,Make/Model,Supplier,Quantity,UOM,Damaged Count,Invoice Number,Serials,Low Stock Threshold %,Notes',
             'LFP 3.2V 100Ah Cell,Cell,EVE LF100,Sunergy Tech,100,qty,0,INV-9901,"SN1001, SN1002, SN1003",20,Batch A grade cells',
             'Smart BMS 24S 200A,BMS,JK-B2A24S20P,JK Power,50,qty,0,INV-9902,"BMS-01, BMS-02",20,Factory verified',
-            '5kW Solar Inverter,Inverter,Deye 5K,Deye Solar,10,qty,0,INV-9903,"INV-501",15,Heavy duty inverter'
+            'Nickel Strip 0.15*8mm,Nickel Strip,Pure Ni 99.9%,Apex Metals,500,grams,0,INV-9903,"",20,Spool roll'
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `inventory_import_template.csv`;
+        link.download = `raw_materials_template.csv`;
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-    };
-
-    // CSV PARSER & IMPORT HANDLERS FOR INVENTORY
-    const parseCSVLine = (line: string): string[] => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            if (char === '"') {
-                inQuotes = !inQuotes;
-            } else if (char === ',' && !inQuotes) {
-                result.push(current.trim());
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        result.push(current.trim());
-        return result;
     };
 
     const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -637,166 +705,82 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         reader.onload = (event) => {
             const text = event.target?.result as string;
             if (text) {
-                parseAndImportInventoryCSV(text);
+                const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+                if (lines.length < 2) {
+                    alert('CSV file must contain a header row and at least one data row.');
+                    return;
+                }
+
+                const importedGoods: ReceivedGood[] = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const row = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+                    if (!row[0]) continue;
+
+                    importedGoods.push({
+                        id: `csv-${Date.now()}-${i}`,
+                        name: row[0],
+                        category: row[1] || 'Other',
+                        makeModel: row[2] || '',
+                        supplier: row[3] || '',
+                        quantity: Number(row[4]) || 0,
+                        initialQuantity: Number(row[4]) || 0,
+                        uom: row[5] || 'qty',
+                        damagedCount: Number(row[6]) || 0,
+                        invoiceNumber: row[7] || '',
+                        serials: row[8] ? row[8].split(';').map(s => s.trim()).filter(Boolean) : [],
+                        lowStockThresholdPercent: Number(row[9]) || 20,
+                        notes: row[10] || 'actual physical qty = ',
+                        status: ReceivedGoodStatus.ND,
+                        timestamp: Date.now()
+                    });
+                }
+
+                if (importedGoods.length > 0) {
+                    setReceivedGoods(prev => [...importedGoods, ...prev]);
+                    addLogEntry('CSV Bulk Import', `Imported ${importedGoods.length} raw material items.`);
+                    alert(`Successfully imported ${importedGoods.length} items from CSV!`);
+                }
             }
         };
         reader.readAsText(file);
         e.target.value = '';
     };
 
-    const parseAndImportInventoryCSV = (csvText: string) => {
-        const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
-        if (lines.length < 2) {
-            alert('CSV file must contain a header row and at least one data row.');
-            return;
-        }
-
-        const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[^a-z0-9% ]/g, ''));
-        
-        const getColIdx = (possibleNames: string[]) => {
-            return headers.findIndex(h => possibleNames.some(p => h.includes(p.toLowerCase())));
-        };
-
-        const idxName = getColIdx(['item name', 'name', 'product name', 'material']);
-        const idxCategory = getColIdx(['category', 'cat', 'type']);
-        const idxMakeModel = getColIdx(['make/model', 'make', 'model']);
-        const idxSupplier = getColIdx(['supplier', 'vendor']);
-        const idxQty = getColIdx(['quantity', 'qty', 'stock']);
-        const idxUom = getColIdx(['uom', 'unit']);
-        const idxDamaged = getColIdx(['damaged count', 'damaged']);
-        const idxInvoice = getColIdx(['invoice number', 'invoice', 'invoice #']);
-        const idxSerials = getColIdx(['serials', 'serial numbers', 'serial']);
-        const idxThreshold = getColIdx(['low stock threshold', 'threshold', 'alert limit', '%']);
-        const idxNotes = getColIdx(['notes', 'comments']);
-
-        if (idxName === -1) {
-            alert('Could not find required "Item Name" column header in CSV file.');
-            return;
-        }
-
-        let initialMap: Record<string, number> = {};
-        try {
-            initialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
-        } catch (e) {}
-
-        const newGoods: ReceivedGood[] = [];
-
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-
-            const cols = parseCSVLine(line);
-            const itemName = cols[idxName] || '';
-            if (!itemName) continue;
-
-            const category = idxCategory !== -1 && cols[idxCategory] ? cols[idxCategory] : 'Other';
-            const makeModel = idxMakeModel !== -1 ? cols[idxMakeModel] : '';
-            const supplier = idxSupplier !== -1 ? cols[idxSupplier] : '';
-            const quantity = idxQty !== -1 ? Math.max(0, parseFloat(cols[idxQty]) || 0) : 0;
-            const uom = idxUom !== -1 && cols[idxUom] ? cols[idxUom].toLowerCase() : 'qty';
-            const damagedCount = idxDamaged !== -1 ? Math.max(0, parseInt(cols[idxDamaged]) || 0) : 0;
-            const invoiceNumber = idxInvoice !== -1 ? cols[idxInvoice] : '';
-            
-            let serials: string[] = [];
-            if (idxSerials !== -1 && cols[idxSerials]) {
-                serials = cols[idxSerials]
-                    .split(/[,;\n]/)
-                    .map(s => s.trim().replace(/^["']|["']$/g, ''))
-                    .filter(s => s.length > 0);
-            }
-
-            const lowStockThresholdPercent = idxThreshold !== -1 ? Math.min(100, Math.max(0, parseFloat(cols[idxThreshold]) || 20)) : 20;
-            const notes = idxNotes !== -1 ? cols[idxNotes] : 'Imported via CSV';
-
-            const id = crypto.randomUUID();
-            
-            const serialIndexMap: Record<string, number> = {};
-            serials.forEach((s, index) => {
-                serialIndexMap[s] = index + 1;
-            });
-
-            initialMap[id] = quantity;
-
-            const newGood: ReceivedGood = {
-                id,
-                name: itemName,
-                category,
-                makeModel,
-                supplier,
-                quantity,
-                initialQuantity: quantity,
-                uom,
-                lowStockThresholdPercent,
-                status: ReceivedGoodStatus.ND,
-                damagedCount,
-                invoiceNumber,
-                serials,
-                serialIndexMap,
-                timestamp: Date.now(),
-                notes
-            };
-
-            newGoods.push(newGood);
-        }
-
-        if (newGoods.length === 0) {
-            alert('No valid inventory item rows were found in the uploaded CSV.');
-            return;
-        }
-
-        try {
-            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(initialMap));
-        } catch (e) {}
-
-        setReceivedGoods(prev => [...newGoods, ...prev]);
-        addLogEntry('Imported Inventory CSV', `Imported ${newGoods.length} raw material items into Inventory Stock.`);
-        alert(`Successfully imported ${newGoods.length} inventory items!`);
-    };
-
     return (
-        <div className="max-w-7xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
+        <div className="space-y-6">
+            {/* Top Header Actions */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
                 <div>
-                    <h1 className="text-3xl font-black text-[#0D0D0D] tracking-tight">Inventory Stock</h1>
-                    <p className="text-sm text-[#404040] mt-1 font-medium">Manage raw materials and tracked components.</p>
+                    <h2 className="text-xl font-bold text-[#0D0D0D] tracking-tight font-brand flex items-center gap-2">
+                        <span>📦</span>
+                        <span>Raw Materials & Component Stock</span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Consolidated Master SKUs with inward batch history, invoice links, and cell tracking.
+                    </p>
                 </div>
-                <div className="flex items-center space-x-3">
-                    <button onClick={handleCreateNew} className="flex items-center bg-[#8EBF45] text-[#0D0D0D] px-6 py-2.5 rounded-xl shadow-lg hover:bg-[#658C3E] hover:text-white transition-all transform active:scale-95 font-bold uppercase tracking-widest text-xs">
-                        <PlusIcon /> <span className="ml-2">Register Item</span>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleCSVFileChange}
+                        accept=".csv"
+                        className="hidden"
+                    />
+
+                    <button
+                        onClick={handleCreateNewMaster}
+                        className="px-4 py-2 bg-[#8EBF45] text-[#0D0D0D] hover:bg-[#658C3E] hover:text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md transition-all flex items-center gap-1.5"
+                    >
+                        <PlusIcon className="w-4 h-4" />
+                        <span>Register Master Item</span>
                     </button>
-                    <input type="file" ref={fileInputRef} onChange={handleCSVFileChange} className="hidden" accept=".csv,text/csv" />
-                </div>
-            </div>
 
-            {/* UNIFORM CSV CONTROL BAR */}
-            <div className="mb-6 bg-slate-900 text-slate-100 rounded-2xl p-4 border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-md no-print">
-                <div className="flex items-start gap-3">
-                    <span className="text-xl">📄</span>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-amber-400 uppercase tracking-wider">Required CSV Headers:</span>
-                        </div>
-                        <p className="text-[11px] font-mono text-slate-300 mt-1 leading-relaxed flex flex-wrap gap-1.5 items-center">
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Item Name</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Category</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Make/Model</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Supplier</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Quantity</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">UOM</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Damaged Count</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Invoice Number</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Serials</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Low Stock Threshold %</span>
-                            <span className="bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">Notes</span>
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
                     <button
                         onClick={handleExportCsv}
-                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
-                        title="Export current inventory list as CSV"
+                        className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-all flex items-center gap-1.5 shadow-2xs"
+                        title="Export all inventory stock to CSV"
                     >
                         <Download size={14} />
                         <span>Export CSV</span>
@@ -804,15 +788,15 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                     <button
                         onClick={downloadInventoryCSVTemplate}
-                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+                        className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shadow-2xs"
                         title="Download sample CSV template with proper headers"
                     >
-                        <span>💾 Download Template CSV</span>
+                        <span>💾 Template CSV</span>
                     </button>
 
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs whitespace-nowrap flex items-center gap-1.5"
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
                         title="Import inventory stock from CSV file"
                     >
                         <span>📥 Import CSV</span>
@@ -820,32 +804,33 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 </div>
             </div>
 
-            <div className="mb-4 relative group">
+            {/* Search Bar */}
+            <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-[#8EBF45] transition-colors">
                     <SearchIcon className="h-5 w-5" />
                 </div>
                 <input
                     type="text"
-                    placeholder="Filter by name, make, supplier or invoice..."
-                    className="block w-full p-4 pl-12 border-2 border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:border-[#8EBF45] focus:ring-4 focus:ring-[#8EBF45]/10 transition-all text-[#404040]"
+                    placeholder="Search master items by name, model, supplier, invoice #, or serial..."
+                    className="block w-full p-4 pl-12 border-2 border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:border-[#8EBF45] focus:ring-4 focus:ring-[#8EBF45]/10 transition-all text-slate-900 bg-white text-sm"
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                 />
             </div>
 
-            {/* Category Filters */}
-            <div className="mb-8 flex flex-wrap gap-2">
+            {/* Category Filters Ribbon */}
+            <div className="flex flex-wrap gap-2 items-center">
                 <button
                     onClick={() => setSelectedCategory('All')}
                     className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all ${selectedCategory === 'All' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                 >
-                    All
+                    All ({masterGroupedGoods.length})
                 </button>
                 {CATEGORIES.map(cat => (
                     <button
                         key={cat}
                         onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all ${selectedCategory === cat ? 'bg-[#8EBF45] text-[#0D0D0D] border-[#8EBF45] shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                        className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all ${selectedCategory === cat ? 'bg-[#8EBF45] text-[#0D0D0D] border-[#8EBF45] shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                     >
                         {cat}
                     </button>
@@ -853,7 +838,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 <div className="w-px h-6 bg-slate-200 mx-1"></div>
                 <button
                     onClick={() => setFilterNotes(!filterNotes)}
-                    className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all flex items-center gap-1.5 ${filterNotes ? 'bg-amber-400 text-amber-900 border-amber-400 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                    className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all flex items-center gap-1.5 ${filterNotes ? 'bg-amber-400 text-amber-900 border-amber-400 shadow-sm font-bold' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                 >
                     📝 Has Notes
                 </button>
@@ -871,196 +856,331 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredGoods.map(good => {
-                    const isTracked = isTrackedCategory(good.category);
-                    const progress = isTracked && good.serials.length > 0 ? Math.min(100, Math.round((good.serials.length / good.quantity) * 100)) : 0;
-                    const stockAlert = getItemStockAlertInfo(good);
+            {/* Consolidated Master Item Cards Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {filteredMasterGoods.length === 0 ? (
+                    <div className="col-span-full bg-white p-12 rounded-2xl border border-slate-100 text-center text-slate-400 text-sm italic">
+                        No raw materials match the current filters. Click "Register Master Item" or adjust your search query.
+                    </div>
+                ) : (
+                    filteredMasterGoods.map(master => {
+                        const isExpanded = expandedMasterKeys.has(master.masterKey);
+                        const isTracked = isTrackedCategory(master.category, master.uom);
 
-                    return (
-                        <div key={good.id} className={`relative bg-white rounded-2xl shadow-sm hover:shadow-xl p-6 flex flex-col border transition-all duration-300 ${
-                            stockAlert.isOutOfStock 
-                                ? 'border-rose-300 bg-rose-50/10' 
-                                : stockAlert.isLowStock 
-                                    ? 'border-amber-300 bg-amber-50/10' 
-                                    : 'border-slate-200'
-                        }`}>
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        <div className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${statusInfo[good.status].color}`}>
-                                            {statusInfo[good.status].text}
-                                        </div>
-                                        <div className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                                            Unit: {good.uom || 'qty'}
-                                        </div>
-                                    </div>
-                                    {good.isIgnoredForAlerts ? (
-                                        <div className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600 w-fit">
-                                            🚫 DO NOT REPLENISH
-                                        </div>
-                                    ) : stockAlert.isLowStock && (
-                                        <div className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border w-fit ${
-                                            stockAlert.isOutOfStock 
-                                                ? 'bg-rose-100 text-rose-800 border-rose-200' 
-                                                : 'bg-amber-100 text-amber-900 border-amber-300 animate-pulse'
-                                        }`}>
-                                            {stockAlert.isOutOfStock ? '🚫 OUT OF STOCK' : `⚠️ LOW STOCK (${stockAlert.thresholdPercent}%)`}
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setOpenNoteId(openNoteId === good.id ? null : good.id); }}
-                                        className={`relative p-1 rounded-md transition-all text-sm ${(good.notes && good.notes !== 'actual physical qty = ')
-                                            ? 'text-amber-500 hover:bg-amber-50'
-                                            : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50'
-                                            }`}
-                                        title="Open note"
-                                    >
-                                        📝
-                                        {good.notes && good.notes !== 'actual physical qty = ' && (
-                                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-400 rounded-full"></span>
-                                        )}
-                                    </button>
-                                    <span className="text-[10px] font-bold text-slate-300">{new Date(good.timestamp).toLocaleDateString()}</span>
-                                </div>
-                            </div>
-
-                            {/* Sticky Note Popup */}
-                            {openNoteId === good.id && (
-                                <div className="absolute top-12 right-4 z-50 w-64 animate-in" style={{ animation: 'fadeIn 0.15s ease-out' }}>
-                                    <div className="bg-amber-50 border-2 border-amber-200 rounded-xl shadow-2xl p-4" style={{ boxShadow: '4px 4px 15px rgba(0,0,0,0.15)' }}>
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">📌 Note</span>
-                                            <button onClick={() => setOpenNoteId(null)} className="text-amber-400 hover:text-amber-600 text-xs font-bold p-1">✕</button>
-                                        </div>
-                                        <textarea
-                                            className="w-full bg-transparent border-none outline-none text-sm text-amber-900 resize-none placeholder-amber-300"
-                                            rows={3}
-                                            placeholder="actual physical qty = "
-                                            value={good.notes ?? 'actual physical qty = '}
-                                            onChange={(e) => {
-                                                setReceivedGoods(prev => prev.map(g => g.id === good.id ? { ...g, notes: e.target.value } : g));
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                            autoFocus
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex-1">
-                                <h3 className="font-bold text-xl text-[#0D0D0D] leading-tight mb-1 flex items-center justify-between">
-                                    <span>{good.name}</span>
-                                    <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200 font-mono">
-                                        {good.uom || 'qty'}
-                                    </span>
-                                </h3>
-                                <p className="text-xs text-[#658C3E] font-black uppercase tracking-widest">{good.makeModel}</p>
-                                <div className="mt-4 flex justify-between items-end border-t border-slate-50 pt-4">
-                                    <div>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Supplier</p>
-                                        <p className="text-sm font-bold text-[#404040] truncate max-w-[120px]">{good.supplier}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Available</p>
-                                        <p className={`text-2xl font-black ${good.quantity === 0 ? 'text-red-500' : 'text-[#8EBF45]'}`}>
-                                            {good.quantity} <span className="text-xs font-bold text-slate-600 uppercase font-mono">{good.uom || 'qty'}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-6 space-y-4">
+                        return (
+                            <div
+                                key={master.masterKey}
+                                className={`bg-white rounded-2xl shadow-sm hover:shadow-md border p-6 flex flex-col justify-between transition-all duration-200 ${
+                                    master.isOutOfStock
+                                        ? 'border-rose-300 bg-rose-50/10'
+                                        : master.isLowStock
+                                        ? 'border-amber-300 bg-amber-50/10'
+                                        : 'border-slate-200'
+                                }`}
+                            >
+                                {/* Master Card Top Header */}
                                 <div>
-                                    <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                                        <span>{isTracked ? 'Tracked Serials' : 'Stock Level'}</span>
-                                        <span className="text-[#658C3E]">{isTracked ? `${good.serials.length} / ${good.quantity} ${good.uom || 'qty'}` : `${good.quantity} ${good.uom || 'qty'}`}</span>
+                                    <div className="flex justify-between items-start gap-2 mb-3">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md bg-[#8EBF45]/20 text-[#658C3E] border border-[#8EBF45]/40">
+                                                {master.category}
+                                            </span>
+                                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                                Unit: {master.uom}
+                                            </span>
+                                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-blue-50 text-blue-800 border border-blue-200">
+                                                📦 {master.batches.length} Inward {master.batches.length === 1 ? 'Batch' : 'Batches'}
+                                            </span>
+                                        </div>
+
+                                        {/* Status / Alert Indicator */}
+                                        <div className="flex items-center gap-2">
+                                            {master.isIgnoredForAlerts ? (
+                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600">
+                                                    🚫 DO NOT REPLENISH
+                                                </span>
+                                            ) : master.isOutOfStock ? (
+                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-rose-100 text-rose-800 border border-rose-200">
+                                                    🚫 OUT OF STOCK
+                                                </span>
+                                            ) : master.isLowStock ? (
+                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                                    ⚠️ LOW STOCK ({master.lowStockThresholdPercent}%)
+                                                </span>
+                                            ) : null}
+
+                                            <button
+                                                onClick={() => handleToggleIgnoreReplenish(master.masterKey, master.isIgnoredForAlerts)}
+                                                className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${
+                                                    master.isIgnoredForAlerts ? 'bg-slate-800 text-amber-300 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                                title={master.isIgnoredForAlerts ? "Click to re-enable alerts" : "Click to silence stock alerts"}
+                                            >
+                                                {master.isIgnoredForAlerts ? '🔕 Silenced' : '🔔 Alert On'}
+                                            </button>
+                                        </div>
                                     </div>
+
+                                    {/* Master Item Title & Specs */}
+                                    <div className="mb-4">
+                                        <h3 className="font-bold text-lg text-slate-900 leading-tight">
+                                            {master.name}
+                                        </h3>
+
+                                        {master.makeModels.length > 0 && (
+                                            <p className="text-xs text-[#658C3E] font-black uppercase tracking-wider mt-1">
+                                                {master.makeModels.join(' • ')}
+                                            </p>
+                                        )}
+
+                                        {master.suppliers.length > 0 && (
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                <span className="font-bold text-slate-600">Suppliers: </span>
+                                                <span>{master.suppliers.join(', ')}</span>
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Total Stock on Hand Counter */}
+                                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between my-3">
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Plant Stock on Hand</p>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">Across {master.batches.length} inward shipments</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-2xl font-black font-mono ${
+                                                master.totalQuantity === 0 ? 'text-red-500' : 'text-[#658C3E]'
+                                            }`}>
+                                                {master.totalQuantity.toLocaleString('en-IN')}
+                                            </span>
+                                            <span className="text-xs font-bold text-slate-600 uppercase font-mono ml-1">
+                                                {master.uom}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Tracked serials progress if Cell */}
                                     {isTracked && (
-                                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
-                                            <div className={`h-full transition-all duration-500 rounded-full ${progress === 100 ? 'bg-[#8EBF45]' : 'bg-[#658C3E]'}`} style={{ width: `${progress}%` }}></div>
+                                        <div className="my-3 text-xs flex justify-between items-center text-slate-600">
+                                            <span className="font-bold text-slate-500">Tracked Cell Serials:</span>
+                                            <span className="font-mono font-bold text-[#658C3E]">
+                                                {master.totalSerials} / {master.totalQuantity} {master.uom}
+                                            </span>
                                         </div>
                                     )}
-                                    {!isTracked && (
-                                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
-                                            <div className="h-full bg-slate-300 w-full rounded-full"></div>
-                                        </div>
-                                    )}
+
+                                    {/* Expandable Inward Batch History Section */}
+                                    <div className="mt-4 border-t border-slate-100 pt-3">
+                                        <button
+                                            onClick={() => toggleExpandMaster(master.masterKey)}
+                                            className="w-full flex items-center justify-between text-xs font-black text-slate-700 hover:text-slate-900 py-1"
+                                        >
+                                            <span className="flex items-center gap-1.5">
+                                                <span>📋</span>
+                                                <span>Inward Batches & Invoices ({master.batches.length})</span>
+                                            </span>
+                                            <span className="text-slate-400 font-mono text-[11px]">
+                                                {isExpanded ? '▲ Hide History' : '▼ View History'}
+                                            </span>
+                                        </button>
+
+                                        {isExpanded && (
+                                            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                                                {master.batches.map((batch, bIdx) => (
+                                                    <div
+                                                        key={batch.id || bIdx}
+                                                        className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-400 transition-all text-xs"
+                                                    >
+                                                        <div className="flex justify-between items-start gap-2">
+                                                            <div className="space-y-0.5 flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-mono font-black text-slate-900">
+                                                                        #{bIdx + 1}
+                                                                    </span>
+                                                                    <span className="font-bold text-slate-800 truncate">
+                                                                        {batch.invoiceNumber ? `Invoice: ${batch.invoiceNumber}` : 'Manual Entry'}
+                                                                    </span>
+                                                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                                                                        statusInfo[batch.status]?.color || 'bg-slate-100 text-slate-700'
+                                                                    }`}>
+                                                                        {statusInfo[batch.status]?.text || batch.status}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3">
+                                                                    <span>📅 {new Date(batch.timestamp).toLocaleDateString()}</span>
+                                                                    {batch.supplier && <span>🏢 {batch.supplier}</span>}
+                                                                    {batch.makeModel && <span>🏷️ {batch.makeModel}</span>}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <div className="text-right font-mono">
+                                                                    <span className="font-black text-slate-900 text-sm">
+                                                                        {batch.quantity}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-500 ml-0.5">
+                                                                        {batch.uom || master.uom}
+                                                                    </span>
+                                                                </div>
+
+                                                                <button
+                                                                    onClick={() => handleEditBatch(batch)}
+                                                                    className="p-1.5 text-slate-400 hover:text-[#658C3E] hover:bg-slate-100 rounded-lg transition-colors"
+                                                                    title="Edit this batch entry"
+                                                                >
+                                                                    <PencilIcon />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex gap-2 justify-end items-center">
-                                    <button 
-                                        onClick={() => handleToggleIgnoreReplenish(good)} 
-                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
-                                            good.isIgnoredForAlerts
-                                                ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-                                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                                        }`}
-                                        title={good.isIgnoredForAlerts ? "Click to re-enable low stock alerts" : "Click to ignore / mark as do not replenish"}
+
+                                {/* Card Bottom Actions Bar */}
+                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                                    <button
+                                        onClick={() => handleAddBatchToMaster(master)}
+                                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
+                                        title="Add new inward shipment / invoice batch to this master item"
                                     >
-                                        {good.isIgnoredForAlerts ? '🚫 Ignored' : '🔔 Alert On'}
+                                        <PlusIcon className="w-3.5 h-3.5" />
+                                        <span>Add Inward Batch</span>
                                     </button>
-                                    <button onClick={() => handleEditClick(good)} className="p-2.5 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-xl transition-all"><PencilIcon /></button>
+
+                                    {isTracked && setView && (
+                                        <button
+                                            onClick={() => setView('testing')}
+                                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                                            title="Open Cell Testing for this master item"
+                                        >
+                                            <span>🧪 Test Cells</span>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })
+                )}
             </div>
 
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingGood ? "Edit Record" : "Register Stock"} size="xl">
+            {/* Modal for Registering Master Item / Inward Batch */}
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                title={
+                    editingGood
+                        ? `Edit Inward Batch (${editingGood.name})`
+                        : inwardBatchMasterTarget
+                        ? `➕ Add Inward Batch to [${inwardBatchMasterTarget.name}]`
+                        : "Register New Master Raw Material"
+                }
+                size="xl"
+            >
                 <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="col-span-2">
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Item Name</label>
-                            <input type="text" list="item-names" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none font-semibold text-sm" required placeholder="e.g. 32700 6000mAh Cell" />
-                            <datalist id="item-names">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="col-span-full">
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Master Item Name</label>
+                            <input
+                                type="text"
+                                list="item-names-received"
+                                value={formData.name}
+                                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                disabled={Boolean(inwardBatchMasterTarget)}
+                                className={`w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none font-semibold text-sm ${
+                                    inwardBatchMasterTarget ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                                }`}
+                                required
+                                placeholder="e.g. 32700 LiFePO4 Cell 6000mAh"
+                            />
+                            <datalist id="item-names-received">
                                 {Array.from(new Set(receivedGoods.map(g => g.name))).map(n => <option key={n} value={n} />)}
                             </datalist>
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Category</label>
-                            <input type="text" list="categories" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm" required />
-                            <datalist id="categories">
+                            <input
+                                type="text"
+                                list="categories-received"
+                                value={formData.category}
+                                onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                disabled={Boolean(inwardBatchMasterTarget)}
+                                className={`w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm ${
+                                    inwardBatchMasterTarget ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
+                                }`}
+                                required
+                            />
+                            <datalist id="categories-received">
                                 {CATEGORIES.map(c => <option key={c} value={c} />)}
                             </datalist>
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Make / Model</label>
-                            <input type="text" value={formData.makeModel} onChange={e => setFormData({ ...formData, makeModel: e.target.value })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm" placeholder="e.g. EVE" />
+                            <input
+                                type="text"
+                                value={formData.makeModel}
+                                onChange={e => setFormData({ ...formData, makeModel: e.target.value })}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white"
+                                placeholder="e.g. EVE LF100 Grade A"
+                            />
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Supplier</label>
-                            <select 
-                                value={formData.supplier} 
-                                onChange={e => handleSupplierChange(e.target.value)} 
-                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white"
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Supplier / Vendor</label>
+                            <select
+                                value={formData.supplier}
+                                onChange={e => handleSupplierChange(e.target.value)}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold"
                             >
                                 <option value="">Select Supplier</option>
                                 {companyProfiles.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                                <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New...</option>
+                                <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New Company...</option>
                             </select>
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Invoice Number</label>
-                            <input type="text" value={formData.invoiceNumber} onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm" />
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Invoice / Bill Number</label>
+                            <input
+                                type="text"
+                                value={formData.invoiceNumber}
+                                onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-mono"
+                                placeholder="INV-2026-001"
+                            />
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Quantity</label>
-                            <input type="number" min="0" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: parseInt(e.target.value) })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm font-bold" required />
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Invoice / Inward Date</label>
+                            <input
+                                type="date"
+                                value={formData.invoiceDate}
+                                onChange={e => setFormData({ ...formData, invoiceDate: e.target.value })}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-mono"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Batch Quantity</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={formData.quantity}
+                                onChange={e => setFormData({ ...formData, quantity: parseInt(e.target.value) || 0 })}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm font-bold bg-white"
+                                required
+                            />
                         </div>
 
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Unit of Measurement (UOM)</label>
-                            <select 
-                                value={formData.uom || 'qty'} 
-                                onChange={e => setFormData({ ...formData, uom: e.target.value })} 
+                            <select
+                                value={formData.uom || 'qty'}
+                                onChange={e => setFormData({ ...formData, uom: e.target.value })}
                                 className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold text-slate-800"
                             >
                                 <option value="qty">qty (Quantity / Pcs)</option>
@@ -1070,8 +1190,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Status</label>
-                            <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })} className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white">
+                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">QC Status</label>
+                            <select
+                                value={formData.status}
+                                onChange={e => setFormData({ ...formData, status: e.target.value as any })}
+                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold"
+                            >
                                 {Object.entries(statusInfo).map(([key, info]) => (
                                     <option key={key} value={key}>{info.text}</option>
                                 ))}
@@ -1081,17 +1205,17 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                     {/* Notes */}
                     <div className="mt-4">
-                        <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Notes</label>
+                        <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Batch Inspection Notes</label>
                         <textarea
                             value={formData.notes ?? 'actual physical qty = '}
                             onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                            className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm resize-none"
+                            className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm resize-none bg-white"
                             rows={2}
                             placeholder="actual physical qty = "
                         />
                     </div>
 
-                    {/* Low Stock Alert Safety Threshold */}
+                    {/* Low Stock Safety Threshold */}
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 mt-4">
                         <div className="flex justify-between items-center">
                             <label className="block text-xs font-bold text-[#205f64] uppercase tracking-wider font-brand">
@@ -1122,11 +1246,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                 <span className="text-xs font-bold text-slate-600">%</span>
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-500 font-medium">
-                            Triggers alert on Home Dashboard when stock drops below <strong>{Math.round(((formData.initialQuantity || formData.quantity || 0) * (formData.lowStockThresholdPercent ?? 20)) / 100)}</strong> units ({formData.lowStockThresholdPercent ?? 20}% of original entry quantity).
-                        </p>
 
-                        {/* Ignore / Do Not Replenish Toggle */}
+                        {/* Ignore Replenishment Toggle */}
                         <div className="pt-2.5 border-t border-slate-200 mt-2 flex items-center justify-between">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
@@ -1147,8 +1268,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         </div>
                     </div>
 
-                    {/* Serial Number & Test Data Management - ONLY FOR CELLS */}
-                    {isTrackedCategory(formData.category) && (
+                    {/* Serial Numbers for Cells */}
+                    {isTrackedCategory(formData.category, formData.uom) && (
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="text-sm font-bold text-slate-700 uppercase">Serials & Test Data</h3>
@@ -1226,39 +1347,26 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                                 </td>
                                             </tr>
                                         ))}
-                                        {serialEntries.length === 0 && (
-                                            <tr>
-                                                <td colSpan={5} className="p-4 text-center text-slate-400 italic">
-                                                    Set quantity to initialize grid rows.
-                                                </td>
-                                            </tr>
-                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     )}
 
-                    {!isTrackedCategory(formData.category) && formData.category && (
-                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl text-blue-800 text-sm">
-                            <strong>Bulk Item Tracking:</strong> Serial number tracking is disabled for '{formData.category}'.
-                            Items will be tracked by quantity only.
-                        </div>
-                    )}
-
                     <div className="flex justify-between pt-4 border-t border-slate-100">
                         {editingGood ? (
                             <button type="button" onClick={handleDelete} className="text-red-500 hover:text-red-700 text-xs font-bold flex items-center px-2">
-                                <Trash2 size={16} className="mr-1" /> Delete Record
+                                <Trash2 size={16} className="mr-1" /> Delete Batch
                             </button>
                         ) : <div></div>}
 
                         <button type="submit" className="bg-[#8EBF45] text-[#0D0D0D] px-8 py-2.5 rounded-lg hover:bg-[#658C3E] hover:text-white transition-all font-black uppercase tracking-widest text-xs shadow-lg active:scale-95">
-                            {editingGood ? 'Update Record' : 'Save Record'}
+                            {editingGood ? 'Update Batch' : 'Save Batch'}
                         </button>
                     </div>
                 </form>
             </Modal>
+
             {/* Add Company Modal with Iframe */}
             {isAddCompanyModalOpen && (
                 <div 
