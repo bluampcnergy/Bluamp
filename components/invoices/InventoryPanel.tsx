@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ExtractedInvoice, InvoiceItem } from '../../types';
 import { Package, Trash2, CheckCircle, AlertCircle, RefreshCw, Plus, ArrowRight, Loader2 } from './Icons';
 import { supabase } from '../../supabaseClient';
+import { findSimilarStockItems, StockItemMatch, normalizeText } from '../../utils/textMatcher';
 
 interface InventoryPanelProps {
   data: ExtractedInvoice;
@@ -46,11 +47,12 @@ interface StockItemRow {
 
 const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView, addLogEntry }) => {
   const [items, setItems] = useState<StockItemRow[]>([]);
-  const [stockSummaryMap, setStockSummaryMap] = useState<Record<string, { totalQty: number; uom?: string; makeModel?: string; category?: string }>>({});
+  const [stockSummaryMap, setStockSummaryMap] = useState<Record<string, { name: string; totalQty: number; uom?: string; makeModel?: string; category?: string }>>({});
   const [existingItemNames, setExistingItemNames] = useState<string[]>([]);
   const [isLoadingStock, setIsLoadingStock] = useState(false);
   const [isSyncingStock, setIsSyncingStock] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+  const [copiedItemIdx, setCopiedItemIdx] = useState<number | null>(null);
 
   // Fetch full inventory from received_goods to compute live stock quantities
   const fetchStockData = async () => {
@@ -61,7 +63,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
         .select('name, category, makeModel, quantity, uom');
 
       if (!error && rgData) {
-        const map: Record<string, { totalQty: number; uom?: string; makeModel?: string; category?: string }> = {};
+        const map: Record<string, { name: string; totalQty: number; uom?: string; makeModel?: string; category?: string }> = {};
         const namesSet = new Set<string>();
 
         rgData.forEach((rg: any) => {
@@ -73,6 +75,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
 
           if (!map[key]) {
             map[key] = {
+              name: rawName,
               totalQty: qty,
               uom: rg.uom || 'qty',
               makeModel: rg.makeModel,
@@ -178,6 +181,29 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
     });
   };
 
+  // Apply suggested master stock name to the item row
+  const handleApplySuggestedName = (index: number, match: StockItemMatch) => {
+    setItems(prev => {
+      const next = [...prev];
+      const current = { ...next[index] };
+      current.name = match.name;
+      current.currentStock = match.currentStock;
+      if (match.category) current.category = match.category;
+      if (match.makeModel) current.make_model = match.makeModel;
+      if (match.uom) current.uom = match.uom;
+      current.projectedStock = (current.currentStock || 0) + (current.includeInStock ? (Number(current.quantity) || 0) : 0);
+      next[index] = current;
+      syncToParent(next);
+      return next;
+    });
+  };
+
+  const copyToClipboard = (text: string, idx: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedItemIdx(idx);
+    setTimeout(() => setCopiedItemIdx(null), 2500);
+  };
+
   // Direct sync items to received_goods in Supabase
   const handleSyncToRawMaterials = async () => {
     const itemsToSync = items.filter(it => it.includeInStock && !it.isSynced && it.quantity > 0);
@@ -233,8 +259,6 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
     .filter(i => i.includeInStock && !i.isSynced)
     .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
 
-  const syncedCount = items.filter(i => i.isSynced).length;
-
   return (
     <div className="space-y-6">
       {/* Header & Quick Action Bar */}
@@ -248,7 +272,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
             {isLoadingStock && <Loader2 className="animate-spin text-slate-400" size={14} />}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Verify extracted items, match against Master Raw Material SKUs, and view live plant stock.
+            Deterministic fuzzy matching suggests existing master stock names to keep plant inventory uniform.
           </p>
         </div>
 
@@ -297,7 +321,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
         </div>
       )}
 
-      {/* Stock Cards / Items Table */}
+      {/* Stock Cards / Items List */}
       <div className="space-y-4">
         {items.length === 0 ? (
           <div className="bg-white p-8 rounded-2xl border border-slate-100 text-center text-slate-400 text-xs italic">
@@ -306,6 +330,11 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
         ) : (
           items.map((item, idx) => {
             const hasStock = item.currentStock > 0;
+            const isExactMatch = Boolean(stockSummaryMap[item.name.toLowerCase().trim()]);
+            const suggestions = findSimilarStockItems(item.name, stockSummaryMap, 4, 25);
+            // Filter out exact duplicate if already matched
+            const nonExactSuggestions = suggestions.filter(s => normalizeText(s.name) !== normalizeText(item.name));
+
             return (
               <div
                 key={idx}
@@ -317,21 +346,38 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
                     : 'border-slate-100 opacity-75 bg-slate-50/50'
                 }`}
               >
-                {/* Card Header: Item Name, Category, Stock Status Badge */}
+                {/* Card Header: Item Name, Copy Name Button, Status Badge */}
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-black flex items-center justify-center shrink-0">
                         {idx + 1}
                       </span>
-                      <input
-                        list="master-names-list"
-                        className="font-black text-sm text-slate-900 bg-transparent border-b border-dashed border-slate-300 hover:border-slate-500 focus:border-[#658C3E] outline-none w-full max-w-md py-0.5"
-                        value={item.name}
-                        onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
-                        placeholder="Master Item SKU Name..."
-                      />
+                      <div className="flex-1 flex items-center gap-1.5 max-w-xl">
+                        <input
+                          list="master-names-list"
+                          className="font-black text-sm text-slate-900 bg-transparent border-b border-dashed border-slate-300 hover:border-slate-500 focus:border-[#658C3E] outline-none w-full py-0.5"
+                          value={item.name}
+                          onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
+                          placeholder="Master Item SKU Name..."
+                        />
+                        <button
+                          onClick={() => copyToClipboard(item.name, idx)}
+                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded text-xs transition-colors shrink-0"
+                          title="Copy Item Name"
+                        >
+                          {copiedItemIdx === idx ? '✓ Copied' : '📋'}
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Exact Master Match confirmation indicator */}
+                    {isExactMatch && (
+                      <div className="flex items-center gap-1.5 mt-1.5 ml-7 text-[11px] font-bold text-emerald-700">
+                        <CheckCircle size={13} />
+                        <span>Exact Master SKU Match in Plant Inventory</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Sync Status Badge */}
@@ -364,6 +410,55 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
                     </button>
                   </div>
                 </div>
+
+                {/* Non-AI Similar Stock Item Recommendations */}
+                {nonExactSuggestions.length > 0 && (
+                  <div className="mt-3 p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl animate-fade-in">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[11px] font-black text-amber-900 flex items-center gap-1.5">
+                        <span>🔍</span>
+                        <span>Similar Items Existing in Stock ({nonExactSuggestions.length} found):</span>
+                      </span>
+                      <span className="text-[10px] text-amber-700 font-medium hidden sm:inline">
+                        Click a pill to import with that exact master name
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {nonExactSuggestions.map((rec, rIdx) => (
+                        <div
+                          key={rIdx}
+                          className="flex items-center gap-1 bg-white border border-amber-200 hover:border-amber-400 hover:shadow-xs rounded-lg p-1 text-xs transition-all"
+                        >
+                          <button
+                            onClick={() => handleApplySuggestedName(idx, rec)}
+                            className="flex items-center gap-1.5 px-2 py-1 text-left font-bold text-slate-800 hover:text-[#658C3E]"
+                            title={`Apply "${rec.name}" (${rec.score}% match, ${rec.currentStock} in stock)`}
+                          >
+                            <span className="text-amber-700 font-mono text-[10px] font-black bg-amber-100 px-1 py-0.5 rounded">
+                              {rec.score}% match
+                            </span>
+                            <span className="font-bold">{rec.name}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({rec.currentStock.toLocaleString('en-IN')} in stock)
+                            </span>
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyToClipboard(rec.name, idx);
+                            }}
+                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded text-xs transition-colors"
+                            title="Copy Master Name"
+                          >
+                            📋
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Stock Math & Quantity Indicator Widget */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-4 p-3 bg-slate-50 rounded-xl border border-slate-100">

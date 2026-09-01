@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExtractedInvoice, InvoiceItem } from '../../types';
 import { validateGSTIN, recalculateInvoiceTotals } from '../../utils/invoiceUtils';
 import { Plus, Trash2, AlertTriangle, CheckCircle, FileText, Building } from './Icons';
+import { supabase } from '../../supabaseClient';
 
 interface InvoiceFormProps {
   data: ExtractedInvoice;
@@ -9,6 +10,19 @@ interface InvoiceFormProps {
 }
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
+  const [masterItemNames, setMasterItemNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchMasterNames = async () => {
+      const { data: rgData } = await supabase.from('received_goods').select('name');
+      if (rgData) {
+        const unique = Array.from(new Set(rgData.map((g: any) => (g.name || '').trim()).filter(Boolean))) as string[];
+        setMasterItemNames(unique.sort());
+      }
+    };
+    fetchMasterNames();
+  }, []);
+
   const updateField = (section: keyof ExtractedInvoice, field: string, value: any) => {
     const updated = {
       ...data,
@@ -220,6 +234,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                     <td className="p-3 text-[10px] text-slate-400 font-mono">{idx + 1}</td>
                     <td className="p-3">
                       <input
+                        list="master-invoice-items"
                         className="w-full bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-bold text-slate-800 placeholder-slate-300 py-0.5"
                         value={item.description || ''}
                         onChange={(e) => updateItem(idx, 'description', e.target.value)}
@@ -364,6 +379,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
           </div>
         </div>
       </div>
+
+      {/* Datalist for Master Item autocomplete */}
+      <datalist id="master-invoice-items">
+        {masterItemNames.map(name => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
     </div>
   );
 };
