@@ -378,7 +378,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ currentUser, addLogEntry }) =
                                             )}
                                         </td>
                                         <td className="p-4 text-center">
-                                            {(currentUser?.role === 'admin') && (
+                                            {(currentUser?.role === 'admin' || currentUser?.role === 'billing') && (
                                                 <button onClick={() => handleDelete(exp.id)} className="text-red-400 hover:text-red-600 p-1" title="Delete">
                                                     <Trash2 size={14} />
                                                 </button>

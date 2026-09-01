@@ -502,7 +502,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {/* Invoices Total */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView(currentUser?.role === 'admin' ? 'finance_dashboard' as View : 'finance_maker' as View)}>
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView((currentUser?.role === 'admin' || currentUser?.role === 'billing') ? 'finance_dashboard' as View : 'finance_maker' as View)}>
                             <div className="flex items-start justify-between">
                                 <div>
                                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Invoices</p>
@@ -600,7 +600,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                 <span className="w-1.5 h-1.5 bg-[#8EBF45] rounded-full"></span>
                                 Recent Documents
                             </h3>
-                            {currentUser?.role === 'admin' && (
+                            {(currentUser?.role === 'admin' || currentUser?.role === 'billing') && (
                                 <button onClick={() => setView('finance_dashboard' as View)} className="text-[10px] font-bold text-[#658C3E] hover:underline uppercase tracking-wider">
                                     Dashboard →
                                 </button>

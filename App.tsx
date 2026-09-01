@@ -450,8 +450,8 @@ const App: React.FC = () => {
     // Handle Finance Sub-routes
     if (view.startsWith('finance_')) {
         const tab = view.replace('finance_', '') as any;
-        if (currentUser?.role !== 'admin' && tab !== 'maker' && tab !== 'expenses') {
-            return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins Only</div>;
+        if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses') {
+            return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins and Billing Users Only</div>;
         }
         return <InvoiceModule 
             currentUser={currentUser} 

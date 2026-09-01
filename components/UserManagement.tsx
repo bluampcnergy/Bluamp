@@ -134,7 +134,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onAddUser, onDel
             >
               <option value="user">General Employee</option>
               <option value="dashboard_user">Dashboard-Data Employee (Tables Access, No Dashboard UI)</option>
-              <option value="billing">Billing & Operations (Can access Dashboard Data in Tools)</option>
+              <option value="billing">Billing & Finance (Full Access to all Finance Options & Operations)</option>
               <option value="admin">Director Admin</option>
             </select>
           </div>

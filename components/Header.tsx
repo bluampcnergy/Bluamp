@@ -128,7 +128,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
               {/* 4. FINANCE */}
               <TopNavButton
                 isActive={currentCategory === 'finance'}
-                onClick={() => setView(userRole === 'admin' ? 'finance_dashboard' : 'finance_maker')}
+                onClick={() => setView((userRole === 'admin' || userRole === 'billing') ? 'finance_dashboard' : 'finance_maker')}
                 icon={<FileTextIcon className="h-4 w-4" />}
               >
                 Finance
@@ -244,7 +244,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
             {/* FINANCE SUB-NAV */}
             {currentCategory === 'finance' && (
               <>
-                {userRole === 'admin' && (
+                {(userRole === 'admin' || userRole === 'billing') && (
                   <>
                     <SubNavButton isActive={currentView === 'finance_upload'} onClick={() => setView('finance_upload')}>Scan & Import</SubNavButton>
                     <SubNavButton isActive={currentView === 'finance_dashboard'} onClick={() => setView('finance_dashboard')}>Summary</SubNavButton>
@@ -252,7 +252,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                   </>
                 )}
                 <SubNavButton isActive={currentView === 'finance_maker'} onClick={() => setView('finance_maker')}>Invoice Maker</SubNavButton>
-                {userRole === 'admin' && (
+                {(userRole === 'admin' || userRole === 'billing') && (
                   <>
                     <SubNavButton isActive={currentView === 'finance_gst'} onClick={() => setView('finance_gst')}>GST Returns</SubNavButton>
                     <SubNavButton isActive={currentView === 'finance_prices'} onClick={() => setView('finance_prices')}>Prices</SubNavButton>

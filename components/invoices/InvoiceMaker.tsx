@@ -1126,8 +1126,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const editingRecordId = doc.id || initialData?.id;
 
     const handleUpdateRecord = async () => {
-        if (currentUser?.role !== 'admin') {
-            return alert("Access Denied: Updating existing records is restricted to Director Admins only.");
+        if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing') {
+            return alert("Access Denied: Updating existing records is restricted to Director Admins and Billing team.");
         }
         const targetId = editingRecordId;
         if (!targetId) {
@@ -1886,7 +1886,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 <div className="mt-8 pt-6 border-t flex flex-col gap-3 mb-10">
                     {isEditingExistingRecord ? (
                         <div className="space-y-2">
-                            {currentUser?.role === 'admin' ? (
+                            {(currentUser?.role === 'admin' || currentUser?.role === 'billing') ? (
                                 <button
                                     onClick={handleUpdateRecord}
                                     disabled={isSaving}
@@ -1898,7 +1898,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             ) : (
                                 <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-center text-xs font-semibold text-amber-800 flex items-center justify-center gap-1.5">
                                     <span>🔒</span>
-                                    <span>Update existing record is restricted to Director Admins</span>
+                                    <span>Update existing record is restricted to Director Admins & Billing Team</span>
                                 </div>
                             )}
 

@@ -696,8 +696,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                         <span>{inv.invoice_metadata.edit_history.length} Edits</span>
                                                     </button>
                                                 )}
-                                                {onEditInvoice && currentUser?.role === 'admin' && (
-                                                    <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record (Admins Only)">
+                                                {onEditInvoice && (currentUser?.role === 'admin' || currentUser?.role === 'billing') && (
+                                                    <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record">
                                                         <PencilIcon className="w-4 h-4" />
                                                     </button>
                                                 )}
