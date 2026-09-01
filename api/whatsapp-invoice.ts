@@ -2,12 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI, Type } from '@google/genai';
 import { waitUntil } from '@vercel/functions';
 
-// Supabase Configuration
+// --- Supabase Configuration ---
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://supabase.cnergy.co.in';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// WhatsApp & Gemini Configuration
+// --- WhatsApp & Gemini Configuration ---
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'CNERGY_WA_INVOICE_HOOK_2026';
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
@@ -17,7 +17,11 @@ const ALLOWED_WHATSAPP_NUMBERS = (process.env.ALLOWED_WHATSAPP_NUMBERS || '')
   .map(n => n.trim().replace(/\D/g, ''))
   .filter(Boolean);
 
-// Invoice Schema for Gemini 2.5 Flash
+const APP_URL = process.env.VITE_APP_URL || 'https://inventory.cnergy.co.in';
+
+// --- Schemas for Structured Gemini Calls ---
+
+// 1. Invoice Extraction Schema
 const invoiceSchema = {
   type: Type.OBJECT,
   properties: {
@@ -100,6 +104,44 @@ const invoiceSchema = {
   required: ["document_type", "source_type", "issuer_details", "receiver_details", "invoice_metadata", "items", "totals"]
 };
 
+// 2. Task Extraction Schema
+const taskExtractionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    assigned_to: { type: Type.STRING },
+    description: { type: Type.STRING, nullable: true },
+    due_date: { type: Type.STRING, nullable: true }
+  },
+  required: ["title", "assigned_to"]
+};
+
+// 3. Quotation / PO Draft Schema
+const quotationDraftSchema = {
+  type: Type.OBJECT,
+  properties: {
+    document_type: { type: Type.STRING, enum: ["quotation", "po", "proforma", "invoice"] },
+    company_name: { type: Type.STRING },
+    items: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          description: { type: Type.STRING },
+          quantity: { type: Type.NUMBER },
+          unit_price: { type: Type.NUMBER }
+        },
+        required: ["description", "quantity", "unit_price"]
+      }
+    },
+    custom_title: { type: Type.STRING, nullable: true },
+    notes: { type: Type.STRING, nullable: true }
+  },
+  required: ["document_type", "company_name", "items"]
+};
+
+// --- Helper Functions ---
+
 // Send WhatsApp text message
 async function sendWhatsAppMessage(recipientPhone: string, text: string, phoneNumberId?: string) {
   const phoneId = phoneNumberId || WHATSAPP_PHONE_NUMBER_ID;
@@ -178,7 +220,7 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<{ buffer: Buffer;
   };
 }
 
-// Extract Invoice using Gemini
+// Extract Invoice using Gemini 2.5 Flash
 async function extractInvoiceWithGemini(fileBuffer: Buffer, mimeType: string) {
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured on server.');
@@ -213,7 +255,7 @@ Auto-tag expense_category into: raw_materials, battery_cells_bms, logistics_tran
   return JSON.parse(raw);
 }
 
-// Background Pipeline
+// --- Automation 1: Inbound Invoice / Bill Processing Pipeline ---
 async function processInboundInvoice(
   senderPhone: string,
   senderName: string,
@@ -285,8 +327,7 @@ async function processInboundInvoice(
 
     // 5. Send Confirmation Message
     currentStep = 'Sending confirmation reply';
-    const appUrl = process.env.VITE_APP_URL || 'https://inventory.cnergy.co.in';
-    const invoiceLink = `${appUrl}/?view=finance_dashboard`;
+    const invoiceLink = `${APP_URL}/?view=finance_dashboard`;
     const confirmation = `✅ *Invoice Recorded Successfully!*
 
 📄 *Invoice #:* ${invNumber}
@@ -312,7 +353,377 @@ ${invoiceLink}`;
   }
 }
 
-// Main Request Handler
+// --- Automation 2: Task Management (List, Add, Complete) ---
+async function handleListTasks(senderPhone: string, phoneNumberId: string, filterUser?: string) {
+  try {
+    let query = supabase
+      .from('employee_tasks')
+      .select('*')
+      .or('completed.is.null,completed.eq.false')
+      .order('due_date', { ascending: true, nullsFirst: false });
+
+    const { data: tasks, error } = await query;
+    if (error) throw error;
+
+    const validTasks = (tasks || []).filter(t => t.assigned_to !== 'general' && t.assigned_to !== 'chitale');
+    const filtered = filterUser 
+      ? validTasks.filter(t => t.assigned_to?.toLowerCase().includes(filterUser.toLowerCase()))
+      : validTasks;
+
+    if (filtered.length === 0) {
+      return await sendWhatsAppMessage(
+        senderPhone,
+        `🎉 *No Pending Tasks!*\nAll tasks are currently completed.`,
+        phoneNumberId
+      );
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const taskLines = filtered.slice(0, 15).map((t, idx) => {
+      let badge = '⚪';
+      if (t.due_date) {
+        if (t.due_date < todayStr) badge = '🚨 [OVERDUE]';
+        else if (t.due_date === todayStr) badge = '🔴 [TODAY]';
+        else badge = '🟡';
+      }
+      return `${idx + 1}. ${badge} *${t.title}*\n   👤 Assigned: *${t.assigned_to}* | Due: _${t.due_date || 'None'}_ | ID: \`${t.id}\``;
+    });
+
+    const msg = `📋 *Datlion Cnergy Pending Tasks (${filtered.length})*\n\n${taskLines.join('\n\n')}\n\n💡 _To complete a task, reply: "Done <task ID or task name>"_`;
+    await sendWhatsAppMessage(senderPhone, msg, phoneNumberId);
+  } catch (err: any) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Could not fetch tasks: ${err.message}`, phoneNumberId);
+  }
+}
+
+async function handleCompleteTask(senderPhone: string, text: string, phoneNumberId: string) {
+  try {
+    // Extract task ID or search term
+    const cleanText = text.replace(/^(complete|done|finish|mark done|mark completed|closed)\s*(task)?/i, '').trim();
+    if (!cleanText) {
+      return await sendWhatsAppMessage(senderPhone, `❓ Please specify the task ID or name to complete. E.g., *"Done task 12"*`, phoneNumberId);
+    }
+
+    // Try finding by exact ID or partial title in pending tasks
+    const { data: pendingTasks } = await supabase
+      .from('employee_tasks')
+      .select('id, title, assigned_to')
+      .or('completed.is.null,completed.eq.false');
+
+    const match = (pendingTasks || []).find(t => 
+      t.id.toLowerCase() === cleanText.toLowerCase() || 
+      t.title.toLowerCase().includes(cleanText.toLowerCase()) ||
+      cleanText.toLowerCase().includes(t.title.toLowerCase())
+    );
+
+    if (!match) {
+      return await sendWhatsAppMessage(senderPhone, `⚠️ Could not find an active task matching: "${cleanText}". Check task list with *"tasks"*.`, phoneNumberId);
+    }
+
+    const { error: updateError } = await supabase
+      .from('employee_tasks')
+      .update({ completed: true })
+      .eq('id', match.id);
+
+    if (updateError) throw updateError;
+
+    await sendWhatsAppMessage(
+      senderPhone,
+      `✅ *Task Completed!*\n\n📌 *${match.title}*\n👤 Assigned: ${match.assigned_to}\n🆔 ID: \`${match.id}\``,
+      phoneNumberId
+    );
+  } catch (err: any) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Error completing task: ${err.message}`, phoneNumberId);
+  }
+}
+
+async function handleCreateTask(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+  try {
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const prompt = `Extract task details from this instruction into JSON:
+Instruction: "${text}"
+Current Date: ${todayStr}
+
+Assign to the person mentioned, or 'Team' if unspecified. Extract a clear title, description, and YYYY-MM-DD due date if mentioned (e.g. tomorrow, next monday).`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: taskExtractionSchema,
+        temperature: 0.1
+      }
+    });
+
+    let raw = response.text || '{}';
+    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const taskData = JSON.parse(raw);
+
+    const taskId = 'task_' + Date.now();
+    const newTask = {
+      id: taskId,
+      title: taskData.title || 'New Task',
+      description: taskData.description || text,
+      assigned_to: taskData.assigned_to || 'Team',
+      due_date: taskData.due_date || todayStr,
+      completed: false,
+      created_at: Date.now(),
+      created_by: `whatsapp:${senderName}`
+    };
+
+    const { error } = await supabase.from('employee_tasks').insert([newTask]);
+    if (error) throw error;
+
+    const msg = `✅ *Task Created Successfully!*\n\n📌 *Title:* ${newTask.title}\n👤 *Assigned To:* ${newTask.assigned_to}\n📅 *Due Date:* ${newTask.due_date}\n🆔 *Task ID:* \`${taskId}\``;
+    await sendWhatsAppMessage(senderPhone, msg, phoneNumberId);
+  } catch (err: any) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Could not create task: ${err.message}`, phoneNumberId);
+  }
+}
+
+// --- Automation 3: Quotation & Purchase Order Draft Generator ---
+async function handleCreateQuotationDraft(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+  try {
+    const [companiesRes, pricesRes] = await Promise.all([
+      supabase.from('company_profiles').select('name, shippingAddress, gstNumber'),
+      supabase.from('price_list').select('model_name, price_without_gst, hsn_code')
+    ]);
+
+    const companies = companiesRes.data || [];
+    const priceList = pricesRes.data || [];
+
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const prompt = `You are an AI Billing & Quotation specialist for Datlion Cnergy (battery pack manufacturing plant).
+Translate the user's request into a structured Quotation or PO draft JSON.
+
+Known Companies: ${JSON.stringify(companies.map(c => c.name))}
+Price List Models: ${JSON.stringify(priceList.map(p => ({ model: p.model_name, price: p.price_without_gst })))}
+
+User Request: "${text}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: quotationDraftSchema,
+        temperature: 0.1
+      }
+    });
+
+    let raw = response.text || '{}';
+    raw = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const draftData = JSON.parse(raw);
+
+    const isPO = draftData.document_type === 'po';
+    const targetCompany = companies.find(c => c.name.toLowerCase().includes((draftData.company_name || '').toLowerCase())) || {
+      name: draftData.company_name || 'Client Name',
+      shippingAddress: '',
+      gstNumber: ''
+    };
+
+    const docItems = (draftData.items || []).map((it: any) => {
+      const matchedPrice = priceList.find(p => p.model_name.toLowerCase().includes(it.description.toLowerCase()));
+      const unitPrice = Number(it.unit_price) || matchedPrice?.price_without_gst || 1000;
+      const qty = Number(it.quantity) || 1;
+      const taxable = qty * unitPrice;
+      const taxRate = 18;
+      const taxAmt = taxable * (taxRate / 100);
+      return {
+        description: it.description,
+        hsn_sac: matchedPrice?.hsn_code || '85076000',
+        quantity: qty,
+        unit_price: unitPrice,
+        taxable_value: taxable,
+        cgst_rate: 9,
+        cgst_amount: taxAmt / 2,
+        sgst_rate: 9,
+        sgst_amount: taxAmt / 2,
+        igst_rate: 0,
+        igst_amount: 0,
+        total_value: taxable + taxAmt
+      };
+    });
+
+    const subtotal = docItems.reduce((sum: number, it: any) => sum + (it.taxable_value || 0), 0);
+    const taxTotal = docItems.reduce((sum: number, it: any) => sum + (it.cgst_amount || 0) + (it.sgst_amount || 0), 0);
+    const grandTotal = subtotal + taxTotal;
+    const invNumber = `DRAFT-${Date.now().toString().slice(-6)}`;
+
+    const draftRecord = {
+      document_type: isPO ? 'generated_po' : 'generated_quotation',
+      source_type: isPO ? 'purchase' : 'sales',
+      filename: invNumber,
+      receiver_details: isPO ? { name: 'Datlion Cnergy Private Limited' } : { name: targetCompany.name, address: targetCompany.shippingAddress, gstin: targetCompany.gstNumber },
+      issuer_details: isPO ? { name: targetCompany.name, address: targetCompany.shippingAddress, gstin: targetCompany.gstNumber } : { name: 'DATLION CNERGY PRIVATE LIMITED', gstin: '27AAECD4823M1ZU' },
+      invoice_metadata: {
+        invoice_number: invNumber,
+        invoice_date: new Date().toISOString().split('T')[0],
+        custom_title: draftData.custom_title || (isPO ? 'PURCHASE ORDER' : 'QUOTATION'),
+        notes: draftData.notes || 'Created via WhatsApp AI Assistant',
+        ui_config: {
+          showTaxTable: false,
+          showTotalsTable: true,
+          terms: '1. Payment terms: 50% advance, balance before dispatch.\n2. Delivery within 14 business days.'
+        }
+      },
+      items: docItems,
+      totals: {
+        subtotal_taxable: subtotal,
+        cgst_total: taxTotal / 2,
+        sgst_total: taxTotal / 2,
+        igst_total: 0,
+        grand_total: grandTotal,
+        currency: 'INR'
+      },
+      requires_review: false,
+      uploaded_by: `whatsapp:${senderName}`
+    };
+
+    const { data: inserted, error: insertError } = await supabase.from('invoices').insert([draftRecord]).select('id').single();
+    if (insertError) throw insertError;
+
+    const editorLink = `${APP_URL}/?view=finance_maker&id=${inserted.id}`;
+    const reply = `📄 *${isPO ? 'Purchase Order' : 'Quotation'} Draft Created!*
+
+🏢 *Party:* ${targetCompany.name}
+💰 *Estimated Total:* ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+📦 *Line Items:* ${docItems.length} item(s)
+
+🔗 *Open & Edit in Invoice Maker:*
+${editorLink}`;
+
+    await sendWhatsAppMessage(senderPhone, reply, phoneNumberId);
+  } catch (err: any) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Could not create draft: ${err.message}`, phoneNumberId);
+  }
+}
+
+// --- Automation 4: Real-time Plant AI Assistant (Inventory, WIP, Finished Goods) ---
+async function handlePlantAiQuery(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+  try {
+    // 1. Fetch live snapshot across plant modules
+    const [rgRes, wipRes, fgRes, tasksRes, suppliesRes] = await Promise.all([
+      supabase.from('received_goods').select('name, category, makeModel, supplier, quantity, status, damagedCount').limit(30),
+      supabase.from('wip_items').select('batch_number, model, quantity, current_stage, target_quantity').limit(20),
+      supabase.from('finished_goods').select('recipeId, quantity, deliveredTo, qualityRemarks').limit(20),
+      supabase.from('employee_tasks').select('title, assigned_to, due_date').or('completed.is.null,completed.eq.false').limit(15),
+      supabase.from('supplies_records').select('item_name, specification, target_quantity, status').limit(20)
+    ]);
+
+    const plantContext = {
+      raw_materials: {
+        total_batches: rgRes.data?.length || 0,
+        samples: rgRes.data || []
+      },
+      work_in_progress: {
+        active_batches: wipRes.data?.length || 0,
+        samples: wipRes.data || []
+      },
+      finished_goods: {
+        total_records: fgRes.data?.length || 0,
+        samples: fgRes.data || []
+      },
+      pending_tasks: tasksRes.data || [],
+      supplies: suppliesRes.data || []
+    };
+
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const systemPrompt = `You are the AI Assistant for Datlion Cnergy Plant OS (Lithium Battery Pack Manufacturing Plant).
+Respond to the user's WhatsApp message accurately and concisely based ONLY on the provided REAL-TIME PLANT CONTEXT.
+
+Format your response cleanly for WhatsApp using standard markdown formatting (*bold*, _italic_, bullet points, emojis).
+Do not use unsupported HTML. Keep answers actionable, clear, and professional.
+
+REAL-TIME PLANT CONTEXT:
+${JSON.stringify(plantContext, null, 2)}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        { text: systemPrompt },
+        { text: `User (${senderName}): "${text}"` }
+      ],
+      config: {
+        temperature: 0.2,
+        maxOutputTokens: 2048
+      }
+    });
+
+    const replyText = response.text || 'Unable to generate plant summary at this time.';
+    await sendWhatsAppMessage(senderPhone, replyText, phoneNumberId);
+  } catch (err: any) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Plant AI query failed: ${err.message}`, phoneNumberId);
+  }
+}
+
+// --- Welcome / Help Menu ---
+async function sendHelpMenu(senderPhone: string, phoneNumberId: string) {
+  const menu = `⚡ *Datlion Cnergy Plant Assistant*
+
+Here is what you can do directly from this WhatsApp chat:
+
+📄 *1. Invoicing & Expense OCR*
+• Forward any *Invoice PDF*, *Supplier Bill*, or *Receipt Photo* to automatically record it in the ledger.
+
+📦 *2. Plant & Stock Intelligence*
+• Ask questions like:
+  - _"What is our raw material inventory level?"_
+  - _"Show WIP batches in production"_
+  - _"How many finished battery packs are in stock?"_
+
+📋 *3. Employee Task Manager*
+• View tasks: _"Show pending tasks"_ or _"Tasks for Rahul"_
+• Add task: _"Add task: Cell sorting for batch 102 to Sanjay due tomorrow"_
+• Complete task: _"Done task <ID or title>"_
+
+🧾 *4. Fast Quotations & POs*
+• Create drafts: _"Create quotation for 10 units 48V 100Ah for Tata Power"_
+
+💬 Simply type your query or send a document to begin!`;
+
+  await sendWhatsAppMessage(senderPhone, menu, phoneNumberId);
+}
+
+// --- Central Text Message Router ---
+async function processInboundText(senderPhone: string, senderName: string, text: string, phoneNumberId: string) {
+  const clean = text.trim();
+  const lower = clean.toLowerCase();
+
+  // 1. Help & Greetings
+  if (['hi', 'hello', 'hey', 'help', 'menu', 'options', 'start', 'commands'].includes(lower)) {
+    return await sendHelpMenu(senderPhone, phoneNumberId);
+  }
+
+  // 2. Task Listing
+  if (lower === 'tasks' || lower === 'my tasks' || lower === 'pending tasks' || lower.startsWith('show tasks') || lower.startsWith('list tasks') || lower.includes('todays tasks') || lower.includes("today's tasks")) {
+    const userMatch = lower.includes('for ') ? lower.split('for ')[1].trim() : undefined;
+    return await handleListTasks(senderPhone, phoneNumberId, userMatch);
+  }
+
+  // 3. Task Completion
+  if (lower.startsWith('done ') || lower.startsWith('complete ') || lower.startsWith('finish ') || lower.startsWith('mark done') || lower.startsWith('mark completed')) {
+    return await handleCompleteTask(senderPhone, clean, phoneNumberId);
+  }
+
+  // 4. Task Creation
+  if (lower.startsWith('add task') || lower.startsWith('create task') || lower.startsWith('new task') || lower.startsWith('assign task')) {
+    return await handleCreateTask(senderPhone, senderName, clean, phoneNumberId);
+  }
+
+  // 5. Quotation or PO Generation
+  if (lower.startsWith('create quotation') || lower.startsWith('draft quote') || lower.startsWith('draft quotation') || lower.startsWith('create po') || lower.startsWith('draft po')) {
+    return await handleCreateQuotationDraft(senderPhone, senderName, clean, phoneNumberId);
+  }
+
+  // 6. Default: General Plant AI & Inventory Intelligence
+  return await handlePlantAiQuery(senderPhone, senderName, clean, phoneNumberId);
+}
+
+// --- Main HTTP Request Handler ---
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -338,7 +749,7 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  // --- POST: Incoming WhatsApp Message Event ---
+  // --- POST: Incoming WhatsApp Event ---
   if (req.method === 'POST') {
     try {
       const body = req.body;
@@ -369,6 +780,7 @@ export default async function handler(req: any, res: any) {
         }
       }
 
+      // Branch A: Document or Image (Invoice / Bill / Receipt)
       if (message.type === 'document' || message.type === 'image') {
         const mediaId = message.document?.id || message.image?.id;
         const mimeType = message.document?.mime_type || message.image?.mime_type || 'application/pdf';
@@ -377,7 +789,7 @@ export default async function handler(req: any, res: any) {
         if (mediaId) {
           sendWhatsAppMessage(
             senderPhone,
-            `⏳ *Invoice Received!* Analyzing document with Cnergy AI OCR...`,
+            `⏳ *Document Received!* Analyzing document with Cnergy AI OCR...`,
             phoneNumberId
           ).catch(() => {});
 
@@ -396,12 +808,19 @@ export default async function handler(req: any, res: any) {
         return res.status(200).send('EVENT_RECEIVED');
       }
 
+      // Branch B: Text Message (Multi-Automation Router)
       if (message.type === 'text') {
-        const text = (message.text?.body || '').trim().toLowerCase();
-        if (text === 'help' || text === 'hi' || text === 'hello') {
-          const helpMsg = `👋 *Datlion Cnergy Invoice Bot*\n\nSend or forward any *Invoice PDF* or *Bill photo* to this chat to automatically record it in your plant ledger.`;
-          sendWhatsAppMessage(senderPhone, helpMsg, phoneNumberId).catch(() => {});
-        }
+        const textBody = message.text?.body || '';
+        waitUntil(
+          processInboundText(
+            senderPhone,
+            senderName,
+            textBody,
+            phoneNumberId
+          )
+        );
+
+        return res.status(200).send('EVENT_RECEIVED');
       }
 
       return res.status(200).send('EVENT_RECEIVED');

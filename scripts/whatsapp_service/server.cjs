@@ -1,5 +1,5 @@
 /**
- * Standalone WhatsApp Business Invoice Ingestion Daemon for VPS
+ * Standalone WhatsApp Business Multi-Automation Daemon for VPS
  * Run with: node server.cjs (or pm2 start server.cjs --name "cnergy-whatsapp")
  */
 
@@ -22,6 +22,8 @@ const ALLOWED_WHATSAPP_NUMBERS = (process.env.ALLOWED_WHATSAPP_NUMBERS || '')
   .split(',')
   .map(n => n.trim().replace(/\D/g, ''))
   .filter(Boolean);
+
+const APP_URL = process.env.APP_URL || 'https://inventory.cnergy.co.in';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -84,13 +86,13 @@ async function downloadWhatsAppMedia(mediaId) {
   };
 }
 
-// Helper: Extract Invoice via Gemini
+// Helper: Extract Invoice via Gemini 2.5 Flash
 async function extractInvoiceWithGemini(fileBuffer, mimeType) {
   const base64Data = fileBuffer.toString('base64');
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const prompt = `Extract all details from this invoice into structured JSON.
-Company: Datlion Cnergy.
+Company: Datlion Cnergy (lithium battery pack manufacturer).
 Classify source_type as 'purchase' (expense) if Datlion Cnergy is the buyer.
 Classify expense_category into: raw_materials, battery_cells_bms, logistics_transport, utilities_electricity, rent_facility, tools_equipment, office_supplies, repairs_maintenance, professional_services, or other.
 Extract all line items, HSN, unit price, quantity, CGST, SGST, IGST, subtotal, and grand total.`;
@@ -159,7 +161,7 @@ Extract all line items, HSN, unit price, quantity, CGST, SGST, IGST, subtotal, a
   return JSON.parse(raw);
 }
 
-// Background Task Handler
+// Background Invoicing Handler
 async function processInvoiceTask(senderPhone, senderName, mediaId, filename, initialMimeType, phoneNumberId) {
   try {
     console.log(`[VPS Worker] Processing invoice from ${senderName} (${senderPhone})`);
@@ -222,7 +224,7 @@ async function processInvoiceTask(senderPhone, senderName, mediaId, filename, in
 📅 *Date:* ${extracted.invoice_metadata?.invoice_date || new Date().toISOString().split('T')[0]}
 
 🔗 *View in Dashboard:*
-https://inventory.cnergy.co.in/?view=finance_dashboard`;
+${APP_URL}/?view=finance_dashboard`;
 
     await sendWhatsAppMessage(senderPhone, confirmationMsg, phoneNumberId);
     console.log(`[VPS Worker] Done invoice #${invNumber}`);
@@ -234,6 +236,134 @@ https://inventory.cnergy.co.in/?view=finance_dashboard`;
       phoneNumberId
     );
   }
+}
+
+// Background Task Management
+async function handleListTasks(senderPhone, phoneNumberId, filterUser) {
+  try {
+    const { data: tasks, error } = await supabase
+      .from('employee_tasks')
+      .select('*')
+      .or('completed.is.null,completed.eq.false')
+      .order('due_date', { ascending: true, nullsFirst: false });
+
+    if (error) throw error;
+
+    const validTasks = (tasks || []).filter(t => t.assigned_to !== 'general' && t.assigned_to !== 'chitale');
+    const filtered = filterUser 
+      ? validTasks.filter(t => t.assigned_to?.toLowerCase().includes(filterUser.toLowerCase()))
+      : validTasks;
+
+    if (filtered.length === 0) {
+      return await sendWhatsAppMessage(senderPhone, `🎉 *No Pending Tasks!*\nAll tasks are currently completed.`, phoneNumberId);
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const taskLines = filtered.slice(0, 15).map((t, idx) => {
+      let badge = '⚪';
+      if (t.due_date) {
+        if (t.due_date < todayStr) badge = '🚨 [OVERDUE]';
+        else if (t.due_date === todayStr) badge = '🔴 [TODAY]';
+        else badge = '🟡';
+      }
+      return `${idx + 1}. ${badge} *${t.title}*\n   👤 Assigned: *${t.assigned_to}* | Due: _${t.due_date || 'None'}_ | ID: \`${t.id}\``;
+    });
+
+    const msg = `📋 *Datlion Cnergy Pending Tasks (${filtered.length})*\n\n${taskLines.join('\n\n')}\n\n💡 _To complete a task, reply: "Done <task ID or task name>"_`;
+    await sendWhatsAppMessage(senderPhone, msg, phoneNumberId);
+  } catch (err) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Could not fetch tasks: ${err.message}`, phoneNumberId);
+  }
+}
+
+async function handleCompleteTask(senderPhone, text, phoneNumberId) {
+  try {
+    const cleanText = text.replace(/^(complete|done|finish|mark done|mark completed|closed)\s*(task)?/i, '').trim();
+    if (!cleanText) return await sendWhatsAppMessage(senderPhone, `❓ Specify task ID or title: *"Done task 12"*`, phoneNumberId);
+
+    const { data: pendingTasks } = await supabase
+      .from('employee_tasks')
+      .select('id, title, assigned_to')
+      .or('completed.is.null,completed.eq.false');
+
+    const match = (pendingTasks || []).find(t => 
+      t.id.toLowerCase() === cleanText.toLowerCase() || 
+      t.title.toLowerCase().includes(cleanText.toLowerCase()) ||
+      cleanText.toLowerCase().includes(t.title.toLowerCase())
+    );
+
+    if (!match) return await sendWhatsAppMessage(senderPhone, `⚠️ Task not found matching: "${cleanText}"`, phoneNumberId);
+
+    await supabase.from('employee_tasks').update({ completed: true }).eq('id', match.id);
+    await sendWhatsAppMessage(senderPhone, `✅ *Task Completed!*\n📌 *${match.title}*\n👤 Assigned: ${match.assigned_to}`, phoneNumberId);
+  } catch (err) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Error: ${err.message}`, phoneNumberId);
+  }
+}
+
+// Background Plant AI Intelligence
+async function handlePlantAiQuery(senderPhone, senderName, text, phoneNumberId) {
+  try {
+    const [rgRes, wipRes, fgRes, tasksRes] = await Promise.all([
+      supabase.from('received_goods').select('name, category, makeModel, supplier, quantity, status').limit(25),
+      supabase.from('wip_items').select('batch_number, model, quantity, current_stage').limit(15),
+      supabase.from('finished_goods').select('recipeId, quantity, deliveredTo').limit(15),
+      supabase.from('employee_tasks').select('title, assigned_to, due_date').or('completed.is.null,completed.eq.false').limit(10)
+    ]);
+
+    const context = {
+      raw_materials: rgRes.data || [],
+      wip_production: wipRes.data || [],
+      finished_batteries: fgRes.data || [],
+      pending_tasks: tasksRes.data || []
+    };
+
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const prompt = `You are the AI Assistant for Datlion Cnergy Plant OS.
+Answer the user's WhatsApp question concisely using ONLY this plant data:
+${JSON.stringify(context, null, 2)}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        { text: prompt },
+        { text: `User (${senderName}): "${text}"` }
+      ],
+      config: { temperature: 0.2, maxOutputTokens: 2048 }
+    });
+
+    await sendWhatsAppMessage(senderPhone, response.text || 'No data found.', phoneNumberId);
+  } catch (err) {
+    await sendWhatsAppMessage(senderPhone, `⚠️ Plant AI query failed: ${err.message}`, phoneNumberId);
+  }
+}
+
+// Welcome Menu
+async function sendHelpMenu(senderPhone, phoneNumberId) {
+  const menu = `⚡ *Datlion Cnergy Plant Assistant*
+
+Here is what you can do directly from this WhatsApp chat:
+
+📄 *1. Invoicing & Expense OCR*
+• Forward any *Invoice PDF*, *Supplier Bill*, or *Receipt Photo* to automatically record it in the ledger.
+
+📦 *2. Plant & Stock Intelligence*
+• Ask questions like:
+  - _"What is our raw material inventory level?"_
+  - _"Show WIP batches in production"_
+  - _"How many finished battery packs are in stock?"_
+
+📋 *3. Employee Task Manager*
+• View tasks: _"Show pending tasks"_ or _"Tasks for Rahul"_
+• Add task: _"Add task: Cell sorting for batch 102 to Sanjay due tomorrow"_
+• Complete task: _"Done task <ID or title>"_
+
+🧾 *4. Fast Quotations & POs*
+• Create drafts: _"Create quotation for 10 units 48V 100Ah for Tata Power"_
+
+💬 Simply type your query or send a document to begin!`;
+
+  await sendWhatsAppMessage(senderPhone, menu, phoneNumberId);
 }
 
 // Routes
@@ -249,29 +379,28 @@ app.get('/api/webhooks/whatsapp', (req, res) => {
   return res.status(403).send('Forbidden');
 });
 
-app.post('/api/webhooks/whatsapp', (req, res) => {
-  res.status(200).send('EVENT_RECEIVED');
-
+app.post('/api/webhooks/whatsapp', async (req, res) => {
   try {
     const body = req.body;
+    if (!body || body.object !== 'whatsapp_business_account') {
+      return res.status(200).send('EVENT_RECEIVED');
+    }
+
     const entry = body.entry?.[0];
     const change = entry?.changes?.[0]?.value;
     const message = change?.messages?.[0];
     const contact = change?.contacts?.[0];
     const phoneNumberId = change?.metadata?.phone_number_id || '';
 
-    if (!message) return;
+    if (!message) return res.status(200).send('EVENT_RECEIVED');
 
     const senderPhone = message.from;
     const senderName = contact?.profile?.name || 'User';
 
     if (ALLOWED_WHATSAPP_NUMBERS.length > 0) {
       const cleanSender = senderPhone.replace(/\D/g, '');
-      const isAllowed = ALLOWED_WHATSAPP_NUMBERS.some(allowed => cleanSender.endsWith(allowed) || allowed.endsWith(cleanSender));
-      if (!isAllowed) {
-        console.warn('[WhatsApp VPS] Unauthorized sender:', senderPhone);
-        return;
-      }
+      const isAllowed = ALLOWED_WHATSAPP_NUMBERS.some(a => cleanSender.endsWith(a) || a.endsWith(cleanSender));
+      if (!isAllowed) return res.status(200).send('SENDER_NOT_AUTHORIZED');
     }
 
     if (message.type === 'document' || message.type === 'image') {
@@ -279,16 +408,37 @@ app.post('/api/webhooks/whatsapp', (req, res) => {
       const mimeType = message.document?.mime_type || message.image?.mime_type || 'application/pdf';
       const filename = message.document?.filename || (message.type === 'image' ? 'bill.jpg' : 'invoice.pdf');
 
-      sendWhatsAppMessage(senderPhone, '⏳ *Invoice Received!* Analyzing with Cnergy AI...', phoneNumberId);
-      processInvoiceTask(senderPhone, senderName, mediaId, filename, mimeType, phoneNumberId);
+      if (mediaId) {
+        sendWhatsAppMessage(senderPhone, `⏳ *Document Received!* Analyzing with Cnergy AI OCR...`, phoneNumberId).catch(() => {});
+        processInvoiceTask(senderPhone, senderName, mediaId, filename, mimeType, phoneNumberId).catch(console.error);
+      }
+      return res.status(200).send('EVENT_RECEIVED');
     }
+
+    if (message.type === 'text') {
+      const clean = (message.text?.body || '').trim();
+      const lower = clean.toLowerCase();
+
+      if (['hi', 'hello', 'hey', 'help', 'menu', 'options', 'start'].includes(lower)) {
+        sendHelpMenu(senderPhone, phoneNumberId).catch(console.error);
+      } else if (lower === 'tasks' || lower === 'my tasks' || lower.startsWith('show tasks') || lower.startsWith('list tasks')) {
+        handleListTasks(senderPhone, phoneNumberId).catch(console.error);
+      } else if (lower.startsWith('done ') || lower.startsWith('complete ')) {
+        handleCompleteTask(senderPhone, clean, phoneNumberId).catch(console.error);
+      } else {
+        handlePlantAiQuery(senderPhone, senderName, clean, phoneNumberId).catch(console.error);
+      }
+
+      return res.status(200).send('EVENT_RECEIVED');
+    }
+
+    return res.status(200).send('EVENT_RECEIVED');
   } catch (err) {
-    console.error('[WhatsApp VPS] Webhook error:', err);
+    console.error('[WhatsApp VPS Error]:', err);
+    return res.status(200).send('EVENT_RECEIVED');
   }
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-
 app.listen(PORT, () => {
-  console.log(`⚡ Datlion Cnergy WhatsApp Invoice Ingestion Service listening on port ${PORT}`);
+  console.log(`🚀 WhatsApp Multi-Automation Daemon running on port ${PORT}`);
 });
