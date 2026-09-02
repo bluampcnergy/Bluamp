@@ -415,52 +415,52 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <span className="w-1.5 h-1.5 bg-[#8EBF45] rounded-full"></span>
                     Operations Overview
                 </h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     {/* Raw Materials */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('received')}>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3.5 sm:p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('received')}>
                         <div className="flex items-start justify-between">
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Raw Materials</p>
-                                <p className="text-3xl font-black text-slate-900 mt-1">{ops.rmTotal}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{ops.rmTotalQty.toLocaleString()} total units</p>
+                                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{ops.rmTotal}</p>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">{ops.rmTotalQty.toLocaleString()} total units</p>
                             </div>
-                            <div className="text-3xl opacity-60">📦</div>
+                            <div className="text-2xl sm:text-3xl opacity-60">📦</div>
                         </div>
                         {ops.rmToday > 0 && (
-                            <div className="mt-3 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
+                            <div className="mt-2.5 sm:mt-3 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
                                 +{ops.rmToday} today
                             </div>
                         )}
                     </div>
 
                     {/* WIP */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('wip')}>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3.5 sm:p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('wip')}>
                         <div className="flex items-start justify-between">
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In Production</p>
-                                <p className="text-3xl font-black text-slate-900 mt-1">{ops.wipTotal}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{ops.wipTotalQty.toLocaleString()} batches</p>
+                                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{ops.wipTotal}</p>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">{ops.wipTotalQty.toLocaleString()} batches</p>
                             </div>
-                            <div className="text-3xl opacity-60">⚙️</div>
+                            <div className="text-2xl sm:text-3xl opacity-60">⚙️</div>
                         </div>
                         {ops.wipToday > 0 && (
-                            <div className="mt-3 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
+                            <div className="mt-2.5 sm:mt-3 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
                                 +{ops.wipToday} today
                             </div>
                         )}
                     </div>
 
                     {/* Finished Goods */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('finished')}>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3.5 sm:p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('finished')}>
                         <div className="flex items-start justify-between">
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Finished Goods</p>
-                                <p className="text-3xl font-black text-slate-900 mt-1">{ops.fgTotal}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{ops.fgTotalQty.toLocaleString()} units built</p>
+                                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{ops.fgTotal}</p>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">{ops.fgTotalQty.toLocaleString()} units built</p>
                             </div>
-                            <div className="text-3xl opacity-60">✅</div>
+                            <div className="text-2xl sm:text-3xl opacity-60">✅</div>
                         </div>
-                        <div className="mt-3 flex gap-2">
+                        <div className="mt-2.5 sm:mt-3 flex flex-wrap gap-1.5">
                             {ops.fgToday > 0 && (
                                 <div className="bg-green-50 text-green-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
                                     +{ops.fgToday} today
@@ -475,17 +475,17 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
 
                     {/* Supplies */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('supplies')}>
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3.5 sm:p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setView('supplies')}>
                         <div className="flex items-start justify-between">
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supplies</p>
-                                <p className="text-3xl font-black text-slate-900 mt-1">{ops.supInward + ops.supOutward}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{ops.supInward}↓ in · {ops.supOutward}↑ out</p>
+                                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{ops.supInward + ops.supOutward}</p>
+                                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">{ops.supInward}↓ in · {ops.supOutward}↑ out</p>
                             </div>
-                            <div className="text-3xl opacity-60">🚚</div>
+                            <div className="text-2xl sm:text-3xl opacity-60">🚚</div>
                         </div>
                         {ops.supToday > 0 && (
-                            <div className="mt-3 bg-purple-50 text-purple-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
+                            <div className="mt-2.5 sm:mt-3 bg-purple-50 text-purple-700 text-[10px] font-bold rounded-full px-2.5 py-1 inline-block">
                                 +{ops.supToday} today
                             </div>
                         )}

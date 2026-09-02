@@ -22,21 +22,22 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
   };
 
   return (
-    <div className="fixed inset-0 bg-[#0D0D0D]/60 backdrop-blur-sm z-[100] flex justify-center items-center p-4 transition-all duration-300" onClick={() => !persistent && onClose()}>
+    <div className="fixed inset-0 bg-[#0D0D0D]/60 backdrop-blur-sm z-[150] flex justify-center items-end sm:items-center p-0 sm:p-4 transition-all duration-300" onClick={() => !persistent && onClose()}>
       <div
-        className={`bg-white rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.4)] relative w-full ${sizeClasses[size]} overflow-hidden animate-fade-in-scale`}
+        className={`bg-white rounded-t-3xl sm:rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.4)] relative w-full ${sizeClasses[size]} max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden animate-fade-in-scale`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center px-8 py-6 bg-[#F9FAFB] border-b border-slate-100">
-          <h2 className="text-xl font-bold text-[#0D0D0D] tracking-tight font-brand">{title}</h2>
+        <div className="flex justify-between items-center px-5 py-4 sm:px-8 sm:py-6 bg-[#F9FAFB] border-b border-slate-100 shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold text-[#0D0D0D] tracking-tight font-brand truncate pr-2">{title}</h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-[#0D0D0D] hover:bg-slate-200 transition-all rounded-full p-2"
+            className="text-slate-400 hover:text-[#0D0D0D] hover:bg-slate-200 transition-all rounded-full p-2 shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center"
+            title="Close modal"
           >
             <XIcon />
           </button>
         </div>
-        <div className="p-8 max-h-[85vh] overflow-y-auto scrollbar-hide">
+        <div className="p-4 sm:p-8 overflow-y-auto flex-1 scrollbar-hide">
           {children}
         </div>
       </div>

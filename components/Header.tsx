@@ -67,6 +67,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
   }, [currentView, categories]);
 
   return (
+    <>
     <header className="bg-[#0D0D0D] sticky top-0 z-[100] shadow-xl border-b border-[#404040] overflow-visible">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
         <div className="flex flex-col md:flex-row md:items-center justify-between h-auto md:h-16 overflow-visible">
@@ -288,6 +289,74 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
         </div>
       </div>
     </header>
+
+    {/* FIXED MOBILE BOTTOM NAVIGATION BAR (Screens < 768px) */}
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[120] bg-[#0D0D0D]/95 backdrop-blur-md border-t border-[#333333] px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-inset-bottom">
+      {/* 1. Home */}
+      <button
+        type="button"
+        onClick={() => setView('home')}
+        className={`flex flex-col items-center justify-center min-w-[58px] min-h-[44px] py-1 px-2 rounded-xl transition-all ${
+          currentCategory === 'home' ? 'text-[#8EBF45] bg-white/10 font-bold' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <svg className="h-5 w-5 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={currentCategory === 'home' ? 2.5 : 2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+        <span className="text-[10px] tracking-tight">Home</span>
+      </button>
+
+      {/* 2. Supplies */}
+      <button
+        type="button"
+        onClick={() => setView('supplies')}
+        className={`flex flex-col items-center justify-center min-w-[58px] min-h-[44px] py-1 px-2 rounded-xl transition-all ${
+          currentCategory === 'supplies' ? 'text-[#8EBF45] bg-white/10 font-bold' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <svg className="h-5 w-5 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={currentCategory === 'supplies' ? 2.5 : 2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+        </svg>
+        <span className="text-[10px] tracking-tight">Supplies</span>
+      </button>
+
+      {/* 3. Operations */}
+      <button
+        type="button"
+        onClick={() => setView('received')}
+        className={`flex flex-col items-center justify-center min-w-[58px] min-h-[44px] py-1 px-2 rounded-xl transition-all ${
+          currentCategory === 'operations' ? 'text-[#8EBF45] bg-white/10 font-bold' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <CubeIcon className="h-5 w-5 mb-0.5" />
+        <span className="text-[10px] tracking-tight">Plant</span>
+      </button>
+
+      {/* 4. Finance */}
+      <button
+        type="button"
+        onClick={() => setView((userRole === 'admin' || userRole === 'billing') ? 'finance_upload' : 'finance_maker')}
+        className={`flex flex-col items-center justify-center min-w-[58px] min-h-[44px] py-1 px-2 rounded-xl transition-all ${
+          currentCategory === 'finance' ? 'text-[#8EBF45] bg-white/10 font-bold' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <FileTextIcon className="h-5 w-5 mb-0.5" />
+        <span className="text-[10px] tracking-tight">Finance</span>
+      </button>
+
+      {/* 5. Admin / Tasks */}
+      <button
+        type="button"
+        onClick={() => setView('employee_tasks')}
+        className={`flex flex-col items-center justify-center min-w-[58px] min-h-[44px] py-1 px-2 rounded-xl transition-all ${
+          currentView === 'employee_tasks' || currentCategory === 'admin' ? 'text-[#8EBF45] bg-white/10 font-bold' : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <BuildingIcon className="h-5 w-5 mb-0.5" />
+        <span className="text-[10px] tracking-tight">Tasks</span>
+      </button>
+    </nav>
+    </>
   );
 };
 

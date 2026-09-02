@@ -59,6 +59,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
     const [queueFilter, setQueueFilter] = useState<'all' | 'review' | 'saved' | 'error'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [reviewRightTab, setReviewRightTab] = useState<'stock' | 'invoice'>('stock');
+    const [mobileReviewView, setMobileReviewView] = useState<'preview' | 'form'>('form');
 
     // Price List State
     const [priceList, setPriceList] = useState<PriceListItem[]>([]);
@@ -901,12 +902,37 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                                 <span>Approve & Save</span>
                                             </button>
                                         </div>
+                                        {/* Mobile Segmented View Switcher (< md screens) */}
+                                        <div className="flex md:hidden w-full bg-slate-200/80 p-1 rounded-xl text-xs font-bold text-slate-700">
+                                            <button
+                                                type="button"
+                                                onClick={() => setMobileReviewView('form')}
+                                                className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                                                    mobileReviewView === 'form' ? 'bg-white text-slate-950 shadow-xs font-black' : 'text-slate-600'
+                                                }`}
+                                            >
+                                                <span>📝</span>
+                                                <span>Edit Form & Stock</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setMobileReviewView('preview')}
+                                                className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                                                    mobileReviewView === 'preview' ? 'bg-white text-slate-950 shadow-xs font-black' : 'text-slate-600'
+                                                }`}
+                                            >
+                                                <span>👁️</span>
+                                                <span>Doc Preview</span>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* 2-Column Split View: Left Document Preview / Right Form */}
-                                    <div className="grid md:grid-cols-2 h-[calc(100vh-180px)] min-h-[600px]">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 h-[calc(100vh-180px)] min-h-[520px] md:min-h-[600px]">
                                         {/* Left: Document Viewer (PDF iframe or Image) */}
-                                        <div className="bg-slate-100 p-4 flex flex-col border-r border-slate-200 overflow-hidden">
+                                        <div className={`bg-slate-100 p-3 sm:p-4 flex-col border-r border-slate-200 overflow-hidden ${
+                                            mobileReviewView === 'preview' ? 'flex' : 'hidden md:flex'
+                                        }`}>
                                             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 shrink-0">
                                                 <span className="text-xs font-bold text-slate-700 truncate max-w-xs">
                                                     📄 {job.file?.name || job.data?.filename || 'Document Preview'}
@@ -951,7 +977,9 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                         </div>
 
                                         {/* Right: Tabbed Review Panel (Stock Mapping vs Invoice Breakdown) */}
-                                        <div className="overflow-y-auto h-full p-5 space-y-5 bg-slate-50/50">
+                                        <div className={`overflow-y-auto h-full p-3 sm:p-5 space-y-4 sm:space-y-5 bg-slate-50/50 flex-col ${
+                                            mobileReviewView === 'form' ? 'flex' : 'hidden md:flex'
+                                        }`}>
                                             {/* Right Panel Sub-tab Toggle */}
                                             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10">
                                                 <div className="inline-flex bg-slate-200/70 p-1 rounded-xl text-xs font-bold text-slate-600">

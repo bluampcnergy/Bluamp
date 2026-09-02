@@ -790,7 +790,7 @@ const App: React.FC = () => {
         userRole={currentUser.role}
         onLogout={handleLogout} 
       />
-      <main className="p-4 sm:p-6 lg:p-8">
+      <main className="px-2.5 py-3.5 sm:px-6 sm:py-8 pb-24 md:pb-8">
         {renderView()}
       </main>
       
