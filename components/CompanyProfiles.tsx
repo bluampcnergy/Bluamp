@@ -115,6 +115,52 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Dynamic Custom Categories State
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dc_custom_company_categories') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [showInlineAddCategory, setShowInlineAddCategory] = useState(false);
+  const [inlineCategoryName, setInlineCategoryName] = useState('');
+
+  // Combined all company categories (Base + Custom + Existing in DB)
+  const allCompanyCategories = useMemo(() => {
+    const set = new Set<string>(COMPANY_CATEGORIES);
+    customCategories.forEach(c => {
+      if (c && c.trim()) set.add(c.trim());
+    });
+    companyProfiles.forEach(p => {
+      if (p.category && p.category.trim()) set.add(p.category.trim());
+    });
+    return Array.from(set);
+  }, [customCategories, companyProfiles]);
+
+  const handleAddCustomCategory = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!allCompanyCategories.includes(trimmed)) {
+      const updated = [...customCategories, trimmed];
+      setCustomCategories(updated);
+      try {
+        localStorage.setItem('dc_custom_company_categories', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to persist custom categories', e);
+      }
+      addLogEntry('Created Company Category', `Added new classification category '${trimmed}'`);
+    }
+    setFormData(prev => ({ ...prev, category: trimmed }));
+    setSelectedCategoryFilter(trimmed);
+    setIsAddCategoryModalOpen(false);
+    setNewCategoryInput('');
+    setShowInlineAddCategory(false);
+    setInlineCategoryName('');
+  };
+
   // Staging Review Migration Modal State
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [stagedContacts, setStagedContacts] = useState<StagedContact[]>([]);
@@ -528,21 +574,59 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">
-                Category / Classification
-              </label>
-              <select
-                name="category"
-                value={formData.category}
-                onChange={handleInputChange}
-                className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm bg-white font-semibold"
-              >
-                {COMPANY_CATEGORIES.map(c => (
-                  <option key={c} value={c}>
-                    {c}
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700">
+                  Category / Classification
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowInlineAddCategory(prev => !prev)}
+                  className="text-xs font-bold text-[#658C3E] hover:underline"
+                >
+                  {showInlineAddCategory ? '✕ Cancel' : '➕ New Category'}
+                </button>
+              </div>
+
+              {showInlineAddCategory ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Enter custom category..."
+                    value={inlineCategoryName}
+                    onChange={e => setInlineCategoryName(e.target.value)}
+                    className="flex-1 border border-[#8EBF45] rounded-lg p-2 text-xs sm:text-sm font-bold bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddCustomCategory(inlineCategoryName)}
+                    className="px-3 py-1.5 bg-[#8EBF45] text-[#0D0D0D] font-bold rounded-lg text-xs"
+                  >
+                    Save
+                  </button>
+                </div>
+              ) : (
+                <select
+                  name="category"
+                  value={formData.category}
+                  onChange={e => {
+                    if (e.target.value === 'ADD_CUSTOM') {
+                      setShowInlineAddCategory(true);
+                    } else {
+                      handleInputChange(e);
+                    }
+                  }}
+                  className="w-full border border-slate-300 rounded-lg shadow-sm p-2 sm:p-2.5 focus:ring-2 focus:ring-blue-500 text-xs sm:text-sm bg-white font-semibold"
+                >
+                  {allCompanyCategories.map(c => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value="ADD_CUSTOM" className="font-bold text-[#658C3E]">
+                    ➕ Add Custom Category...
                   </option>
-                ))}
-              </select>
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1">
@@ -733,7 +817,7 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
             )
           </button>
 
-          {COMPANY_CATEGORIES.slice(0, 7).map(cat => {
+          {allCompanyCategories.map(cat => {
             const count = companyProfiles.filter(p => p.category === cat).length;
             if (count === 0 && selectedCategoryFilter !== cat) return null;
             return (
@@ -750,6 +834,14 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
               </button>
             );
           })}
+
+          <button
+            onClick={() => setIsAddCategoryModalOpen(true)}
+            className="px-3.5 py-1.5 text-xs font-black uppercase tracking-wider rounded-full border border-dashed border-[#8EBF45] text-[#658C3E] hover:bg-[#8EBF45]/20 bg-white transition-all flex items-center gap-1 shadow-2xs"
+            title="Create a new custom company/vendor category"
+          >
+            <span>➕ Add Category</span>
+          </button>
         </div>
       </div>
 
@@ -900,21 +992,59 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Category / Classification <span className="text-red-500">*</span>
-            </label>
-            <select
-              name="category"
-              value={formData.category}
-              onChange={handleInputChange}
-              className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold text-slate-800"
-            >
-              {COMPANY_CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>
-                  {cat}
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Category / Classification <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowInlineAddCategory(prev => !prev)}
+                className="text-xs font-bold text-[#658C3E] hover:underline"
+              >
+                {showInlineAddCategory ? '✕ Cancel' : '➕ New Category'}
+              </button>
+            </div>
+
+            {showInlineAddCategory ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Enter custom category name..."
+                  value={inlineCategoryName}
+                  onChange={e => setInlineCategoryName(e.target.value)}
+                  className="flex-1 border-2 border-[#8EBF45] rounded-lg p-2 text-xs font-bold bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddCustomCategory(inlineCategoryName)}
+                  className="px-3.5 py-2 bg-[#8EBF45] text-[#0D0D0D] font-bold rounded-lg text-xs hover:bg-[#658C3E] hover:text-white transition-all shadow-xs"
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <select
+                name="category"
+                value={formData.category}
+                onChange={e => {
+                  if (e.target.value === 'ADD_CUSTOM') {
+                    setShowInlineAddCategory(true);
+                  } else {
+                    handleInputChange(e);
+                  }
+                }}
+                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold text-slate-800"
+              >
+                {allCompanyCategories.map(cat => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+                <option value="ADD_CUSTOM" className="font-bold text-[#658C3E]">
+                  ➕ Add Custom Category...
                 </option>
-              ))}
-            </select>
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1087,7 +1217,7 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                 onChange={e => setBatchCategory(e.target.value)}
                 className="border border-slate-300 rounded-lg p-1.5 text-xs bg-white font-bold text-slate-800 max-w-xs"
               >
-                {COMPANY_CATEGORIES.map(c => (
+                {allCompanyCategories.map(c => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -1118,63 +1248,31 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                   : 'Select All'}
               </button>
 
-              <div className="inline-flex bg-slate-200/80 p-0.5 rounded-lg text-xs font-bold text-slate-700">
-                <button
-                  type="button"
-                  onClick={() => setStagingFilter('all')}
-                  className={`px-2.5 py-1 rounded-md transition-all ${
-                    stagingFilter === 'all'
-                      ? 'bg-white text-slate-900 shadow-xs font-black'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  All ({stagedContacts.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStagingFilter('new')}
-                  className={`px-2.5 py-1 rounded-md transition-all ${
-                    stagingFilter === 'new'
-                      ? 'bg-white text-emerald-800 shadow-xs font-black'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  New Only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStagingFilter('duplicate')}
-                  className={`px-2.5 py-1 rounded-md transition-all ${
-                    stagingFilter === 'duplicate'
-                      ? 'bg-white text-amber-800 shadow-xs font-black'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Duplicates
-                </button>
-              </div>
+              <select
+                value={stagingFilter}
+                onChange={e => setStagingFilter(e.target.value as any)}
+                className="border border-slate-300 rounded-lg p-1.5 text-xs bg-white font-bold text-slate-700"
+              >
+                <option value="all">All ({stagedContacts.length})</option>
+                <option value="new">
+                  New Only ({stagedContacts.filter(c => !c.isDuplicate).length})
+                </option>
+                <option value="duplicate">
+                  Duplicates (
+                  {stagedContacts.filter(c => c.isDuplicate).length})
+                </option>
+              </select>
             </div>
           </div>
 
-          {/* Staging Search Input */}
-          <input
-            type="text"
-            placeholder="Filter staged contacts by name, phone, or verified title..."
-            value={stagingSearchTerm}
-            onChange={e => setStagingSearchTerm(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl p-2.5 text-xs bg-white focus:ring-2 focus:ring-[#8EBF45] outline-none"
-          />
-
-          {/* Staged Contacts List / Cards */}
-          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+          {/* Staged Contacts Cards Scroll Area */}
+          <div className="flex-1 overflow-y-auto max-h-[50vh] pr-1 space-y-3">
             {filteredStagedContacts.map(contact => (
               <div
                 key={contact.id}
-                className={`p-4 rounded-2xl border transition-all text-xs ${
-                  contact.isDuplicate
-                    ? 'bg-amber-50/50 border-amber-200'
-                    : contact.selected
-                    ? 'bg-white border-slate-300 shadow-xs'
+                className={`p-4 rounded-xl border transition-all ${
+                  contact.selected
+                    ? 'bg-white border-[#8EBF45] shadow-sm ring-1 ring-[#8EBF45]/30'
                     : 'bg-slate-50/70 border-slate-200 opacity-60'
                 }`}
               >
@@ -1182,41 +1280,95 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                   <input
                     type="checkbox"
                     checked={contact.selected}
-                    onChange={() => handleToggleSelectStaged(contact.id)}
-                    className="mt-1.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    onChange={() =>
+                      handleUpdateStagedRow(
+                        contact.id,
+                        'selected',
+                        !contact.selected
+                      )
+                    }
+                    className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                   />
 
-                  <div className="flex-1 space-y-2.5">
-                    {/* Row Top Header */}
-                    <div className="flex flex-wrap justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0 space-y-3">
+                    {/* Top Row: Names & Status Badges */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-900 text-sm">
+                          {contact.originalName}
+                        </span>
                         {contact.isBusiness && (
-                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase px-2 py-0.5 rounded border border-emerald-200">
-                            🏢 Business Account
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                            🏢 Business
                           </span>
                         )}
-                        <span className="text-slate-500 font-mono font-bold">
-                          📱 {contact.phone || 'No phone'}
-                        </span>
-                        {contact.status && (
-                          <span className="text-[10px] text-slate-400 italic">
-                            ({contact.status})
+                        {contact.isDuplicate ? (
+                          <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                            ⚠️ {contact.duplicateReason}
+                          </span>
+                        ) : (
+                          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            ✨ New Entry
                           </span>
                         )}
                       </div>
 
-                      {contact.isDuplicate && (
-                        <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2 py-0.5 rounded">
-                          ⚠️ {contact.duplicateReason}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-slate-600">
+                        <span>📞 {contact.phone}</span>
+                      </div>
                     </div>
 
-                    {/* Inputs Grid: Company Name, Contact Person, and Category */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* Name Selector (WhatsApp Verified vs Raw Name) */}
+                    {contact.verifiedName &&
+                      contact.verifiedName !== contact.originalName && (
+                        <div className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-200/60 flex items-center justify-between gap-2 flex-wrap text-xs">
+                          <span className="text-emerald-900 font-medium">
+                            Use Verified Business Name?
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateStagedRow(
+                                  contact.id,
+                                  'chosenName',
+                                  contact.verifiedName
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                                contact.chosenName === contact.verifiedName
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50'
+                              }`}
+                            >
+                              ✓ {contact.verifiedName}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateStagedRow(
+                                  contact.id,
+                                  'chosenName',
+                                  contact.originalName
+                                )
+                              }
+                              className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all ${
+                                contact.chosenName === contact.originalName
+                                  ? 'bg-slate-800 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {contact.originalName}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    {/* Row Form Inputs: Chosen Name, Category, GST, Contact Person */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
                       <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                          Company / Vendor Name
+                          Company Name (Imported) *
                         </label>
                         <input
                           type="text"
@@ -1228,41 +1380,28 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                               e.target.value
                             )
                           }
-                          className="w-full border border-slate-200 rounded-lg p-2 font-bold text-slate-900 text-xs bg-white"
-                          placeholder="Company Name"
+                          className="w-full border border-slate-200 rounded-lg p-2 text-slate-900 text-xs font-bold bg-white"
+                          required
                         />
-                        {contact.verifiedName &&
-                          contact.originalName &&
-                          contact.verifiedName !== contact.originalName && (
-                            <div className="flex gap-1.5 mt-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUpdateStagedRow(
-                                    contact.id,
-                                    'chosenName',
-                                    contact.verifiedName
-                                  )
-                                }
-                                className="text-[9px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded font-bold"
-                              >
-                                Use Verified: "{contact.verifiedName}"
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUpdateStagedRow(
-                                    contact.id,
-                                    'chosenName',
-                                    contact.originalName
-                                  )
-                                }
-                                className="text-[9px] text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-1.5 py-0.5 rounded font-bold"
-                              >
-                                Use Contact: "{contact.originalName}"
-                              </button>
-                            </div>
-                          )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                          GST Number (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={contact.gstNumber}
+                          onChange={e =>
+                            handleUpdateStagedRow(
+                              contact.id,
+                              'gstNumber',
+                              e.target.value
+                            )
+                          }
+                          className="w-full border border-slate-200 rounded-lg p-2 text-slate-800 text-xs font-mono bg-white"
+                          placeholder="27AAACA0000A1Z5"
+                        />
                       </div>
 
                       <div>
@@ -1299,7 +1438,7 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                           }
                           className="w-full border border-slate-200 rounded-lg p-2 text-slate-900 text-xs bg-white font-bold"
                         >
-                          {COMPANY_CATEGORIES.map(cat => (
+                          {allCompanyCategories.map(cat => (
                             <option key={cat} value={cat}>
                               {cat}
                             </option>
@@ -1311,11 +1450,6 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                 </div>
               </div>
             ))}
-            {filteredStagedContacts.length === 0 && (
-              <div className="text-center py-8 text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                No staged contacts matching your filter.
-              </div>
-            )}
           </div>
 
           {/* Footer Action */}
@@ -1339,6 +1473,59 @@ const CompanyProfiles: React.FC<CompanyProfilesProps> = ({
                 {stagedContacts.filter(c => c.selected && c.chosenName.trim()).length}{' '}
                 Verified Contacts to Database
               </span>
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* CREATE NEW CUSTOM CATEGORY MODAL */}
+      <Modal
+        isOpen={isAddCategoryModalOpen}
+        onClose={() => {
+          setIsAddCategoryModalOpen(false);
+          setNewCategoryInput('');
+        }}
+        title="➕ Add New Company / Supplier Category"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Create a custom classification tag for vendors, component suppliers, or customer segments (e.g.{' '}
+            <strong className="text-slate-800 font-mono">Supplier: Packaging & Thermal Pads</strong>,{' '}
+            <strong className="text-slate-800 font-mono">B2B OEM Client</strong>).
+          </p>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+              Category Name *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Supplier: Insulation & Heat Sinks"
+              value={newCategoryInput}
+              onChange={e => setNewCategoryInput(e.target.value)}
+              className="w-full border-2 border-slate-300 rounded-lg p-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8EBF45]"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAddCategoryModalOpen(false);
+                setNewCategoryInput('');
+              }}
+              className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAddCustomCategory(newCategoryInput)}
+              className="px-4 py-2 bg-[#8EBF45] text-[#0D0D0D] font-black uppercase tracking-wider rounded-lg text-xs hover:bg-[#658C3E] hover:text-white shadow-md transition-all"
+            >
+              Create Category
             </button>
           </div>
         </div>

@@ -76,7 +76,7 @@ const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { s
     invoiceDate: new Date().toISOString().split('T')[0]
 };
 
-const CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
+const DEFAULT_RAW_CATEGORIES = ['Cell', 'BMS', 'Bat-misc', 'Nickel Strip', 'Wire', 'Connector', 'Holder', 'Epoxy Sheet', 'Sleeve', 'Tape', 'Screw', 'Cabinet', 'Other'];
 const GRID_COLUMNS = ['serial', 'voltage', 'resistance', 'capacity'] as const;
 
 interface SerialGridRow {
@@ -104,6 +104,52 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     const [filterIgnored, setFilterIgnored] = useState(false);
     const [expandedMasterKeys, setExpandedMasterKeys] = useState<Set<string>>(new Set());
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Dynamic Custom Categories for Raw Materials
+    const [customRawCategories, setCustomRawCategories] = useState<string[]>(() => {
+        try {
+            return JSON.parse(localStorage.getItem('dc_custom_raw_material_categories') || '[]');
+        } catch {
+            return [];
+        }
+    });
+    const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
+    const [newCategoryInput, setNewCategoryInput] = useState('');
+    const [showInlineAddCategory, setShowInlineAddCategory] = useState(false);
+    const [inlineCategoryName, setInlineCategoryName] = useState('');
+
+    // Combined all raw categories (Base + Custom + Existing in DB)
+    const allRawCategories = useMemo(() => {
+        const set = new Set<string>(DEFAULT_RAW_CATEGORIES);
+        customRawCategories.forEach(c => {
+            if (c && c.trim()) set.add(c.trim());
+        });
+        receivedGoods.forEach(g => {
+            if (g.category && g.category.trim()) set.add(g.category.trim());
+        });
+        return Array.from(set);
+    }, [customRawCategories, receivedGoods]);
+
+    const handleAddCustomRawCategory = (name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        if (!allRawCategories.includes(trimmed)) {
+            const updated = [...customRawCategories, trimmed];
+            setCustomRawCategories(updated);
+            try {
+                localStorage.setItem('dc_custom_raw_material_categories', JSON.stringify(updated));
+            } catch (e) {
+                console.warn('Failed to persist custom raw categories', e);
+            }
+            addLogEntry('Created Raw Category', `Created new raw material category '${trimmed}'`);
+        }
+        setFormData(prev => ({ ...prev, category: trimmed }));
+        setSelectedCategory(trimmed);
+        setIsAddCategoryModalOpen(false);
+        setNewCategoryInput('');
+        setShowInlineAddCategory(false);
+        setInlineCategoryName('');
+    };
 
     const [serialEntries, setSerialEntries] = useState<SerialGridRow[]>([]);
     const [prefix, setPrefix] = useState('');
@@ -388,10 +434,44 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         setIsModalOpen(true);
     };
 
+    const handleEditMaster = (masterGroup: MasterGroupedGood) => {
+        if (masterGroup.batches.length === 0) return;
+        const primaryBatch = masterGroup.batches[0];
+        setEditingGood(primaryBatch);
+        setInwardBatchMasterTarget(null);
+        setIsModalOpen(true);
+    };
+
     const handleEditBatch = (batch: ReceivedGood) => {
         setEditingGood(batch);
         setInwardBatchMasterTarget(null);
         setIsModalOpen(true);
+    };
+
+    const handleDeleteMaster = (master: MasterGroupedGood) => {
+        const batchCount = master.batches.length;
+        const totalQty = master.totalQuantity;
+        const uom = master.uom;
+
+        const confirmMsg = batchCount > 1
+            ? `Are you sure you want to delete "${master.name}"?\n\n⚠️ This will delete ALL ${batchCount} inward shipment batches (${totalQty} ${uom}) and their associated cell test records.\n\nThis action cannot be undone.`
+            : `Are you sure you want to delete raw material "${master.name}" (${totalQty} ${uom})?`;
+
+        if (window.confirm(confirmMsg)) {
+            const batchIds = new Set(master.batches.map(b => b.id));
+            setReceivedGoods(prev => prev.filter(g => !batchIds.has(g.id)));
+            setTestResults(prev => prev.filter(r => !batchIds.has(r.receivedGoodId)));
+            addLogEntry('Deleted Raw Material Item', `Deleted master item "${master.name}" with ${batchCount} batch(es) (${totalQty} ${uom}).`);
+        }
+    };
+
+    const handleDeleteBatchDirect = (batch: ReceivedGood) => {
+        const confirmMsg = `Delete inward batch for "${batch.name}" (Invoice: ${batch.invoiceNumber || 'Manual Entry'}, Qty: ${batch.quantity})?`;
+        if (window.confirm(confirmMsg)) {
+            setReceivedGoods(prev => prev.filter(g => g.id !== batch.id));
+            setTestResults(prev => prev.filter(r => r.receivedGoodId !== batch.id));
+            addLogEntry('Deleted Raw Material Batch', `Deleted inward batch for "${batch.name}" (${batch.quantity} units, Invoice: ${batch.invoiceNumber || 'N/A'}).`);
+        }
     };
 
     const handleToggleIgnoreReplenish = (masterKey: string, currentStatus: boolean) => {
@@ -568,7 +648,23 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 }
             }
 
-            setReceivedGoods(prev => prev.map(g => g.id === goodId ? newGood : g));
+            const oldNameTrimmed = editingGood.name.trim().toLowerCase();
+            const isMasterPropChanged = (editingGood.name.trim() !== newGood.name.trim()) || (editingGood.category !== newGood.category);
+
+            setReceivedGoods(prev => prev.map(g => {
+                if (g.id === goodId) return newGood;
+                if (isMasterPropChanged && g.name.trim().toLowerCase() === oldNameTrimmed) {
+                    return {
+                        ...g,
+                        name: newGood.name,
+                        category: newGood.category,
+                        uom: newGood.uom,
+                        lowStockThresholdPercent: newGood.lowStockThresholdPercent,
+                        isIgnoredForAlerts: newGood.isIgnoredForAlerts
+                    };
+                }
+                return g;
+            }));
 
             setTestResults(prev => {
                 let updated = removedSerials.length > 0
@@ -826,15 +922,27 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 >
                     All ({masterGroupedGoods.length})
                 </button>
-                {CATEGORIES.map(cat => (
-                    <button
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-1.5 text-xs font-bold rounded-full border transition-all ${selectedCategory === cat ? 'bg-[#8EBF45] text-[#0D0D0D] border-[#8EBF45] shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                    >
-                        {cat}
-                    </button>
-                ))}
+                {allRawCategories.map(cat => {
+                    const count = masterGroupedGoods.filter(m => m.category === cat).length;
+                    return (
+                        <button
+                            key={cat}
+                            onClick={() => setSelectedCategory(cat)}
+                            className={`px-3.5 py-1.5 text-xs font-bold rounded-full border transition-all ${selectedCategory === cat ? 'bg-[#8EBF45] text-[#0D0D0D] border-[#8EBF45] shadow-sm font-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            {cat} {count > 0 ? `(${count})` : ''}
+                        </button>
+                    );
+                })}
+
+                <button
+                    onClick={() => setIsAddCategoryModalOpen(true)}
+                    className="px-3.5 py-1.5 text-xs font-black uppercase tracking-wider rounded-full border border-dashed border-[#8EBF45] text-[#658C3E] hover:bg-[#8EBF45]/20 bg-white transition-all flex items-center gap-1 shadow-2xs"
+                    title="Add a custom raw material category"
+                >
+                    <span>➕ Add Category</span>
+                </button>
+
                 <div className="w-px h-6 bg-slate-200 mx-1"></div>
                 <button
                     onClick={() => setFilterNotes(!filterNotes)}
@@ -893,8 +1001,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                             </span>
                                         </div>
 
-                                        {/* Status / Alert Indicator */}
-                                        <div className="flex items-center gap-2">
+                                        {/* Status / Alert Indicator & Card Action Buttons */}
+                                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                             {master.isIgnoredForAlerts ? (
                                                 <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600">
                                                     🚫 DO NOT REPLENISH
@@ -911,12 +1019,31 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                                             <button
                                                 onClick={() => handleToggleIgnoreReplenish(master.masterKey, master.isIgnoredForAlerts)}
-                                                className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${
+                                                className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors ${
                                                     master.isIgnoredForAlerts ? 'bg-slate-800 text-amber-300 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
                                                 }`}
                                                 title={master.isIgnoredForAlerts ? "Click to re-enable alerts" : "Click to silence stock alerts"}
                                             >
                                                 {master.isIgnoredForAlerts ? '🔕 Silenced' : '🔔 Alert On'}
+                                            </button>
+
+                                            {/* DIRECT MASTER EDIT BUTTON */}
+                                            <button
+                                                onClick={() => handleEditMaster(master)}
+                                                className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-[#8EBF45] hover:text-[#0D0D0D] text-slate-700 text-xs font-bold rounded-lg border border-slate-200 transition-colors shadow-2xs"
+                                                title="Edit Master Item Details & Quantities"
+                                            >
+                                                <PencilIcon />
+                                                <span>Edit</span>
+                                            </button>
+
+                                            {/* DIRECT MASTER DELETE BUTTON */}
+                                            <button
+                                                onClick={() => handleDeleteMaster(master)}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
+                                                title={`Delete ${master.name} (all ${master.batches.length} batch(es))`}
+                                            >
+                                                <Trash2 size={14} />
                                             </button>
                                         </div>
                                     </div>
@@ -1014,8 +1141,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <div className="text-right font-mono">
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                <div className="text-right font-mono mr-1">
                                                                     <span className="font-black text-slate-900 text-sm">
                                                                         {batch.quantity}
                                                                     </span>
@@ -1031,6 +1158,14 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                                                 >
                                                                     <PencilIcon />
                                                                 </button>
+
+                                                                <button
+                                                                    onClick={() => handleDeleteBatchDirect(batch)}
+                                                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                    title="Delete this inward batch"
+                                                                >
+                                                                    <Trash2 size={13} />
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1041,15 +1176,26 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                 </div>
 
                                 {/* Card Bottom Actions Bar */}
-                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
-                                    <button
-                                        onClick={() => handleAddBatchToMaster(master)}
-                                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
-                                        title="Add new inward shipment / invoice batch to this master item"
-                                    >
-                                        <PlusIcon className="w-3.5 h-3.5" />
-                                        <span>Add Inward Batch</span>
-                                    </button>
+                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                            onClick={() => handleAddBatchToMaster(master)}
+                                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
+                                            title="Add new inward shipment / invoice batch to this master item"
+                                        >
+                                            <PlusIcon className="w-3.5 h-3.5" />
+                                            <span>Add Inward Batch</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => handleEditMaster(master)}
+                                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200"
+                                            title="Edit Master Item Details & Batches"
+                                        >
+                                            <PencilIcon />
+                                            <span>Edit Item</span>
+                                        </button>
+                                    </div>
 
                                     {isTracked && setView && (
                                         <button
@@ -1073,7 +1219,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 onClose={() => setIsModalOpen(false)}
                 title={
                     editingGood
-                        ? `Edit Inward Batch (${editingGood.name})`
+                        ? `Edit Raw Material / Batch (${editingGood.name})`
                         : inwardBatchMasterTarget
                         ? `➕ Add Inward Batch to [${inwardBatchMasterTarget.name}]`
                         : "Register New Master Raw Material"
@@ -1102,21 +1248,67 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Category</label>
-                            <input
-                                type="text"
-                                list="categories-received"
-                                value={formData.category}
-                                onChange={e => setFormData({ ...formData, category: e.target.value })}
-                                disabled={Boolean(inwardBatchMasterTarget)}
-                                className={`w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm ${
-                                    inwardBatchMasterTarget ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'
-                                }`}
-                                required
-                            />
-                            <datalist id="categories-received">
-                                {CATEGORIES.map(c => <option key={c} value={c} />)}
-                            </datalist>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider">
+                                    Category <span className="text-red-500">*</span>
+                                </label>
+                                {!inwardBatchMasterTarget && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowInlineAddCategory(prev => !prev)}
+                                        className="text-xs font-bold text-[#658C3E] hover:underline"
+                                    >
+                                        {showInlineAddCategory ? '✕ Cancel' : '➕ New Category'}
+                                    </button>
+                                )}
+                            </div>
+
+                            {showInlineAddCategory ? (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Enter custom category..."
+                                        value={inlineCategoryName}
+                                        onChange={e => setInlineCategoryName(e.target.value)}
+                                        className="flex-1 border-2 border-[#8EBF45] rounded-lg p-2 text-xs font-bold bg-white"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleAddCustomRawCategory(inlineCategoryName)}
+                                        className="px-3 py-1.5 bg-[#8EBF45] text-[#0D0D0D] font-bold rounded-lg text-xs hover:bg-[#658C3E] hover:text-white transition-all shadow-xs"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            ) : (
+                                <select
+                                    value={formData.category}
+                                    onChange={e => {
+                                        if (e.target.value === 'ADD_CUSTOM') {
+                                            setShowInlineAddCategory(true);
+                                        } else {
+                                            setFormData({ ...formData, category: e.target.value });
+                                        }
+                                    }}
+                                    disabled={Boolean(inwardBatchMasterTarget)}
+                                    className={`w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm font-bold ${
+                                        inwardBatchMasterTarget ? 'bg-slate-100 cursor-not-allowed' : 'bg-white text-slate-800'
+                                    }`}
+                                    required
+                                >
+                                    <option value="">Select Category</option>
+                                    {allRawCategories.map(c => (
+                                        <option key={c} value={c}>
+                                            {c}
+                                        </option>
+                                    ))}
+                                    {!inwardBatchMasterTarget && (
+                                        <option value="ADD_CUSTOM" className="font-bold text-[#658C3E]">
+                                            ➕ Add Custom Category...
+                                        </option>
+                                    )}
+                                </select>
+                            )}
                         </div>
 
                         <div>
@@ -1397,6 +1589,60 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     </div>
                 </div>
             )}
+            {/* CREATE NEW CUSTOM RAW MATERIAL CATEGORY MODAL */}
+            <Modal
+                isOpen={isAddCategoryModalOpen}
+                onClose={() => {
+                    setIsAddCategoryModalOpen(false);
+                    setNewCategoryInput('');
+                }}
+                title="➕ Add Raw Material & Component Category"
+                size="md"
+            >
+                <div className="space-y-4">
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                        Create a custom category tag for your inventory items (e.g.{' '}
+                        <strong className="text-slate-800 font-mono">Thermal Pad</strong>,{' '}
+                        <strong className="text-slate-800 font-mono">Active Balancer</strong>,{' '}
+                        <strong className="text-slate-800 font-mono">Copper Busbar</strong>,{' '}
+                        <strong className="text-slate-800 font-mono">Aluminum Enclosure</strong>).
+                    </p>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                            Category Name *
+                        </label>
+                        <input
+                            type="text"
+                            required
+                            placeholder="e.g. Active Balancer"
+                            value={newCategoryInput}
+                            onChange={e => setNewCategoryInput(e.target.value)}
+                            className="w-full border-2 border-slate-300 rounded-lg p-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-[#8EBF45]"
+                        />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsAddCategoryModalOpen(false);
+                                setNewCategoryInput('');
+                            }}
+                            className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleAddCustomRawCategory(newCategoryInput)}
+                            className="px-4 py-2 bg-[#8EBF45] text-[#0D0D0D] font-black uppercase tracking-wider rounded-lg text-xs hover:bg-[#658C3E] hover:text-white shadow-md transition-all"
+                        >
+                            Create Category
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     );
 };
