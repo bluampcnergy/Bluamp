@@ -371,31 +371,66 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
   
-  const handleAddUser = (username: string, password: string, role: User['role'] = 'user'): string | null => {
+  const handleAddUser = (
+    username: string,
+    password: string,
+    role: User['role'] = 'user',
+    name?: string,
+    whatsapp_number?: string
+  ): string | null => {
     if (currentUser?.role !== 'admin') {
-        return 'Permission denied.';
+      return 'Permission denied.';
     }
-    const userExists = users.some(u => u.username === username);
+    const cleanUsername = username.trim().toLowerCase();
+    const userExists = users.some(u => u.username.toLowerCase() === cleanUsername);
     if (userExists) {
-        return 'A user with this email already exists.';
+      return 'A user with this email already exists.';
     }
-    // We add to app_users so their role is tracked. 
-    // They will be seamlessly migrated to Supabase Auth upon first login.
-    const newUser: User = { username, password, role };
+    const newUser: User = {
+      username: cleanUsername,
+      password,
+      role,
+      name: name?.trim(),
+      whatsapp_number: whatsapp_number?.trim(),
+      is_active: true
+    };
     setUsers(prev => [...prev, newUser]);
-    addLogEntry('User Created', `Admin '${currentUser.username}' created new user '${username}'.`);
+    addLogEntry('User Created', `Admin '${currentUser.username}' created new user '${cleanUsername}' (${role}, WA: ${whatsapp_number || 'none'}).`);
+    return null;
+  };
+
+  const handleUpdateUser = (username: string, updates: Partial<User>): string | null => {
+    if (currentUser?.role !== 'admin') {
+      return 'Permission denied.';
+    }
+    const cleanUsername = username.trim().toLowerCase();
+    setUsers(prev =>
+      prev.map(u =>
+        u.username.toLowerCase() === cleanUsername
+          ? {
+              ...u,
+              ...updates,
+              name: updates.name !== undefined ? updates.name?.trim() : u.name,
+              whatsapp_number: updates.whatsapp_number !== undefined ? updates.whatsapp_number?.trim() : u.whatsapp_number,
+              role: updates.role || u.role,
+              ...(updates.password ? { password: updates.password } : {})
+            }
+          : u
+      )
+    );
+    addLogEntry('User Updated', `Admin '${currentUser.username}' updated user '${cleanUsername}' (Role: ${updates.role || 'unchanged'}, WA: ${updates.whatsapp_number || 'unchanged'}).`);
     return null;
   };
 
   const handleDeleteUser = (usernameToDelete: string): string | null => {
     if (currentUser?.role !== 'admin') {
-        return 'Permission denied.';
+      return 'Permission denied.';
     }
     if (usernameToDelete === 'datlioncnergy@gmail.com') {
-        return 'The default admin account cannot be deleted.';
+      return 'The default admin account cannot be deleted.';
     }
     if (usernameToDelete === currentUser.username) {
-        return "You cannot delete your own account.";
+      return 'You cannot delete your own account.';
     }
     setUsers(prev => prev.filter(user => user.username !== usernameToDelete));
     addLogEntry('User Deleted', `Admin '${currentUser.username}' deleted user '${usernameToDelete}'.`);
@@ -631,7 +666,8 @@ const App: React.FC = () => {
         return currentUser && currentUser.role === 'admin' ? (
           <UserManagement 
             users={users} 
-            onAddUser={handleAddUser} 
+            onAddUser={handleAddUser}
+            onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser} 
             currentUser={currentUser} 
           />

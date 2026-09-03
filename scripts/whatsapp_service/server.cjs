@@ -38,10 +38,59 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   }
 });
 
-function isInternalSender(senderPhone) {
-  if (ALLOWED_WHATSAPP_NUMBERS.length === 0) return true;
-  const clean = senderPhone.replace(/\D/g, '');
-  return ALLOWED_WHATSAPP_NUMBERS.some(a => clean === a || clean.endsWith(a) || a.endsWith(clean));
+async function getStaffUserByPhone(senderPhone, fallbackName) {
+  const cleanSender = (senderPhone || '').replace(/\D/g, '');
+  if (!cleanSender) return null;
+
+  try {
+    const { data: users, error } = await supabase
+      .from('app_users')
+      .select('username, name, role, whatsapp_number, is_active');
+
+    if (!error && Array.isArray(users)) {
+      const matched = users.find(u => {
+        if (!u.whatsapp_number) return false;
+        const cleanUserPhone = String(u.whatsapp_number).replace(/\D/g, '');
+        if (!cleanUserPhone) return false;
+        return (
+          cleanSender === cleanUserPhone ||
+          cleanSender.endsWith(cleanUserPhone) ||
+          cleanUserPhone.endsWith(cleanSender)
+        );
+      });
+
+      if (matched && matched.is_active !== false) {
+        return {
+          username: matched.username,
+          name: matched.name || fallbackName || matched.username.split('@')[0],
+          role: matched.role || 'user',
+          whatsapp_number: matched.whatsapp_number,
+          isInternal: true
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[WhatsApp VPS Auth] Error querying app_users:', err.message);
+  }
+
+  // Fallback to ALLOWED_WHATSAPP_NUMBERS environment variable
+  if (ALLOWED_WHATSAPP_NUMBERS.length > 0) {
+    const isAllowed = ALLOWED_WHATSAPP_NUMBERS.some(allowed =>
+      cleanSender === allowed ||
+      cleanSender.endsWith(allowed) ||
+      allowed.endsWith(cleanSender)
+    );
+    if (isAllowed) {
+      return {
+        username: 'admin@cnergy.co.in',
+        name: fallbackName || 'Plant Admin',
+        role: 'admin',
+        isInternal: true
+      };
+    }
+  }
+
+  return null;
 }
 
 // Helper: Send WhatsApp Message
@@ -280,7 +329,7 @@ ${invoiceLink}`;
 }
 
 // Background Task Management
-async function handleListTasks(senderPhone, phoneNumberId, filterUser) {
+async function handleListTasks(senderPhone, staffUser, phoneNumberId, filterUser) {
   try {
     const { data: tasks, error } = await supabase
       .from('employee_tasks')
@@ -292,21 +341,31 @@ async function handleListTasks(senderPhone, phoneNumberId, filterUser) {
 
     const validTasks = (tasks || []).filter(t => t.assigned_to !== 'general' && t.assigned_to !== 'chitale');
     
+    let targetFilter = filterUser?.trim();
+
+    if (!targetFilter && staffUser.role === 'user') {
+      targetFilter = staffUser.name || staffUser.username;
+    }
+
     let filtered = validTasks;
-    if (filterUser && filterUser.trim()) {
-      const cleanTarget = filterUser.toLowerCase().replace('@cnergy.co.in', '').trim();
+    if (targetFilter && targetFilter.toLowerCase() !== 'all') {
+      const cleanTarget = targetFilter.toLowerCase().replace('@cnergy.co.in', '').trim();
       filtered = validTasks.filter(t => {
         const assigned = (t.assigned_to || '').toLowerCase();
         const assignedClean = assigned.replace('@cnergy.co.in', '').trim();
-        return assigned.includes(cleanTarget) || 
-               assignedClean.includes(cleanTarget) || 
-               cleanTarget.includes(assignedClean);
+        return (
+          assigned.includes(cleanTarget) ||
+          assignedClean.includes(cleanTarget) ||
+          cleanTarget.includes(assignedClean) ||
+          assigned === 'team' ||
+          assigned === 'all'
+        );
       });
     }
 
     if (filtered.length === 0) {
-      const targetLabel = filterUser ? ` assigned to *${filterUser}*` : '';
-      return await sendWhatsAppMessage(senderPhone, `🎉 *No Pending Tasks!*${targetLabel}\nAll tasks are currently completed. Have a productive day! 🔋`, phoneNumberId);
+      const targetLabel = targetFilter && targetFilter.toLowerCase() !== 'all' ? ` assigned to *${targetFilter}*` : '';
+      return await sendWhatsAppMessage(senderPhone, `🎉 *No Pending Tasks!*${targetLabel}\nAll tasks are currently completed. Have a productive shift! 🔋`, phoneNumberId);
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -320,8 +379,8 @@ async function handleListTasks(senderPhone, phoneNumberId, filterUser) {
       return `${idx + 1}. ${badge} *${t.title}*\n   👤 Assigned: *${t.assigned_to}* | Due: _${t.due_date || 'No Due Date'}_ | ID: \`${t.id}\``;
     });
 
-    const header = filterUser 
-      ? `📋 *Datlion Cnergy Tasks for ${filterUser} (${filtered.length})*`
+    const header = targetFilter && targetFilter.toLowerCase() !== 'all'
+      ? `📋 *Tasks for ${targetFilter} (${filtered.length})*`
       : `📋 *Datlion Cnergy Pending Tasks (${filtered.length})*`;
 
     const msg = `${header}\n\n${taskLines.join('\n\n')}\n\n💡 _To complete a task, reply: "Done <task ID or task name>"_`;
@@ -357,14 +416,16 @@ async function handleCompleteTask(senderPhone, text, phoneNumberId) {
 }
 
 // Background Plant AI Intelligence
-async function handlePlantAiQuery(senderPhone, senderName, text, phoneNumberId) {
+async function handlePlantAiQuery(senderPhone, staffUser, text, phoneNumberId) {
   try {
+    const isRestrictedRole = staffUser.role === 'user';
+
     const [rgRes, wipRes, fgRes, tasksRes, pricesRes] = await Promise.all([
       supabase.from('received_goods').select('name, category, makeModel, supplier, quantity, status').limit(50),
       supabase.from('wip_items').select('batch_number, model, quantity, current_stage').limit(30),
       supabase.from('finished_goods').select('recipeId, quantity, deliveredTo').limit(30),
       supabase.from('employee_tasks').select('title, assigned_to, due_date').or('completed.is.null,completed.eq.false').limit(30),
-      supabase.from('price_list').select('model_name, price_without_gst').limit(30)
+      isRestrictedRole ? Promise.resolve({ data: [] }) : supabase.from('price_list').select('model_name, price_without_gst').limit(30)
     ]);
 
     const context = {
@@ -377,6 +438,7 @@ async function handlePlantAiQuery(senderPhone, senderName, text, phoneNumberId) 
 
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
     const prompt = `You are the AI Assistant for Datlion Cnergy Plant OS.
+Staff Member: ${staffUser.name} (${staffUser.username}) [Role: ${staffUser.role}]
 Answer the user's WhatsApp question concisely and accurately using this plant data:
 ${JSON.stringify(context, null, 2)}`;
 
@@ -384,7 +446,7 @@ ${JSON.stringify(context, null, 2)}`;
       model: 'gemini-2.5-flash',
       contents: [
         { text: prompt },
-        { text: `Staff User (${senderName}): "${text}"` }
+        { text: `Staff User (${staffUser.name}): "${text}"` }
       ],
       config: { temperature: 0.2, maxOutputTokens: 2048 }
     });
@@ -393,6 +455,38 @@ ${JSON.stringify(context, null, 2)}`;
   } catch (err) {
     await sendWhatsAppMessage(senderPhone, `⚠️ Plant AI query failed: ${err.message}`, phoneNumberId);
   }
+}
+
+// Help Menu
+async function sendHelpMenu(senderPhone, staffUser, phoneNumberId) {
+  const roleLabel =
+    staffUser.role === 'admin'
+      ? '👑 Director Admin'
+      : staffUser.role === 'billing'
+      ? '💼 Billing & Operations'
+      : staffUser.role === 'dashboard_user'
+      ? '📊 Dashboard Data Employee'
+      : '🔧 General Production Staff';
+
+  const menu = `⚡ *Datlion Cnergy Plant OS*
+👋 Hello *${staffUser.name}*! (${roleLabel})
+
+Here is what you can do directly from this WhatsApp chat:
+
+📋 *1. Tasks*
+• View tasks: _"My tasks"_ or _"Show pending tasks"_
+• Complete: _"Done <task ID or title>"_
+
+📦 *2. Plant Floor Check*
+• _"How many 3.2V 100Ah cells in stock?"_
+• _"Show WIP batches in production"_
+
+📄 *3. Invoicing & Bill OCR*
+• Forward any invoice PDF, supplier bill, or receipt photo.
+
+💬 Simply type your query or send a document to begin!`;
+
+  await sendWhatsAppMessage(senderPhone, menu, phoneNumberId);
 }
 
 // External Customer Assistant
@@ -421,36 +515,6 @@ Calculate your solar power requirements and cost savings:
 _Feel free to ask any question about our clean energy products!_`;
 
   await sendWhatsAppMessage(senderPhone, customerMenu, phoneNumberId);
-}
-
-// Welcome Menu
-async function sendHelpMenu(senderPhone, phoneNumberId) {
-  const menu = `⚡ *Datlion Cnergy Plant Assistant*
-
-Here is what you can do directly from this WhatsApp chat:
-
-📄 *1. Invoicing & Expense OCR*
-• Forward any *Invoice PDF*, *Supplier Bill*, or *Receipt Photo*.
-• Bills ≤ ₹5,000 auto-approve directly to the ledger; > ₹5,000 queue for review.
-
-📦 *2. Plant & Stock Intelligence*
-• Ask questions like:
-  - _"What is our raw material inventory level?"_
-  - _"Show WIP batches in production"_
-  - _"How many finished battery packs are in stock?"_
-
-📋 *3. Employee Task Manager*
-• View all tasks: _"Show pending tasks"_
-• View specific tasks: _"Tasks for indrajeet.date@cnergy.co.in"_ or _"Tasks for Ajay"_
-• Add task: _"Add task: Cell sorting for batch 102 to Sanjay due tomorrow"_
-• Complete task: _"Done <task ID or task name>"_
-
-🧾 *4. Fast Quotations & POs*
-• Create drafts: _"Create quotation for 10 units 48V 100Ah for Tata Power"_
-
-💬 Simply type your query or send a document to begin!`;
-
-  await sendWhatsAppMessage(senderPhone, menu, phoneNumberId);
 }
 
 // Routes
@@ -483,10 +547,12 @@ app.post('/api/webhooks/whatsapp', async (req, res) => {
 
     const senderPhone = message.from;
     const senderName = contact?.profile?.name || 'User';
-    const isInternal = isInternalSender(senderPhone);
+    
+    // Dynamic user lookup
+    const staffUser = await getStaffUserByPhone(senderPhone, senderName);
 
     if (message.type === 'document' || message.type === 'image') {
-      if (!isInternal) {
+      if (!staffUser) {
         const externalMsg = `📄 *Document Received!*
 
 Thank you *${senderName}* for contacting Datlion Cnergy.
@@ -501,8 +567,8 @@ For Warranty, RMA, or Service Support, please submit your request at:
       const filename = message.document?.filename || (message.type === 'image' ? 'bill.jpg' : 'invoice.pdf');
 
       if (mediaId) {
-        sendWhatsAppMessage(senderPhone, `⏳ *Document Received!* Analyzing with Cnergy AI OCR...`, phoneNumberId).catch(() => {});
-        processInvoiceTask(senderPhone, senderName, mediaId, filename, mimeType, phoneNumberId).catch(console.error);
+        sendWhatsAppMessage(senderPhone, `⏳ *Document Received from ${staffUser.name}!* Analyzing with Cnergy AI OCR...`, phoneNumberId).catch(() => {});
+        processInvoiceTask(senderPhone, staffUser.name, mediaId, filename, mimeType, phoneNumberId).catch(console.error);
       }
       return res.status(200).send('EVENT_RECEIVED');
     }
@@ -511,21 +577,25 @@ For Warranty, RMA, or Service Support, please submit your request at:
       const clean = (message.text?.body || '').trim();
       const lower = clean.toLowerCase();
 
-      if (!isInternal) {
+      if (!staffUser) {
         handleExternalCustomerMessage(senderPhone, senderName, clean, phoneNumberId).catch(console.error);
         return res.status(200).send('EVENT_RECEIVED');
       }
 
       if (['hi', 'hello', 'hey', 'help', 'menu', 'options', 'start'].includes(lower)) {
-        sendHelpMenu(senderPhone, phoneNumberId).catch(console.error);
-      } else if (lower.startsWith('task') || lower.startsWith('show task') || lower.startsWith('list task') || lower.includes('tasks for')) {
+        sendHelpMenu(senderPhone, staffUser, phoneNumberId).catch(console.error);
+      } else if (lower.startsWith('task') || lower.startsWith('show task') || lower.startsWith('list task') || lower.includes('tasks for') || lower.includes('my tasks')) {
         let filterUser;
-        if (lower.includes('for ')) filterUser = lower.split('for ')[1].trim();
-        handleListTasks(senderPhone, phoneNumberId, filterUser).catch(console.error);
+        if (lower.includes('my tasks') || lower === 'tasks') {
+          filterUser = staffUser.role === 'user' ? staffUser.name : undefined;
+        } else if (lower.includes('for ')) {
+          filterUser = lower.split('for ')[1].trim();
+        }
+        handleListTasks(senderPhone, staffUser, phoneNumberId, filterUser).catch(console.error);
       } else if (lower.startsWith('done ') || lower.startsWith('complete ')) {
         handleCompleteTask(senderPhone, clean, phoneNumberId).catch(console.error);
       } else {
-        handlePlantAiQuery(senderPhone, senderName, clean, phoneNumberId).catch(console.error);
+        handlePlantAiQuery(senderPhone, staffUser, clean, phoneNumberId).catch(console.error);
       }
 
       return res.status(200).send('EVENT_RECEIVED');

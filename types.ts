@@ -76,6 +76,9 @@ export interface User {
   username: string;
   password?: string;
   role: 'admin' | 'user' | 'billing' | 'dashboard_user';
+  name?: string;
+  whatsapp_number?: string;
+  is_active?: boolean;
 }
 
 export interface EmployeeTask {

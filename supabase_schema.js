@@ -10,8 +10,14 @@
 create table if not exists "app_users" (
   "username" text primary key,
   "password" text,
-  "role" text
+  "role" text,
+  "name" text,
+  "whatsapp_number" text,
+  "is_active" boolean default true
 );
+
+-- Index for WhatsApp staff recognition
+create index if not exists "idx_app_users_whatsapp" on "app_users"("whatsapp_number");
 
 -- Company Profiles Table
 create table if not exists "company_profiles" (
