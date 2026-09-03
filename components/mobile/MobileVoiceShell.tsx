@@ -305,6 +305,10 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
     }
 
     if (intent === 'delete_task') {
+      if (currentUser?.role !== 'admin') {
+        setVoiceFeedbackMessage({ text: '⚠️ Only Admins are permitted to delete tasks.', type: 'error' });
+        return;
+      }
       let targetTask = tasks.find(t => t.id === parameters.task_id);
       if (!targetTask && parameters.task_title_match) {
         const query = parameters.task_title_match.toLowerCase();
@@ -774,6 +778,15 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
                           <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-medium">
                             👤 {t.assigned_to}
                           </span>
+                          <span className={`px-2 py-0.5 rounded-md font-medium border ${
+                            t.created_by === t.assigned_to || t.created_by?.includes(t.assigned_to)
+                              ? 'bg-slate-800/80 text-slate-400 border-slate-700'
+                              : 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60'
+                          }`}>
+                            {t.created_by === t.assigned_to || t.created_by?.includes(t.assigned_to)
+                              ? `👤 Self-Assigned`
+                              : `👑 by ${t.created_by || 'Admin'}`}
+                          </span>
                           {t.due_date && dueInfo && (
                             <span className={`px-2 py-0.5 rounded-md font-medium text-slate-300 ${dueInfo.badgeClass}`}>
                               📅 {dueInfo.formattedText} {dueInfo.isOverdue && !t.completed && '(Overdue)'}
@@ -783,18 +796,20 @@ export const MobileVoiceShell: React.FC<MobileVoiceShellProps> = ({
                       </div>
                     </div>
 
-                    {/* Right: Delete Button */}
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete task "${t.title}" for ${t.assigned_to}?`)) {
-                          onDeleteTask(t.id);
-                        }
-                      }}
-                      className="text-slate-500 hover:text-rose-400 p-1 rounded-lg transition active:scale-95 shrink-0"
-                      title="Delete task"
-                    >
-                      🗑️
-                    </button>
+                    {/* Right: Delete Button (Admin Only) */}
+                    {currentUser?.role === 'admin' && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete task "${t.title}" for ${t.assigned_to}?`)) {
+                            onDeleteTask(t.id);
+                          }
+                        }}
+                        className="text-slate-500 hover:text-rose-400 p-1 rounded-lg transition active:scale-95 shrink-0"
+                        title="Delete task (Admin Only)"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                 </div>
               );

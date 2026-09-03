@@ -438,38 +438,46 @@ const App: React.FC = () => {
   };
 
   const handleAddEmployeeTask = useCallback((assignedTo: string, title: string, description?: string, dueDate?: string) => {
+    // If not admin, force assignment to self
+    const finalAssignedTo = currentUser?.role === 'admin' ? assignedTo : (currentUser?.username || assignedTo);
+    const creatorIdentifier = currentUser?.name ? `${currentUser.name} (${currentUser.username})` : (currentUser?.username || 'admin');
+
     const newTask: EmployeeTask = {
       id: `task-${Date.now()}`,
-      assigned_to: assignedTo,
+      assigned_to: finalAssignedTo,
       title,
       description,
       completed: false,
       due_date: dueDate,
       created_at: Date.now(),
-      created_by: currentUser?.username || 'admin',
+      created_by: creatorIdentifier,
     };
     setEmployeeTasks(prev => [newTask, ...prev]);
-    addLogEntry('CREATE_TASK', `Assigned task "${title}" to employee ${assignedTo}`);
+    addLogEntry('CREATE_TASK', `Task "${title}" created by ${creatorIdentifier} for ${finalAssignedTo}`);
   }, [currentUser, setEmployeeTasks, addLogEntry]);
 
   const handleToggleEmployeeTask = useCallback((taskId: string) => {
     setEmployeeTasks(prev => prev.map(t => {
       if (t.id === taskId) {
         const nextState = !t.completed;
-        addLogEntry('UPDATE_TASK', `Marked task "${t.title}" as ${nextState ? 'Completed' : 'Pending'}`);
+        addLogEntry('UPDATE_TASK', `User '${currentUser?.username}' marked task "${t.title}" as ${nextState ? 'Completed' : 'Pending'}`);
         return { ...t, completed: nextState };
       }
       return t;
     }));
-  }, [setEmployeeTasks, addLogEntry]);
+  }, [currentUser, setEmployeeTasks, addLogEntry]);
 
   const handleDeleteEmployeeTask = useCallback((taskId: string) => {
+    if (currentUser?.role !== 'admin') {
+      alert('Permission denied. Only Admins can delete tasks.');
+      return;
+    }
     const target = employeeTasks.find(t => t.id === taskId);
     setEmployeeTasks(prev => prev.filter(t => t.id !== taskId));
     if (target) {
-      addLogEntry('DELETE_TASK', `Deleted task "${target.title}" assigned to ${target.assigned_to}`);
+      addLogEntry('DELETE_TASK', `Admin '${currentUser.username}' deleted task "${target.title}" assigned to ${target.assigned_to}`);
     }
-  }, [employeeTasks, setEmployeeTasks, addLogEntry]);
+  }, [currentUser, employeeTasks, setEmployeeTasks, addLogEntry]);
 
   const handleEditEmployeeTask = useCallback((taskId: string, title: string, description?: string, dueDate?: string) => {
     setEmployeeTasks(prev => prev.map(t => {
