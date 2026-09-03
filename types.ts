@@ -242,12 +242,18 @@ export interface RepairItem {
 export interface CompanyProfile {
   id: string;
   name: string;
+  category?: string;
   gstNumber: string;
   gstin?: string;
   shippingAddress: string;
   email: string;
   contactPerson: string;
   phoneNumber: string;
+  source?: 'manual' | 'whatsapp' | 'csv' | string;
+  verified_name?: string;
+  is_business?: boolean;
+  notes?: string;
+  created_at?: string | number;
 }
 
 // --- Storage Management Types ---

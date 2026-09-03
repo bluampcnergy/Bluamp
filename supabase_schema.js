@@ -17,12 +17,22 @@ create table if not exists "app_users" (
 create table if not exists "company_profiles" (
   "id" text primary key,
   "name" text,
+  "category" text,
   "gstNumber" text,
   "shippingAddress" text,
   "email" text,
   "contactPerson" text,
-  "phoneNumber" text
+  "phoneNumber" text,
+  "source" text default 'manual',
+  "verified_name" text,
+  "is_business" boolean default false,
+  "notes" text,
+  "created_at" timestamptz default now()
 );
+
+-- Index for category search & phone lookup
+create index if not exists "idx_company_profiles_category" on "company_profiles"("category");
+create index if not exists "idx_company_profiles_phone" on "company_profiles"("phoneNumber");
 
 -- Received Goods (Raw Materials) Table
 create table if not exists "received_goods" (
