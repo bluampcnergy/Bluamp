@@ -864,13 +864,25 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         newItems[index] = { ...newItems[index], [field]: value };
         const item = newItems[index];
 
-        if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
-            item.taxable_value = Math.max(0, (Number(item.quantity) * Number(item.unit_price)) - Number(item.discount || 0));
-        }
-
-        // Tax calculation based on Place of Supply (GSTIN state codes) or manual override
         const taxRate = Number(item.igst_rate || 0);
         const taxMode = getTaxMode(doc.issuer_details.gstin, doc.receiver_details.gstin, doc.invoice_metadata.tax_mode);
+
+        if (field === 'total_value') {
+            // Back-calculate unit rate (excl. GST) from Total (incl. GST)
+            const inputTotal = Math.max(0, parseFloat(value) || 0);
+            const qty = Math.max(1, Number(item.quantity) || 1);
+            const discount = Number(item.discount || 0);
+
+            const calculatedTaxable = taxRate > 0 ? (inputTotal / (1 + (taxRate / 100))) : inputTotal;
+            const calculatedUnitPrice = Math.max(0, (calculatedTaxable + discount) / qty);
+            const roundedUnitPrice = Math.round(calculatedUnitPrice * 10000) / 10000;
+
+            item.unit_price = roundedUnitPrice;
+            item.taxable_value = Math.max(0, (Number(item.quantity) * roundedUnitPrice) - discount);
+            item.total_value = inputTotal;
+        } else if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
+            item.taxable_value = Math.max(0, (Number(item.quantity) * Number(item.unit_price)) - Number(item.discount || 0));
+        }
 
         if (taxMode === 'intra') {
             const halfRate = taxRate / 2;
@@ -887,7 +899,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             item.sgst_amount = 0;
         }
 
-        item.total_value = item.taxable_value + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
+        if (field !== 'total_value') {
+            item.total_value = item.taxable_value + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
+        }
 
         const newTotals = recalculateInvoiceTotals(newItems);
         setDoc(prev => ({ ...prev, items: newItems, totals: newTotals }));
@@ -973,7 +987,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('item') || h.includes('name') || h.includes('product') || h.includes('model'));
                 const hsnIdx = headers.findIndex(h => h.includes('hsn') || h.includes('sac') || h.includes('code'));
                 const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity') || h.includes('count'));
-                const rateIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('unit') || h.includes('amount'));
+                const rateIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('unit'));
+                const totalIdx = headers.findIndex(h => h.includes('total') || h.includes('gross') || h.includes('mrp') || h.includes('amount'));
                 const discIdx = headers.findIndex(h => h.includes('disc'));
                 const taxIdx = headers.findIndex(h => h.includes('tax') || h.includes('gst') || h.includes('rate %') || h.includes('igst'));
 
@@ -999,9 +1014,20 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
                     const hsn = hsnIdx !== -1 ? (cols[hsnIdx] || '') : (cols[1] || '');
                     const quantity = qtyIdx !== -1 ? (parseFloat(cols[qtyIdx]) || 1) : (parseFloat(cols[2]) || 1);
-                    const unit_price = rateIdx !== -1 ? (parseFloat(cols[rateIdx]) || 0) : (parseFloat(cols[3]) || 0);
                     const discount = discIdx !== -1 ? (parseFloat(cols[discIdx]) || 0) : 0;
                     const igst_rate = taxIdx !== -1 ? (parseFloat(cols[taxIdx]) || 18) : (cols[4] ? parseFloat(cols[4]) : 18);
+
+                    let unit_price = 0;
+                    if (rateIdx !== -1) {
+                        unit_price = parseFloat(cols[rateIdx]) || 0;
+                    } else if (totalIdx !== -1) {
+                        // Back-calculate unit_price from Total column
+                        const totalColVal = parseFloat(cols[totalIdx]) || 0;
+                        const calcTaxable = igst_rate > 0 ? (totalColVal / (1 + (igst_rate / 100))) : totalColVal;
+                        unit_price = Math.round((Math.max(0, (calcTaxable + discount) / (quantity || 1))) * 10000) / 10000;
+                    } else {
+                        unit_price = parseFloat(cols[3]) || 0;
+                    }
 
                     const taxable_value = Math.max(0, (quantity * unit_price) - discount);
                     let cgst_rate = 0;
@@ -2193,11 +2219,23 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                 </div>
                                             </td>}
                                             {visibleColumns.hsn && <td className="py-2"><input className="w-full bg-transparent outline-none text-slate-600 text-xs" value={item.hsn_sac || ''} onChange={e => updateItem(idx, 'hsn_sac', e.target.value)} placeholder="—" /></td>}
-                                            {visibleColumns.quantity && <td className="py-2 text-right"><input className="w-full bg-transparent outline-none text-right" value={item.quantity} onChange={e => updateItem(idx, 'quantity', e.target.value)} /></td>}
-                                            {visibleColumns.rate && <td className="py-2 text-right"><input className="w-full bg-transparent outline-none text-right" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', e.target.value)} /></td>}
-                                            {visibleColumns.discount && <td className="py-2 text-right"><input className="w-full bg-transparent outline-none text-right" value={item.discount || 0} onChange={e => updateItem(idx, 'discount', e.target.value)} /></td>}
+                                            {visibleColumns.quantity && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right" value={item.quantity} onChange={e => updateItem(idx, 'quantity', e.target.value)} /></td>}
+                                            {visibleColumns.rate && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right font-medium text-slate-800" value={item.unit_price !== undefined && item.unit_price !== null ? item.unit_price : ''} onChange={e => updateItem(idx, 'unit_price', e.target.value)} placeholder="0.00" title="Rate per unit (Excl. GST)" /></td>}
+                                            {visibleColumns.discount && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right" value={item.discount || ''} onChange={e => updateItem(idx, 'discount', e.target.value)} placeholder="0.00" /></td>}
                                             {visibleColumns.taxableValue && <td className="py-2 text-right text-slate-600">{(item.taxable_value || 0).toFixed(2)}</td>}
-                                            {visibleColumns.total && <td className="py-2 text-right font-semibold pr-2">{(item.total_value || 0).toFixed(2)}</td>}
+                                            {visibleColumns.total && (
+                                                <td className="py-2 text-right font-semibold pr-2">
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        className="w-full bg-transparent outline-none text-right font-semibold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#8EBF45]"
+                                                        value={item.total_value !== undefined && item.total_value !== null ? item.total_value : ''}
+                                                        onChange={e => updateItem(idx, 'total_value', e.target.value)}
+                                                        placeholder="0.00"
+                                                        title="Total Amount (Incl. GST) - edit to back-calculate unit rate"
+                                                    />
+                                                </td>
+                                            )}
                                             <td className="py-2 text-center no-print w-20">
                                                 <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button onClick={() => moveItem(idx, -1)} disabled={idx === 0} className="text-gray-400 hover:text-blue-600 disabled:opacity-30"><ChevronUp size={14} /></button>

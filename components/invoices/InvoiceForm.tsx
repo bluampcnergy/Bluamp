@@ -76,30 +76,49 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
   const updateItem = (index: number, field: keyof InvoiceItem, value: any) => {
     const newItems = [...(data.items || [])];
     newItems[index] = { ...newItems[index], [field]: value };
+    const item = newItems[index];
 
-    // Auto-calculate Taxable Value
-    if (field === 'quantity' || field === 'unit_price') {
-      newItems[index].taxable_value = Number(newItems[index].quantity || 0) * Number(newItems[index].unit_price || 0);
+    // Compute effective tax rate
+    const totalGstRate = Number(item.igst_rate || 0) > 0
+      ? Number(item.igst_rate)
+      : (Number(item.cgst_rate || 0) + Number(item.sgst_rate || 0));
+
+    if (field === 'total_value') {
+      const inputTotal = Math.max(0, parseFloat(value) || 0);
+      const qty = Math.max(1, Number(item.quantity) || 1);
+      
+      const calculatedTaxable = totalGstRate > 0 ? (inputTotal / (1 + (totalGstRate / 100))) : inputTotal;
+      const calculatedUnitPrice = Math.max(0, calculatedTaxable / qty);
+      const roundedUnitPrice = Math.round(calculatedUnitPrice * 10000) / 10000;
+      
+      item.unit_price = roundedUnitPrice;
+      item.taxable_value = Math.max(0, Number(item.quantity) * roundedUnitPrice);
+      item.total_value = inputTotal;
+    } else if (field === 'quantity' || field === 'unit_price') {
+      // Auto-calculate Taxable Value
+      item.taxable_value = Number(item.quantity || 0) * Number(item.unit_price || 0);
     }
 
     // Auto-calculate Taxes based on Taxable Value
-    const taxable = newItems[index].taxable_value || 0;
-    if (field === 'cgst_rate' || field === 'quantity' || field === 'unit_price') {
-      newItems[index].cgst_amount = (taxable * Number(newItems[index].cgst_rate || 0)) / 100;
+    const taxable = item.taxable_value || 0;
+    if (field === 'cgst_rate' || field === 'quantity' || field === 'unit_price' || field === 'total_value') {
+      item.cgst_amount = (taxable * Number(item.cgst_rate || 0)) / 100;
     }
-    if (field === 'sgst_rate' || field === 'quantity' || field === 'unit_price') {
-      newItems[index].sgst_amount = (taxable * Number(newItems[index].sgst_rate || 0)) / 100;
+    if (field === 'sgst_rate' || field === 'quantity' || field === 'unit_price' || field === 'total_value') {
+      item.sgst_amount = (taxable * Number(item.sgst_rate || 0)) / 100;
     }
-    if (field === 'igst_rate' || field === 'quantity' || field === 'unit_price') {
-      newItems[index].igst_amount = (taxable * Number(newItems[index].igst_rate || 0)) / 100;
+    if (field === 'igst_rate' || field === 'quantity' || field === 'unit_price' || field === 'total_value') {
+      item.igst_amount = (taxable * Number(item.igst_rate || 0)) / 100;
     }
 
-    // Auto-calculate Total
-    newItems[index].total_value =
-      taxable +
-      (newItems[index].cgst_amount || 0) +
-      (newItems[index].sgst_amount || 0) +
-      (newItems[index].igst_amount || 0);
+    // Auto-calculate Total if not updating total directly
+    if (field !== 'total_value') {
+      item.total_value =
+        taxable +
+        (item.cgst_amount || 0) +
+        (item.sgst_amount || 0) +
+        (item.igst_amount || 0);
+    }
 
     const updated = { ...data, items: newItems };
     const newTotals = recalculateInvoiceTotals(newItems);
@@ -347,7 +366,18 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                       ₹{totalTaxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="p-3 text-right font-mono font-black text-slate-900">
-                      ₹{(item.total_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <div className="flex items-center justify-end gap-0.5">
+                        <span className="text-slate-400 font-normal text-xs">₹</span>
+                        <input
+                          type="number"
+                          step="any"
+                          className="w-24 text-right bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-mono font-black text-slate-900 py-0.5"
+                          value={item.total_value !== undefined && item.total_value !== null ? item.total_value : ''}
+                          onChange={(e) => updateItem(idx, 'total_value', e.target.value)}
+                          placeholder="0.00"
+                          title="Total amount (including GST) - edit to back-calculate unit rate"
+                        />
+                      </div>
                     </td>
                     <td className="p-3 text-center">
                       <button
