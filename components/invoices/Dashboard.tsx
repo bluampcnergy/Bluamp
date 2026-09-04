@@ -196,6 +196,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
     const [filterEnd, setFilterEnd] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [loadingRowId, setLoadingRowId] = useState<string | null>(null);
+    const [invoiceItemsCache, setInvoiceItemsCache] = useState<Record<string, any[]>>({});
 
     const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState<ExtractedInvoice | null>(null);
@@ -214,6 +216,25 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
     const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
 
     const [bulkInvoices, setBulkInvoices] = useState<ExtractedInvoice[] | null>(null);
+
+    const ensureFullInvoice = async (inv: ExtractedInvoice): Promise<ExtractedInvoice> => {
+        if (inv.items && inv.items.length > 0) return inv;
+        if (inv.id && invoiceItemsCache[inv.id]) {
+            return { ...inv, items: invoiceItemsCache[inv.id] };
+        }
+        if (inv.id) {
+            try {
+                const { data, error } = await supabase.from('invoices').select('items').eq('id', inv.id).single();
+                if (data && !error && data.items) {
+                    setInvoiceItemsCache(prev => ({ ...prev, [inv.id!]: data.items }));
+                    return { ...inv, items: data.items };
+                }
+            } catch (e) {
+                console.error('Error ensuring full invoice items:', e);
+            }
+        }
+        return inv;
+    };
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -236,7 +257,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         if (selected.length === 0) return;
 
         setBulkDownloading(true);
-        setBulkInvoices(selected);
+        const fullSelected = await Promise.all(selected.map(inv => ensureFullInvoice(inv)));
+        setBulkInvoices(fullSelected);
         
         // Give InvoicePrintView time to render all invoices
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -300,7 +322,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         try {
             let query = supabase
                 .from('invoices')
-                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, totals, filename, created_at, items')
+                .select('id, source_type, document_type, invoice_metadata, receiver_details, issuer_details, totals, filename, image_link, created_at, uploaded_by, requires_review')
                 .eq('requires_review', false)
                 .order('created_at', { ascending: false });
 
@@ -382,18 +404,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         setCurrentPage(1);
     }, [filterStart, filterEnd, invoiceType, documentCategory, searchTerm]);
 
-    const handleExport = (format: 'csv' | 'json') => {
+    const handleExport = async (format: 'csv' | 'json') => {
         setExporting(true);
         try {
             if (invoices.length === 0) {
                 alert("No data to export");
                 return;
             }
+            const fullInvoices = await Promise.all(invoices.map(inv => ensureFullInvoice(inv)));
             if (format === 'csv') {
-                const csv = generateCSV(invoices);
+                const csv = generateCSV(fullInvoices);
                 downloadFile(csv, `invoice_export_${new Date().toISOString().split('T')[0]}.csv`, 'csv');
             } else {
-                const json = JSON.stringify(invoices, null, 2);
+                const json = JSON.stringify(fullInvoices, null, 2);
                 downloadFile(json, `invoice_export_${new Date().toISOString().split('T')[0]}.json`, 'json');
             }
         } finally {
@@ -415,13 +438,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         }
     };
 
-    const handleImportToInventory = (invoice: ExtractedInvoice) => {
-        if (!invoice.items || invoice.items.length === 0) {
+    const handleImportToInventory = async (invoice: ExtractedInvoice) => {
+        const fullInvoice = await ensureFullInvoice(invoice);
+        if (!fullInvoice.items || fullInvoice.items.length === 0) {
             alert('This invoice has no items to import.');
             return;
         }
 
-        const items = invoice.items.map(item => ({
+        const items = fullInvoice.items.map(item => ({
             name: item.description || 'Unknown Item',
             category: item.item_type || 'Uncategorized',
             makeModel: item.make_model || '',
@@ -430,7 +454,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         }));
 
         setItemsToImport(items);
-        setSourceInvoice(invoice);
+        setSourceInvoice(fullInvoice);
         setImportModalOpen(true);
     };
 
@@ -496,9 +520,32 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
         setIsNoteModalOpen(true);
     };
 
-    const toggleRow = (id: string | undefined) => {
+    const toggleRow = async (id: string | undefined) => {
         if (!id) return;
-        setExpandedRowId(expandedRowId === id ? null : id);
+        const nextExpanded = expandedRowId === id ? null : id;
+        setExpandedRowId(nextExpanded);
+        if (nextExpanded) {
+            const target = invoices.find(i => i.id === nextExpanded);
+            const cachedItems = invoiceItemsCache[nextExpanded];
+            if (cachedItems) {
+                if (!target?.items || target.items.length === 0) {
+                    setInvoices(prev => prev.map(inv => inv.id === nextExpanded ? { ...inv, items: cachedItems } : inv));
+                }
+            } else if (!target?.items || target.items.length === 0) {
+                setLoadingRowId(nextExpanded);
+                try {
+                    const { data, error } = await supabase.from('invoices').select('items').eq('id', nextExpanded).single();
+                    if (data && !error && data.items) {
+                        setInvoiceItemsCache(prev => ({ ...prev, [nextExpanded]: data.items }));
+                        setInvoices(prev => prev.map(inv => inv.id === nextExpanded ? { ...inv, items: data.items } : inv));
+                    }
+                } catch (err) {
+                    console.error('Failed to lazy load invoice line items:', err);
+                } finally {
+                    setLoadingRowId(null);
+                }
+            }
+        }
     };
 
     return (
@@ -697,15 +744,15 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                     </button>
                                                 )}
                                                 {onEditInvoice && (currentUser?.role === 'admin' || currentUser?.role === 'billing') && (
-                                                    <button onClick={() => onEditInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record">
+                                                    <button onClick={async () => { const full = await ensureFullInvoice(inv); onEditInvoice(full); }} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Edit Record">
                                                         <PencilIcon className="w-4 h-4" />
                                                     </button>
                                                 )}
-                                                <button onClick={() => setPrintInvoice(inv)} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Download / Print"><Download size={16} /></button>
+                                                <button onClick={async () => { const full = await ensureFullInvoice(inv); setPrintInvoice(full); }} className="p-2 text-slate-400 hover:text-[#8EBF45] hover:bg-[#8EBF45]/5 rounded-lg transition-all" title="Download / Print"><Download size={16} /></button>
                                                 {inv.invoice_metadata?.mail_sent ? (
                                                     <button className="p-2 text-[#8EBF45] cursor-default" title="Mail Sent"><CheckCircle size={16} /></button>
                                                 ) : (
-                                                    <button onClick={() => handleSendMail(inv)} disabled={sendingMailId === inv.id} className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Send Mail">
+                                                    <button onClick={async () => { const full = await ensureFullInvoice(inv); handleSendMail(full); }} disabled={sendingMailId === inv.id} className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Send Mail">
                                                         {sendingMailId === inv.id ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
                                                     </button>
                                                 )}
@@ -717,25 +764,31 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                         {expandedRowId === inv.id && (
                                             <tr className="bg-slate-50 animate-fade-in">
                                                 <td colSpan={9} className="p-6 border-b border-[#A8BF75]/20">
-                                                    <div className="grid md:grid-cols-2 gap-8">
-                                                        <div>
-                                                            <h4 className="text-xs font-black text-[#658C3E] uppercase tracking-widest mb-4">Line Items</h4>
-                                                            <div className="space-y-2">
-                                                                {inv.items?.map((item, i) => (
-                                                                    <div key={i} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                                                                        <div className="flex-1">
-                                                                            <p className="text-sm font-bold text-[#0D0D0D]">{item.description}</p>
-                                                                            <p className="text-[10px] text-slate-400 uppercase font-black">HSN: {item.hsn_sac || 'N/A'} • Qty: {item.quantity}</p>
-                                                                        </div>
-                                                                        <div className="text-right ml-4">
-                                                                            <p className="text-sm font-black text-[#0D0D0D]">₹{item.total_value?.toLocaleString('en-IN')}</p>
-                                                                            <p className="text-[10px] text-[#658C3E] font-bold">@ {item.unit_price} / unit</p>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                                {(!inv.items || inv.items.length === 0) && <p className="text-xs text-slate-400 italic">No line items recorded.</p>}
-                                                            </div>
+                                                    {loadingRowId === inv.id ? (
+                                                        <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-2">
+                                                            <Loader2 size={24} className="animate-spin text-[#8EBF45]" />
+                                                            <span className="text-xs font-bold text-slate-600">Loading line items...</span>
                                                         </div>
+                                                    ) : (
+                                                        <div className="grid md:grid-cols-2 gap-8">
+                                                            <div>
+                                                                <h4 className="text-xs font-black text-[#658C3E] uppercase tracking-widest mb-4">Line Items</h4>
+                                                                <div className="space-y-2">
+                                                                    {inv.items?.map((item, i) => (
+                                                                        <div key={i} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                                                                            <div className="flex-1">
+                                                                                <p className="text-sm font-bold text-[#0D0D0D]">{item.description}</p>
+                                                                                <p className="text-[10px] text-slate-400 uppercase font-black">HSN: {item.hsn_sac || 'N/A'} • Qty: {item.quantity}</p>
+                                                                            </div>
+                                                                            <div className="text-right ml-4">
+                                                                                <p className="text-sm font-black text-[#0D0D0D]">₹{item.total_value?.toLocaleString('en-IN')}</p>
+                                                                                <p className="text-[10px] text-[#658C3E] font-bold">@ {item.unit_price} / unit</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                    {(!inv.items || inv.items.length === 0) && <p className="text-xs text-slate-400 italic">No line items recorded.</p>}
+                                                                </div>
+                                                            </div>
                                                         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                                                             <h4 className="text-xs font-black text-[#658C3E] uppercase tracking-widest mb-2">Invoice Summary</h4>
                                                             <div className="space-y-2 text-sm">
@@ -808,6 +861,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                             )}
                                                         </div>
                                                     </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         )}

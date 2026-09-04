@@ -13,6 +13,23 @@ interface InvoiceFormProps {
 const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
   const [masterItemNames, setMasterItemNames] = useState<string[]>([]);
   const [stockSummaryMap, setStockSummaryMap] = useState<Record<string, { name: string; totalQty: number; uom?: string; makeModel?: string; category?: string }>>({});
+  const suggestionsCache = React.useRef<Map<string, any[]>>(new Map());
+
+  // Invalidate suggestions cache when stockSummaryMap changes
+  useEffect(() => {
+    suggestionsCache.current.clear();
+  }, [stockSummaryMap]);
+
+  const getCachedSuggestions = (desc: string) => {
+    const trimmed = (desc || '').trim();
+    if (!trimmed || trimmed.length < 2) return [];
+    if (suggestionsCache.current.has(trimmed)) {
+      return suggestionsCache.current.get(trimmed)!;
+    }
+    const res = findSimilarStockItems(trimmed, stockSummaryMap, 2, 30);
+    suggestionsCache.current.set(trimmed, res);
+    return res;
+  };
 
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -251,19 +268,19 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-600">
+          <table className="w-full min-w-[880px] text-left text-xs text-slate-600">
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
               <tr>
-                <th className="p-3 w-8">#</th>
-                <th className="p-3 min-w-[200px]">Description</th>
-                <th className="p-3 w-20">HSN</th>
-                <th className="p-3 w-16 text-right">Qty</th>
-                <th className="p-3 w-20 text-right">Rate (₹)</th>
-                <th className="p-3 w-24 text-right">Taxable</th>
-                <th className="p-3 w-16 text-right">GST%</th>
-                <th className="p-3 w-20 text-right">Tax (₹)</th>
-                <th className="p-3 w-24 text-right">Total (₹)</th>
-                <th className="p-3 w-8 text-center"></th>
+                <th className="p-3 w-8 min-w-[32px]">#</th>
+                <th className="p-3 min-w-[220px]">Description</th>
+                <th className="p-3 w-24 min-w-[90px]">HSN</th>
+                <th className="p-3 w-20 min-w-[75px] text-right">Qty</th>
+                <th className="p-3 w-28 min-w-[105px] text-right">Rate (₹)</th>
+                <th className="p-3 w-28 min-w-[105px] text-right">Taxable</th>
+                <th className="p-3 w-20 min-w-[70px] text-right">GST%</th>
+                <th className="p-3 w-28 min-w-[100px] text-right">Tax (₹)</th>
+                <th className="p-3 w-32 min-w-[120px] text-right">Total (₹)</th>
+                <th className="p-3 w-10 min-w-[40px] text-center"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -301,7 +318,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
 
                       {/* Non-AI Similar Master SKU Suggestions */}
                       {(() => {
-                        const suggestions = findSimilarStockItems(item.description || '', stockSummaryMap, 2, 30);
+                        const suggestions = getCachedSuggestions(item.description || '');
                         const nonExact = suggestions.filter(s => normalizeText(s.name) !== normalizeText(item.description || ''));
                         if (nonExact.length === 0) return null;
                         return (
@@ -333,17 +350,20 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                     <td className="p-3 text-right">
                       <input
                         type="number"
+                        step="any"
                         className="w-full text-right bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-mono font-bold text-slate-800 py-0.5"
-                        value={item.quantity || 0}
+                        value={item.quantity !== undefined && item.quantity !== null ? item.quantity : 0}
                         onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
                       />
                     </td>
                     <td className="p-3 text-right">
                       <input
                         type="number"
+                        step="any"
                         className="w-full text-right bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-mono text-slate-700 py-0.5"
-                        value={item.unit_price || 0}
+                        value={item.unit_price !== undefined && item.unit_price !== null ? item.unit_price : 0}
                         onChange={(e) => updateItem(idx, 'unit_price', parseFloat(e.target.value) || 0)}
+                        placeholder="0.00"
                       />
                     </td>
                     <td className="p-3 text-right font-mono font-bold text-slate-800">
@@ -352,7 +372,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                     <td className="p-3 text-right">
                       <input
                         type="number"
-                        className="w-12 text-right bg-slate-50 border border-slate-200 rounded px-1 py-0.5 outline-none font-mono text-slate-700"
+                        step="any"
+                        className="w-14 text-right bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none font-mono text-slate-700"
                         value={totalGstRate || 0}
                         onChange={(e) => {
                           const rate = parseFloat(e.target.value) || 0;
@@ -366,12 +387,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
                       ₹{totalTaxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="p-3 text-right font-mono font-black text-slate-900">
-                      <div className="flex items-center justify-end gap-0.5">
+                      <div className="flex items-center justify-end gap-1">
                         <span className="text-slate-400 font-normal text-xs">₹</span>
                         <input
                           type="number"
                           step="any"
-                          className="w-24 text-right bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-mono font-black text-slate-900 py-0.5"
+                          className="w-full text-right bg-transparent border-b border-transparent focus:border-[#658C3E] outline-none font-mono font-black text-slate-900 py-0.5"
                           value={item.total_value !== undefined && item.total_value !== null ? item.total_value : ''}
                           onChange={(e) => updateItem(idx, 'total_value', e.target.value)}
                           placeholder="0.00"

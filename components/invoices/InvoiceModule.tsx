@@ -1,13 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import FileUploader from './FileUploader';
 import InvoiceForm from './InvoiceForm';
 import Dashboard from './Dashboard';
-import ExpenseForm from './ExpenseForm';
 import InventoryPanel from './InventoryPanel';
-import GSTReturnPanel from './GSTReturnPanel';
-import InvoiceMaker from './InvoiceMaker';
-import PriceList from './PriceList';
-import LedgerPanel from './LedgerPanel';
 import { extractInvoiceData } from '../../services/geminiService';
 import { extractInvoiceDataLocal, testOllamaConnection } from '../../services/ollamaService';
 import { extractInvoiceDataOpenRouter, testOpenRouterConnection } from '../../services/openrouterService';
@@ -15,6 +10,13 @@ import { ExtractedInvoice, EMPTY_INVOICE, User, CompanyProfile, PriceListItem, F
 import { Loader2, Save, RotateCcw, AlertCircle, CheckCircle, SettingsIcon, CloudLightning, AlertTriangle, FileText, Cpu, Trash2, Plus, RefreshCw } from './Icons';
 import { supabase } from '../../supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
+
+// Lazy load secondary panels for ultra-fast startup
+const ExpenseForm = lazy(() => import('./ExpenseForm'));
+const GSTReturnPanel = lazy(() => import('./GSTReturnPanel'));
+const InvoiceMaker = lazy(() => import('./InvoiceMaker'));
+const PriceList = lazy(() => import('./PriceList'));
+const LedgerPanel = lazy(() => import('./LedgerPanel'));
 
 // Handle ESM import where the actual library might be under 'default'
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
@@ -38,6 +40,43 @@ interface BatchJob {
     isDuplicate?: boolean;
     fromDb?: boolean;
 }
+
+// Helper to resolve document preview URL from various storage formats & sources
+export const resolveDocumentUrl = (inv?: ExtractedInvoice | null): string | undefined => {
+    if (!inv) return undefined;
+    const meta = (inv.invoice_metadata || {}) as any;
+    const raw = inv.image_link || meta.file_url || meta.public_url || meta.image_link || meta.pdf_url || meta.receipt_url || meta.url || meta.drive_link || meta.storage_path || inv.filename;
+    if (!raw || typeof raw !== 'string') return undefined;
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
+        return trimmed;
+    }
+    // If it is a relative storage path (e.g. invoices/whatsapp/... or whatsapp/...)
+    try {
+        const cleanPath = trimmed.replace(/^\/+/, '');
+        if (cleanPath.toLowerCase().startsWith('invoices/')) {
+            const relativePart = cleanPath.substring('invoices/'.length);
+            const { data } = supabase.storage.from('Invoices').getPublicUrl(relativePart);
+            return data?.publicUrl;
+        }
+        const { data } = supabase.storage.from('Invoices').getPublicUrl(cleanPath);
+        return data?.publicUrl;
+    } catch (e) {
+        return undefined;
+    }
+};
+
+// Helper to reliably check if a job or URL is a PDF document
+export const checkIsPdf = (job: BatchJob): boolean => {
+    if (job.file?.type?.includes('pdf')) return true;
+    const filename = (job.data?.filename || job.file?.name || '').toLowerCase();
+    if (filename.includes('.pdf')) return true;
+    const url = (job.previewUrl || '').toLowerCase();
+    if (url.includes('.pdf') || url.includes('/pdf') || url.includes('application/pdf')) return true;
+    const docType = (job.data?.document_type || '').toLowerCase();
+    if (docType.includes('pdf')) return true;
+    return false;
+};
 
 interface InvoiceModuleProps {
     currentUser: User | null;
@@ -92,9 +131,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 file: undefined, // No file object for DB records
                 status: 'review',
                 data: inv,
-                previewUrl: (inv.image_link || inv.filename) && ((inv.image_link || inv.filename || '').startsWith('http') || (inv.image_link || inv.filename || '').startsWith('blob')) 
-                    ? (inv.image_link || inv.filename) 
-                    : undefined,
+                previewUrl: resolveDocumentUrl(inv),
                 fromDb: true
             }));
 
@@ -659,11 +696,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                         const grandTotal = job.data?.totals?.grand_total;
                                         const category = job.data?.invoice_metadata?.expense_category;
                                         const itemCount = job.data?.items?.length || 0;
-                                        const isPdf = Boolean(
-                                            job.file?.type?.includes('pdf') ||
-                                            job.data?.filename?.toLowerCase().endsWith('.pdf') ||
-                                            (job.previewUrl && job.previewUrl.toLowerCase().includes('.pdf'))
-                                        );
+                                        const isPdf = checkIsPdf(job);
 
                                         return (
                                             <div
@@ -816,11 +849,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                             const job = batchQueue.find(j => j.id === activeJobId);
                             if (!job || !job.data) return null;
 
-                            const isPdf = Boolean(
-                                job.file?.type?.includes('pdf') ||
-                                job.data?.filename?.toLowerCase().endsWith('.pdf') ||
-                                (job.previewUrl && job.previewUrl.toLowerCase().includes('.pdf'))
-                            );
+                            const isPdf = checkIsPdf(job);
 
                             return (
                                 <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden animate-fade-in">
@@ -949,14 +978,35 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                                                 )}
                                             </div>
 
-                                            <div className="flex-1 w-full h-full rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center">
+                                            <div className="flex-1 w-full h-full rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center relative">
                                                 {job.previewUrl ? (
                                                     isPdf ? (
-                                                        <iframe
-                                                            src={job.previewUrl}
-                                                            className="w-full h-full border-0"
-                                                            title="PDF Invoice Document"
-                                                        />
+                                                        <div className="w-full h-full relative">
+                                                            <object
+                                                                data={job.previewUrl}
+                                                                type="application/pdf"
+                                                                className="w-full h-full border-0 rounded-lg"
+                                                            >
+                                                                <iframe
+                                                                    src={`${job.previewUrl}#toolbar=0`}
+                                                                    className="w-full h-full border-0 rounded-lg"
+                                                                    title="PDF Invoice Document"
+                                                                >
+                                                                    <div className="flex flex-col items-center justify-center p-6 text-center h-full">
+                                                                        <FileText size={48} className="text-red-400 mb-2" />
+                                                                        <p className="text-sm font-semibold text-slate-700 mb-2">PDF Document Ready</p>
+                                                                        <a
+                                                                            href={job.previewUrl}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="px-4 py-2 bg-[#8EBF45] text-white rounded-lg text-xs font-bold hover:bg-[#658C3E] transition-all inline-flex items-center gap-1.5"
+                                                                        >
+                                                                            <span>Open Full Document ↗</span>
+                                                                        </a>
+                                                                    </div>
+                                                                </iframe>
+                                                            </object>
+                                                        </div>
                                                     ) : (
                                                         <div className="w-full h-full overflow-y-auto p-2 flex items-start justify-center">
                                                             <img
@@ -1044,34 +1094,41 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 />
             )}
 
-            {activeTab === 'expenses' && (
-                <ExpenseForm currentUser={currentUser} addLogEntry={addLogEntry} />
-            )}
+            <Suspense fallback={
+                <div className="flex flex-col items-center justify-center p-16 text-slate-400">
+                    <Loader2 className="animate-spin text-[#8EBF45] mb-2" size={32} />
+                    <span className="text-xs font-bold text-slate-500">Loading module...</span>
+                </div>
+            }>
+                {activeTab === 'expenses' && (
+                    <ExpenseForm currentUser={currentUser} addLogEntry={addLogEntry} />
+                )}
 
-            {activeTab === 'gst' && (
-                <GSTReturnPanel />
-            )}
+                {activeTab === 'gst' && (
+                    <GSTReturnPanel />
+                )}
 
-            {activeTab === 'maker' && (
-                <InvoiceMaker
-                    currentUser={currentUser}
-                    companyProfiles={companyProfiles}
-                    initialData={invoiceDraft}
-                    priceList={priceList}
-                    finishedGoods={finishedGoods}
-                    recipes={recipes}
-                    addLogEntry={addLogEntry}
-                    setInvoiceDraft={setInvoiceDraft}
-                />
-            )}
+                {activeTab === 'maker' && (
+                    <InvoiceMaker
+                        currentUser={currentUser}
+                        companyProfiles={companyProfiles}
+                        initialData={invoiceDraft}
+                        priceList={priceList}
+                        finishedGoods={finishedGoods}
+                        recipes={recipes}
+                        addLogEntry={addLogEntry}
+                        setInvoiceDraft={setInvoiceDraft}
+                    />
+                )}
 
-            {activeTab === 'prices' && (
-                <PriceList priceList={priceList} setPriceList={setPriceList} />
-            )}
+                {activeTab === 'prices' && (
+                    <PriceList priceList={priceList} setPriceList={setPriceList} />
+                )}
 
-            {activeTab === 'ledger' && (
-                <LedgerPanel currentUser={currentUser} companyProfiles={companyProfiles} />
-            )}
+                {activeTab === 'ledger' && (
+                    <LedgerPanel currentUser={currentUser} companyProfiles={companyProfiles} />
+                )}
+            </Suspense>
         </div>
     );
 };

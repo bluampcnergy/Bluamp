@@ -53,6 +53,23 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
   const [isSyncingStock, setIsSyncingStock] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
   const [copiedItemIdx, setCopiedItemIdx] = useState<number | null>(null);
+  const suggestionsCache = React.useRef<Map<string, StockItemMatch[]>>(new Map());
+
+  // Invalidate suggestion cache when stock map updates
+  useEffect(() => {
+    suggestionsCache.current.clear();
+  }, [stockSummaryMap]);
+
+  const getCachedSuggestions = (name: string) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed || trimmed.length < 2) return [];
+    if (suggestionsCache.current.has(trimmed)) {
+      return suggestionsCache.current.get(trimmed)!;
+    }
+    const res = findSimilarStockItems(trimmed, stockSummaryMap, 4, 25);
+    suggestionsCache.current.set(trimmed, res);
+    return res;
+  };
 
   // Fetch full inventory from received_goods to compute live stock quantities
   const fetchStockData = async () => {
@@ -220,22 +237,37 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
       const invoiceNum = data.invoice_metadata?.invoice_number || `WA-${Date.now()}`;
       const now = Date.now();
 
-      const payload = itemsToSync.map((it, idx) => ({
-        id: `rg-${now}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
-        name: it.name.trim(),
-        category: it.category || 'Other',
-        makeModel: it.make_model || '',
-        supplier: supplierName,
-        quantity: Number(it.quantity) || 0,
-        initialQuantity: Number(it.quantity) || 0,
-        uom: it.uom || 'qty',
-        status: it.status || 'ND',
-        damagedCount: 0,
-        invoiceNumber: invoiceNum,
-        serials: [],
-        timestamp: now,
-        notes: `Imported via Scan & Import (Invoice #${invoiceNum})`
-      }));
+      const payload = itemsToSync.map((it, idx) => {
+        const itemId = `rg-${now}-${idx}-${Math.random().toString(36).substr(2, 5)}`;
+        const qty = Number(it.quantity) || 0;
+        return {
+          id: itemId,
+          name: it.name.trim(),
+          category: it.category || 'Other',
+          makeModel: it.make_model || '',
+          supplier: supplierName,
+          quantity: qty,
+          initial_quantity: qty,
+          uom: it.uom || 'qty',
+          status: it.status || 'ND',
+          damagedCount: 0,
+          invoiceNumber: invoiceNum,
+          serials: [],
+          timestamp: now,
+          notes: `Imported via Scan & Import (Invoice #${invoiceNum})`
+        };
+      });
+
+      // Save initial quantity to localStorage map for client-side rehydration
+      try {
+        const localInitialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+        payload.forEach(p => {
+          localInitialMap[p.id] = p.quantity;
+        });
+        localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialMap));
+      } catch (e) {
+        console.warn('Failed to save to local initial quantity map:', e);
+      }
 
       const { error } = await supabase.from('received_goods').insert(payload);
       if (error) throw error;
@@ -331,7 +363,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
           items.map((item, idx) => {
             const hasStock = item.currentStock > 0;
             const isExactMatch = Boolean(stockSummaryMap[item.name.toLowerCase().trim()]);
-            const suggestions = findSimilarStockItems(item.name, stockSummaryMap, 4, 25);
+            const suggestions = getCachedSuggestions(item.name);
             // Filter out exact duplicate if already matched
             const nonExactSuggestions = suggestions.filter(s => normalizeText(s.name) !== normalizeText(item.name));
 
