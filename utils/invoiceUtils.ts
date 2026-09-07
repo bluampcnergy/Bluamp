@@ -26,7 +26,11 @@ export const calculateItemTotal = (item: InvoiceItem): number => {
   return (item.taxable_value || 0) + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
 };
 
-export const recalculateInvoiceTotals = (items: InvoiceItem[]): any => {
+export const recalculateInvoiceTotals = (
+  items: InvoiceItem[],
+  subtotalDiscount: number = 0,
+  subtotalDiscountType: 'amount' | 'percent' = 'amount'
+): any => {
   const raw = items.reduce(
     (acc, item) => {
       acc.subtotal_taxable += item.taxable_value || 0;
@@ -46,11 +50,29 @@ export const recalculateInvoiceTotals = (items: InvoiceItem[]): any => {
       raw_grand_total: 0,
     }
   );
-  const roundedGrandTotal = Math.ceil(raw.raw_grand_total);
-  const rounding_adjustment = roundedGrandTotal - raw.raw_grand_total;
+
+  let discountAmt = 0;
+  let discountPercent = 0;
+  if (subtotalDiscountType === 'percent') {
+    discountPercent = Number(subtotalDiscount || 0);
+    discountAmt = (raw.subtotal_taxable * discountPercent) / 100;
+  } else {
+    discountAmt = Number(subtotalDiscount || 0);
+    discountPercent = raw.subtotal_taxable > 0 ? (discountAmt / raw.subtotal_taxable) * 100 : 0;
+  }
+  discountAmt = Math.min(raw.subtotal_taxable, Math.max(0, discountAmt));
+
+  const grandTotalBeforeRounding = Math.max(0, raw.raw_grand_total - discountAmt);
+  const roundedGrandTotal = Math.ceil(grandTotalBeforeRounding);
+  const rounding_adjustment = roundedGrandTotal - grandTotalBeforeRounding;
+
   return {
     subtotal_taxable: raw.subtotal_taxable,
-    discount_total: raw.discount_total,
+    subtotal_discount: discountAmt,
+    subtotal_discount_percent: discountPercent,
+    subtotal_discount_type: subtotalDiscountType,
+    subtotal_discount_value: subtotalDiscount,
+    discount_total: raw.discount_total + discountAmt,
     cgst_total: raw.cgst_total,
     sgst_total: raw.sgst_total,
     igst_total: raw.igst_total,
@@ -455,6 +477,12 @@ export const computeInvoiceChanges = (
   const newSub = Number(newTot.subtotal_taxable || 0);
   if (Math.abs(oldSub - newSub) > 0.01) {
     changes.push(`Taxable Subtotal: ₹${oldSub.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ➔ ₹${newSub.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+  }
+
+  const oldDisc = Number(oldTot.subtotal_discount || 0);
+  const newDisc = Number(newTot.subtotal_discount || 0);
+  if (Math.abs(oldDisc - newDisc) > 0.01) {
+    changes.push(`Subtotal Discount: ₹${oldDisc.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ➔ ₹${newDisc.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
   }
 
   const oldTaxTotal = Number(oldTot.cgst_total || 0) + Number(oldTot.sgst_total || 0) + Number(oldTot.igst_total || 0);

@@ -27,6 +27,7 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     showQRCode?: boolean;
     showTotalsTable?: boolean;
     showTaxTable?: boolean;
+    showSubtotalDiscount?: boolean;
     visibleColumns?: {
         index: boolean;
         description: boolean;
@@ -142,6 +143,39 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const [stamp, setStamp] = useState<string | null>(initialData?.invoice_metadata?.ui_config?.stampUrl || draft?.stamp || null);
     const [signature, setSignature] = useState<string | null>(initialData?.invoice_metadata?.ui_config?.signatureUrl || draft?.signature || null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Subtotal Discount State
+    const [subtotalDiscountValue, setSubtotalDiscountValue] = useState<number>(() => {
+        const t = (initialData?.totals as any) || draft?.doc?.totals;
+        return Number(t?.subtotal_discount_value ?? t?.subtotal_discount ?? 0);
+    });
+    const [subtotalDiscountType, setSubtotalDiscountType] = useState<'amount' | 'percent'>(() => {
+        const t = (initialData?.totals as any) || draft?.doc?.totals;
+        return (t?.subtotal_discount_type as 'amount' | 'percent') || 'amount';
+    });
+    const [showSubtotalDiscount, setShowSubtotalDiscount] = useState<boolean>(() => {
+        const t = (initialData?.totals as any) || draft?.doc?.totals;
+        const disc = Number(t?.subtotal_discount_value ?? t?.subtotal_discount ?? 0);
+        return disc > 0 || Boolean(initialData?.invoice_metadata?.ui_config?.showSubtotalDiscount || draft?.config?.showSubtotalDiscount);
+    });
+
+    const recalcDocTotals = (items: InvoiceItem[], discVal = subtotalDiscountValue, discType = subtotalDiscountType) => {
+        return recalculateInvoiceTotals(items, discVal, discType);
+    };
+
+    const handleSubtotalDiscountChange = (val: number, type: 'amount' | 'percent' = subtotalDiscountType) => {
+        const safeVal = isNaN(val) ? 0 : Math.max(0, val);
+        setSubtotalDiscountValue(safeVal);
+        setSubtotalDiscountType(type);
+        const newTotals = recalculateInvoiceTotals(doc.items, safeVal, type);
+        setDoc(prev => ({
+            ...prev,
+            totals: {
+                ...prev.totals,
+                ...newTotals
+            }
+        }));
+    };
 
     // Baseline reference of document before edits to compute exact diffs
     const baselineDocRef = useRef<ExtractedInvoice | null>(null);
@@ -347,7 +381,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             newItems[idx].sgst_rate = 0; newItems[idx].sgst_amount = 0;
         }
         newItems[idx].total_value = newItems[idx].taxable_value + (newItems[idx].cgst_amount || 0) + (newItems[idx].sgst_amount || 0) + (newItems[idx].igst_amount || 0);
-        const newTotals = recalculateInvoiceTotals(newItems);
+        const newTotals = recalcDocTotals(newItems);
         setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...newTotals } }));
         setPriceDropdownIdx(null);
         setPriceSuggestions([]);
@@ -623,7 +657,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 return {
                     ...prev,
                     items: finalItems,
-                    totals: { ...prev.totals, ...recalculateInvoiceTotals(finalItems) }
+                    totals: { ...prev.totals, ...recalcDocTotals(finalItems) }
                 };
             });
         }
@@ -915,7 +949,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             item.total_value = item.taxable_value + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
         }
 
-        const newTotals = recalculateInvoiceTotals(newItems);
+        const newTotals = recalcDocTotals(newItems);
         setDoc(prev => ({ ...prev, items: newItems, totals: newTotals }));
     };
 
@@ -943,7 +977,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             updatedItem.total_value = (updatedItem.taxable_value || 0) + (updatedItem.cgst_amount || 0) + (updatedItem.sgst_amount || 0) + (updatedItem.igst_amount || 0);
             return updatedItem;
         });
-        const newTotals = recalculateInvoiceTotals(newItems);
+        const newTotals = recalcDocTotals(newItems);
         setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...newTotals } }));
     };
 
@@ -957,7 +991,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     const deleteItem = (index: number) => {
         const newItems = doc.items.filter((_, i) => i !== index);
-        setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...recalculateInvoiceTotals(newItems) } }));
+        setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...recalcDocTotals(newItems) } }));
     };
 
     const downloadItemCSVTemplate = () => {
@@ -1083,7 +1117,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         return {
                             ...prev,
                             items: updatedItems,
-                            totals: { ...prev.totals, ...recalculateInvoiceTotals(updatedItems) }
+                            totals: { ...prev.totals, ...recalcDocTotals(updatedItems) }
                         };
                     });
                     if (addLogEntry) addLogEntry('Imported Table Items', `Imported ${newItems.length} items into invoice via CSV.`);
@@ -1125,7 +1159,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             return newItem;
         });
 
-        const newTotals = recalculateInvoiceTotals(newItems);
+        const newTotals = recalcDocTotals(newItems);
 
         setDoc(prev => ({
             ...prev,
@@ -1138,7 +1172,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const addItem = () => {
         const newItem: InvoiceItem = { description: 'New Item', hsn_sac: '', quantity: 1, unit_price: 0, discount: 0, taxable_value: 0, cgst_rate: 0, cgst_amount: 0, sgst_rate: 0, sgst_amount: 0, igst_rate: 18, igst_amount: 0, total_value: 0 };
         const newItems = [...doc.items, newItem];
-        setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...recalculateInvoiceTotals(newItems) } }));
+        setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...recalcDocTotals(newItems) } }));
     };
 
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1210,6 +1244,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     supplier_details: doc.supplier_details,
                     ui_config: {
                         ...config,
+                        showSubtotalDiscount,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1299,6 +1334,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     supplier_details: doc.supplier_details,
                     ui_config: {
                         ...config,
+                        showSubtotalDiscount,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1793,6 +1829,64 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <input type="checkbox" checked={config.showReceiverSign ?? true} onChange={e => setConfig({ ...config, showReceiverSign: e.target.checked })} className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]" />
                         Show Receiver's Signature
                     </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={showSubtotalDiscount}
+                            onChange={e => {
+                                const val = e.target.checked;
+                                setShowSubtotalDiscount(val);
+                                setConfig(prev => ({ ...prev, showSubtotalDiscount: val }));
+                                if (!val) handleSubtotalDiscountChange(0, subtotalDiscountType);
+                            }}
+                            className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]"
+                        />
+                        <span>Subtotal Discount (Overall Discount)</span>
+                    </label>
+                    {showSubtotalDiscount && (
+                        <div className="ml-5 p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="font-bold text-slate-700">Discount Type</span>
+                                <div className="flex rounded border border-slate-200 text-xs overflow-hidden shadow-2xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSubtotalDiscountChange(subtotalDiscountValue, 'amount')}
+                                        className={`px-2 py-0.5 font-bold transition-colors ${subtotalDiscountType === 'amount' ? 'bg-[#0D0D0D] text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                                    >
+                                        Flat ({currencySymbol})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSubtotalDiscountChange(subtotalDiscountValue, 'percent')}
+                                        className={`px-2 py-0.5 font-bold transition-colors ${subtotalDiscountType === 'percent' ? 'bg-[#0D0D0D] text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                                    >
+                                        Percent (%)
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    placeholder={subtotalDiscountType === 'percent' ? 'e.g. 5%' : '0.00'}
+                                    className="w-full text-xs p-1.5 border rounded bg-white outline-none focus:border-[#658C3E] font-medium"
+                                    value={subtotalDiscountValue || ''}
+                                    onChange={e => handleSubtotalDiscountChange(parseFloat(e.target.value) || 0, subtotalDiscountType)}
+                                />
+                                {subtotalDiscountValue > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSubtotalDiscountChange(0, subtotalDiscountType)}
+                                        className="text-slate-400 hover:text-red-500 p-1"
+                                        title="Clear discount"
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-6">
@@ -2387,7 +2481,53 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                             <textarea className="w-full text-xs font-bold text-slate-700 bg-transparent border-none focus:ring-0 outline-none resize-none overflow-hidden p-0" rows={2} value={amountInWordsStr} onChange={(e) => setAmountInWordsStr(e.target.value)} />
                                         </div>
                                         <div className="w-48">
-                                            <div className="flex justify-between text-xs text-slate-600 mb-0.5"><span>Subtotal</span><span>{(doc.totals.subtotal_taxable || 0).toFixed(2)}</span></div>
+                                            <div className="flex justify-between text-xs font-bold text-slate-900 mb-0.5"><span>Subtotal</span><span>{(doc.totals.subtotal_taxable || 0).toFixed(2)}</span></div>
+                                            {showSubtotalDiscount ? (
+                                                <div className="flex justify-between items-center text-xs text-slate-600 mb-0.5 group">
+                                                    <div className="flex items-center gap-1">
+                                                        <span>Discount</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSubtotalDiscountChange(subtotalDiscountValue, subtotalDiscountType === 'percent' ? 'amount' : 'percent')}
+                                                            className="text-[10px] px-1 py-0.2 bg-slate-100 hover:bg-slate-200 rounded text-slate-600 font-bold"
+                                                            title="Toggle between Flat (₹) and Percentage (%)"
+                                                        >
+                                                            {subtotalDiscountType === 'percent' ? '%' : currencySymbol}
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-red-500 font-medium">-</span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            step={subtotalDiscountType === 'percent' ? '0.5' : '1'}
+                                                            className="w-16 text-right text-xs bg-slate-50 hover:bg-slate-100 focus:bg-white border border-dashed border-slate-300 rounded px-1 py-0.5 text-red-600 font-semibold focus:outline-none focus:border-[#8EBF45]"
+                                                            value={subtotalDiscountValue || ''}
+                                                            placeholder="0"
+                                                            onChange={(e) => handleSubtotalDiscountChange(parseFloat(e.target.value) || 0, subtotalDiscountType)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex justify-end mb-0.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setShowSubtotalDiscount(true);
+                                                            setConfig(prev => ({ ...prev, showSubtotalDiscount: true }));
+                                                        }}
+                                                        className="text-[10px] text-emerald-600 hover:text-emerald-700 hover:underline inline-flex items-center"
+                                                    >
+                                                        + Add Subtotal Discount
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {subtotalDiscountType === 'percent' && (doc.totals.subtotal_discount || 0) > 0 && showSubtotalDiscount && (
+                                                <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                                                    <span>({subtotalDiscountValue}% of subtotal)</span>
+                                                    <span>-{(doc.totals.subtotal_discount || 0).toFixed(2)}</span>
+                                                </div>
+                                            )}
                                             <div className="flex justify-between text-xs text-slate-600 mb-0.5"><span>Tax</span><span>{((doc.totals.cgst_total || 0) + (doc.totals.sgst_total || 0) + (doc.totals.igst_total || 0)).toFixed(2)}</span></div>
                                             {(doc.totals.rounding_adjustment || 0) !== 0 && <div className="flex justify-between text-xs text-slate-500 mb-0.5"><span>Rounding</span><span>{(doc.totals.rounding_adjustment || 0) > 0 ? '+' : ''}{(doc.totals.rounding_adjustment || 0).toFixed(2)}</span></div>}
                                             <div className="flex justify-between text-base font-bold border-t border-slate-300 pt-1 mt-1" style={{ color: config.color }}><span>Total</span><span>{currencySymbol} {(doc.totals.grand_total || 0).toFixed(2)}</span></div>
@@ -2625,7 +2765,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                         <p className="text-[10px] font-bold text-slate-700">{amountInWordsStr}</p>
                                                     </div>
                                                     <div className="w-44">
-                                                        <div className="flex justify-between text-[10px] text-slate-600 mb-0.5"><span>Subtotal</span><span>{(doc.totals.subtotal_taxable || 0).toFixed(2)}</span></div>
+                                                        <div className="flex justify-between text-[10px] font-bold text-slate-900 mb-0.5"><span>Subtotal</span><span>{(doc.totals.subtotal_taxable || 0).toFixed(2)}</span></div>
+                                                        {(doc.totals.subtotal_discount || 0) > 0 && (
+                                                            <div className="flex justify-between text-[10px] text-slate-600 mb-0.5">
+                                                                <span>Discount {doc.totals.subtotal_discount_type === 'percent' ? `(${doc.totals.subtotal_discount_percent}%)` : ''}</span>
+                                                                <span className="text-red-600 font-medium">-{(doc.totals.subtotal_discount || 0).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
                                                         <div className="flex justify-between text-[10px] text-slate-600 mb-0.5"><span>Tax</span><span>{((doc.totals.cgst_total || 0) + (doc.totals.sgst_total || 0) + (doc.totals.igst_total || 0)).toFixed(2)}</span></div>
                                                         {(doc.totals.rounding_adjustment || 0) !== 0 && <div className="flex justify-between text-[10px] text-slate-500 mb-0.5"><span>Rounding</span><span>{(doc.totals.rounding_adjustment || 0) > 0 ? '+' : ''}{(doc.totals.rounding_adjustment || 0).toFixed(2)}</span></div>}
                                                         <div className="flex justify-between text-sm font-bold border-t border-slate-300 pt-1 mt-1" style={{ color: config.color }}><span>Total</span><span>{currencySymbol} {(doc.totals.grand_total || 0).toFixed(2)}</span></div>

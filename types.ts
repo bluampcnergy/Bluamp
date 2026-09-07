@@ -421,10 +421,16 @@ export interface ExtractedInvoice {
   items: InvoiceItem[];
   totals: {
     subtotal_taxable: number;
+    subtotal_discount?: number;
+    subtotal_discount_percent?: number;
+    subtotal_discount_type?: 'amount' | 'percent';
+    subtotal_discount_value?: number;
+    discount_total?: number;
     cgst_total: number;
     sgst_total: number;
     igst_total: number;
     round_off?: number;
+    rounding_adjustment?: number;
     grand_total: number;
     currency?: string;
   };
