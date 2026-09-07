@@ -826,8 +826,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                                                 <p className="text-[10px] text-slate-400 uppercase font-black">HSN: {item.hsn_sac || 'N/A'} • Qty: {item.quantity}</p>
                                                                             </div>
                                                                             <div className="text-right ml-4">
-                                                                                <p className="text-sm font-black text-[#0D0D0D]">₹{item.total_value?.toLocaleString('en-IN')}</p>
-                                                                                <p className="text-[10px] text-[#658C3E] font-bold">@ {item.unit_price} / unit</p>
+                                                                                <p className="text-sm font-black text-[#0D0D0D]">₹{(item.total_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                                                                <p className="text-[10px] text-[#658C3E] font-bold">@ ₹{(Number(item.unit_price) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / unit</p>
                                                                             </div>
                                                                         </div>
                                                                     ))}
@@ -837,9 +837,9 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                                         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                                                             <h4 className="text-xs font-black text-[#658C3E] uppercase tracking-widest mb-2">Invoice Summary</h4>
                                                             <div className="space-y-2 text-sm">
-                                                                <div className="flex justify-between text-slate-500"><span>Taxable Subtotal</span><span className="font-mono">₹{inv.totals?.subtotal_taxable?.toLocaleString('en-IN')}</span></div>
-                                                                <div className="flex justify-between text-slate-500"><span>Total Tax (GST)</span><span className="font-mono">₹{((inv.totals?.cgst_total || 0) + (inv.totals?.sgst_total || 0) + (inv.totals?.igst_total || 0)).toLocaleString('en-IN')}</span></div>
-                                                                <div className="border-t pt-2 flex justify-between font-black text-[#0D0D0D] text-lg"><span>Grand Total</span><span className="text-[#8EBF45]">₹{inv.totals?.grand_total?.toLocaleString('en-IN')}</span></div>
+                                                                <div className="flex justify-between text-slate-500"><span>Taxable Subtotal</span><span className="font-mono">₹{(inv.totals?.subtotal_taxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                                <div className="flex justify-between text-slate-500"><span>Total Tax (GST)</span><span className="font-mono">₹{((inv.totals?.cgst_total || 0) + (inv.totals?.sgst_total || 0) + (inv.totals?.igst_total || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                                                                <div className="border-t pt-2 flex justify-between font-black text-[#0D0D0D] text-lg"><span>Grand Total</span><span className="text-[#8EBF45]">₹{(inv.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                                                             </div>
                                                             <div className="mt-6 pt-4 border-t border-slate-100">
                                                                 <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Additional Metadata</p>

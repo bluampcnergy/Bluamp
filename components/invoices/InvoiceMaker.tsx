@@ -118,7 +118,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 showReceiverSign: savedUi.showReceiverSign ?? true,
                 showQRCode: savedUi.showQRCode ?? true,
                 showTotalsTable: savedUi.showTotalsTable ?? true,
-                showTaxTable: savedUi.showTaxTable ?? false
+                showTaxTable: savedUi.showTaxTable ?? false,
+                showBatteryComparisonTable: savedUi.showBatteryComparisonTable !== undefined ? Boolean(savedUi.showBatteryComparisonTable) : (docType === 'quotation' || docType === 'proforma'),
+                showSubtotalDiscount: savedUi.showSubtotalDiscount !== undefined ? Boolean(savedUi.showSubtotalDiscount) : false
             };
         }
         if (draft?.config) return draft.config;
@@ -137,7 +139,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             showReceiverSign: docType === 'po' ? false : true,
             showQRCode: true,
             showTotalsTable: true,
-            showTaxTable: (docType === 'quotation' || docType === 'proforma') ? false : hasTaxes
+            showTaxTable: (docType === 'quotation' || docType === 'proforma') ? false : hasTaxes,
+            showBatteryComparisonTable: (docType === 'quotation' || docType === 'proforma'),
+            showSubtotalDiscount: false
         };
     });
 
@@ -167,7 +171,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         if (draft?.config?.showBatteryComparisonTable !== undefined) {
             return Boolean(draft.config.showBatteryComparisonTable);
         }
-        return docType === 'quotation' || docType === 'proforma';
+        const title = (initialData?.invoice_metadata?.ui_config?.customTitle || (initialData?.invoice_metadata as any)?.custom_title || (initialData?.invoice_metadata as any)?.title || draft?.customTitle || '').toLowerCase();
+        return docType === 'quotation' || docType === 'proforma' || title.includes('quotation') || title.includes('proforma') || title.includes('quote');
     });
 
     const recalcDocTotals = (items: InvoiceItem[], discVal = subtotalDiscountValue, discType = subtotalDiscountType) => {
@@ -373,25 +378,26 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     const handlePriceSelect = (idx: number, item: PriceListItem) => {
         const newItems = [...doc.items];
-        newItems[idx] = { ...newItems[idx], description: item.model_name, hsn_sac: item.hsn_code || '', unit_price: item.price_without_gst };
+        const unit_price = Math.round(Number(item.price_without_gst || 0) * 100) / 100;
+        newItems[idx] = { ...newItems[idx], description: item.model_name, hsn_sac: item.hsn_code || '', unit_price };
         // Recalculate taxable_value
-        newItems[idx].taxable_value = Math.max(0, (Number(newItems[idx].quantity) * Number(newItems[idx].unit_price)) - Number(newItems[idx].discount || 0));
+        newItems[idx].taxable_value = Math.round(Math.max(0, (Number(newItems[idx].quantity) * unit_price) - Number(newItems[idx].discount || 0)) * 100) / 100;
         // Recalculate taxes
         const taxRate = Number(newItems[idx].igst_rate || 0);
         const taxMode = getTaxMode(doc.issuer_details.gstin, doc.receiver_details.gstin, doc.invoice_metadata.tax_mode);
         if (taxMode === 'intra') {
             const halfRate = taxRate / 2;
             newItems[idx].cgst_rate = halfRate;
-            newItems[idx].cgst_amount = newItems[idx].taxable_value * (halfRate / 100);
+            newItems[idx].cgst_amount = Math.round((newItems[idx].taxable_value * (halfRate / 100)) * 100) / 100;
             newItems[idx].sgst_rate = halfRate;
-            newItems[idx].sgst_amount = newItems[idx].taxable_value * (halfRate / 100);
+            newItems[idx].sgst_amount = Math.round((newItems[idx].taxable_value * (halfRate / 100)) * 100) / 100;
             newItems[idx].igst_amount = 0;
         } else {
-            newItems[idx].igst_amount = newItems[idx].taxable_value * (taxRate / 100);
+            newItems[idx].igst_amount = Math.round((newItems[idx].taxable_value * (taxRate / 100)) * 100) / 100;
             newItems[idx].cgst_rate = 0; newItems[idx].cgst_amount = 0;
             newItems[idx].sgst_rate = 0; newItems[idx].sgst_amount = 0;
         }
-        newItems[idx].total_value = newItems[idx].taxable_value + (newItems[idx].cgst_amount || 0) + (newItems[idx].sgst_amount || 0) + (newItems[idx].igst_amount || 0);
+        newItems[idx].total_value = Math.round((newItems[idx].taxable_value + (newItems[idx].cgst_amount || 0) + (newItems[idx].sgst_amount || 0) + (newItems[idx].igst_amount || 0)) * 100) / 100;
         const newTotals = recalcDocTotals(newItems);
         setDoc(prev => ({ ...prev, items: newItems, totals: { ...prev.totals, ...newTotals } }));
         setPriceDropdownIdx(null);
@@ -478,6 +484,17 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             ? savedUi.terms 
             : (loadedData.invoice_metadata?.terms_conditions || loadedData.invoice_metadata?.terms || loadedData.invoice_metadata?.notes || '');
 
+        const isTargetQuoteOrProforma = targetType === 'quotation' || targetType === 'proforma' || (savedTitle || '').toLowerCase().includes('quote') || (savedTitle || '').toLowerCase().includes('proforma');
+        const restoredComparisonTable = savedUi?.showBatteryComparisonTable !== undefined 
+            ? Boolean(savedUi.showBatteryComparisonTable) 
+            : isTargetQuoteOrProforma;
+        setShowBatteryComparisonTable(restoredComparisonTable);
+
+        const restoredSubtotalDiscount = savedUi?.showSubtotalDiscount !== undefined 
+            ? Boolean(savedUi.showSubtotalDiscount) 
+            : Boolean(loadedData.totals?.subtotal_discount && loadedData.totals.subtotal_discount > 0);
+        setShowSubtotalDiscount(restoredSubtotalDiscount);
+
         const restoredConfig: ExtendedConfig = {
             font: savedUi?.font || 'font-sans',
             color: savedUi?.color || '#000000',
@@ -489,6 +506,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             showQRCode: savedUi?.showQRCode ?? true,
             showTotalsTable: savedUi?.showTotalsTable ?? true,
             showTaxTable: savedUi?.showTaxTable !== undefined ? savedUi.showTaxTable : hasTaxes, // Only default true if taxes actually exist!
+            showBatteryComparisonTable: restoredComparisonTable,
+            showSubtotalDiscount: restoredSubtotalDiscount,
             billedToLabel: savedUi?.billedToLabel || 'Billed To',
             shippedToLabel: savedUi?.shippedToLabel || 'Shipped To'
         };
@@ -628,8 +647,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     }
                 }
 
+                unit_price = Math.round(Number(unit_price || 0) * 100) / 100;
                 const quantity = aiItem.quantity || 1;
-                const taxable_value = quantity * unit_price;
+                const taxable_value = Math.round((quantity * unit_price) * 100) / 100;
                 const item: InvoiceItem = {
                     description: aiItem.description || '',
                     hsn_sac,
@@ -653,15 +673,15 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     if (taxMode === 'intra') {
                         const halfRate = taxRate / 2;
                         item.cgst_rate = halfRate;
-                        item.cgst_amount = taxable * (halfRate / 100);
+                        item.cgst_amount = Math.round((taxable * (halfRate / 100)) * 100) / 100;
                         item.sgst_rate = halfRate;
-                        item.sgst_amount = taxable * (halfRate / 100);
+                        item.sgst_amount = Math.round((taxable * (halfRate / 100)) * 100) / 100;
                         item.igst_amount = 0;
                     } else {
-                        item.igst_amount = taxable * (taxRate / 100);
+                        item.igst_amount = Math.round((taxable * (taxRate / 100)) * 100) / 100;
                         item.cgst_rate = 0; item.cgst_amount = 0; item.sgst_rate = 0; item.sgst_amount = 0;
                     }
-                    item.total_value = taxable + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
+                    item.total_value = Math.round((taxable + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0)) * 100) / 100;
                     return item;
                 });
 
@@ -930,30 +950,31 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
         if (field === 'total_value') {
             // Back-calculate unit rate (excl. GST) from Total (incl. GST)
-            const inputTotal = Math.max(0, parseFloat(value) || 0);
+            const inputTotal = Math.max(0, Math.round((parseFloat(value) || 0) * 100) / 100);
             const qty = Math.max(1, Number(item.quantity) || 1);
-            const discount = Number(item.discount || 0);
+            const discount = Math.round(Number(item.discount || 0) * 100) / 100;
 
             const calculatedTaxable = taxRate > 0 ? (inputTotal / (1 + (taxRate / 100))) : inputTotal;
             const calculatedUnitPrice = Math.max(0, (calculatedTaxable + discount) / qty);
-            const roundedUnitPrice = Math.round(calculatedUnitPrice * 10000) / 10000;
+            const roundedUnitPrice = Math.round(calculatedUnitPrice * 100) / 100;
 
             item.unit_price = roundedUnitPrice;
-            item.taxable_value = Math.max(0, (Number(item.quantity) * roundedUnitPrice) - discount);
+            item.taxable_value = Math.round(Math.max(0, (Number(item.quantity) * roundedUnitPrice) - discount) * 100) / 100;
             item.total_value = inputTotal;
         } else if (field === 'quantity' || field === 'unit_price' || field === 'discount') {
-            item.taxable_value = Math.max(0, (Number(item.quantity) * Number(item.unit_price)) - Number(item.discount || 0));
+            const rawTaxable = Math.max(0, (Number(item.quantity) * Number(item.unit_price)) - Number(item.discount || 0));
+            item.taxable_value = Math.round(rawTaxable * 100) / 100;
         }
 
         if (taxMode === 'intra') {
             const halfRate = taxRate / 2;
             item.cgst_rate = halfRate;
-            item.cgst_amount = item.taxable_value * (halfRate / 100);
+            item.cgst_amount = Math.round((item.taxable_value * (halfRate / 100)) * 100) / 100;
             item.sgst_rate = halfRate;
-            item.sgst_amount = item.taxable_value * (halfRate / 100);
+            item.sgst_amount = Math.round((item.taxable_value * (halfRate / 100)) * 100) / 100;
             item.igst_amount = 0;
         } else {
-            item.igst_amount = item.taxable_value * (taxRate / 100);
+            item.igst_amount = Math.round((item.taxable_value * (taxRate / 100)) * 100) / 100;
             item.cgst_rate = 0;
             item.cgst_amount = 0;
             item.sgst_rate = 0;
@@ -961,7 +982,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         }
 
         if (field !== 'total_value') {
-            item.total_value = item.taxable_value + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0);
+            item.total_value = Math.round((item.taxable_value + (item.cgst_amount || 0) + (item.sgst_amount || 0) + (item.igst_amount || 0)) * 100) / 100;
         }
 
         const newTotals = recalcDocTotals(newItems);
@@ -978,18 +999,18 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             if (taxMode === 'intra') {
                 const halfRate = newRate / 2;
                 updatedItem.cgst_rate = halfRate;
-                updatedItem.cgst_amount = (updatedItem.taxable_value || 0) * (halfRate / 100);
+                updatedItem.cgst_amount = Math.round(((updatedItem.taxable_value || 0) * (halfRate / 100)) * 100) / 100;
                 updatedItem.sgst_rate = halfRate;
-                updatedItem.sgst_amount = (updatedItem.taxable_value || 0) * (halfRate / 100);
+                updatedItem.sgst_amount = Math.round(((updatedItem.taxable_value || 0) * (halfRate / 100)) * 100) / 100;
                 updatedItem.igst_amount = 0;
             } else {
-                updatedItem.igst_amount = (updatedItem.taxable_value || 0) * (newRate / 100);
+                updatedItem.igst_amount = Math.round(((updatedItem.taxable_value || 0) * (newRate / 100)) * 100) / 100;
                 updatedItem.cgst_rate = 0;
                 updatedItem.cgst_amount = 0;
                 updatedItem.sgst_rate = 0;
                 updatedItem.sgst_amount = 0;
             }
-            updatedItem.total_value = (updatedItem.taxable_value || 0) + (updatedItem.cgst_amount || 0) + (updatedItem.sgst_amount || 0) + (updatedItem.igst_amount || 0);
+            updatedItem.total_value = Math.round(((updatedItem.taxable_value || 0) + (updatedItem.cgst_amount || 0) + (updatedItem.sgst_amount || 0) + (updatedItem.igst_amount || 0)) * 100) / 100;
             return updatedItem;
         });
         const newTotals = recalcDocTotals(newItems);
@@ -1085,12 +1106,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         // Back-calculate unit_price from Total column
                         const totalColVal = parseFloat(cols[totalIdx]) || 0;
                         const calcTaxable = igst_rate > 0 ? (totalColVal / (1 + (igst_rate / 100))) : totalColVal;
-                        unit_price = Math.round((Math.max(0, (calcTaxable + discount) / (quantity || 1))) * 10000) / 10000;
+                        unit_price = (calcTaxable + discount) / (quantity || 1);
                     } else {
                         unit_price = parseFloat(cols[3]) || 0;
                     }
+                    unit_price = Math.round(unit_price * 100) / 100;
 
-                    const taxable_value = Math.max(0, (quantity * unit_price) - discount);
+                    const taxable_value = Math.round(Math.max(0, (quantity * unit_price) - discount) * 100) / 100;
                     let cgst_rate = 0;
                     let cgst_amount = 0;
                     let sgst_rate = 0;
@@ -1100,14 +1122,14 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     if (taxMode === 'intra') {
                         const halfRate = igst_rate / 2;
                         cgst_rate = halfRate;
-                        cgst_amount = taxable_value * (halfRate / 100);
+                        cgst_amount = Math.round((taxable_value * (halfRate / 100)) * 100) / 100;
                         sgst_rate = halfRate;
-                        sgst_amount = taxable_value * (halfRate / 100);
+                        sgst_amount = Math.round((taxable_value * (halfRate / 100)) * 100) / 100;
                     } else {
-                        igst_amount = taxable_value * (igst_rate / 100);
+                        igst_amount = Math.round((taxable_value * (igst_rate / 100)) * 100) / 100;
                     }
 
-                    const total_value = taxable_value + cgst_amount + sgst_amount + igst_amount;
+                    const total_value = Math.round((taxable_value + cgst_amount + sgst_amount + igst_amount) * 100) / 100;
 
                     newItems.push({
                         description: desc,
@@ -1157,20 +1179,20 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             if (effectiveTaxMode === 'intra') {
                 const halfRate = taxRate / 2;
                 newItem.cgst_rate = halfRate;
-                newItem.cgst_amount = (newItem.taxable_value || 0) * (halfRate / 100);
+                newItem.cgst_amount = Math.round(((newItem.taxable_value || 0) * (halfRate / 100)) * 100) / 100;
                 newItem.sgst_rate = halfRate;
-                newItem.sgst_amount = (newItem.taxable_value || 0) * (halfRate / 100);
+                newItem.sgst_amount = Math.round(((newItem.taxable_value || 0) * (halfRate / 100)) * 100) / 100;
                 newItem.igst_amount = 0;
                 newItem.igst_rate = taxRate; // Keep original rate stored
             } else {
-                newItem.igst_amount = (newItem.taxable_value || 0) * (taxRate / 100);
+                newItem.igst_amount = Math.round(((newItem.taxable_value || 0) * (taxRate / 100)) * 100) / 100;
                 newItem.igst_rate = taxRate;
                 newItem.cgst_rate = 0;
                 newItem.cgst_amount = 0;
                 newItem.sgst_rate = 0;
                 newItem.sgst_amount = 0;
             }
-            newItem.total_value = (newItem.taxable_value || 0) + (newItem.cgst_amount || 0) + (newItem.sgst_amount || 0) + (newItem.igst_amount || 0);
+            newItem.total_value = Math.round(((newItem.taxable_value || 0) + (newItem.cgst_amount || 0) + (newItem.sgst_amount || 0) + (newItem.igst_amount || 0)) * 100) / 100;
             return newItem;
         });
 
@@ -1904,21 +1926,24 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             </div>
                         </div>
                     )}
-                    {(docType === 'quotation' || docType === 'proforma' || showBatteryComparisonTable) && (
-                        <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                checked={showBatteryComparisonTable}
-                                onChange={e => {
-                                    const val = e.target.checked;
-                                    setShowBatteryComparisonTable(val);
-                                    setConfig(prev => ({ ...prev, showBatteryComparisonTable: val }));
-                                }}
-                                className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]"
-                            />
-                            <span>Show Lithium vs Lead-Acid Comparison Table</span>
-                        </label>
-                    )}
+                    <label className="flex items-center justify-between text-xs text-slate-700 cursor-pointer select-none p-1 rounded hover:bg-slate-50 transition-colors">
+                        <span className="flex items-center gap-1.5 font-medium">
+                            <span>⚡</span> Lithium vs Lead-Acid Table
+                            {(docType === 'quotation' || docType === 'proforma') && (
+                                <span className="text-[10px] bg-[#8EBF45]/20 text-[#5f8725] px-1.5 py-0.2 rounded font-semibold">Recommended</span>
+                            )}
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={showBatteryComparisonTable}
+                            onChange={e => {
+                                const val = e.target.checked;
+                                setShowBatteryComparisonTable(val);
+                                setConfig(prev => ({ ...prev, showBatteryComparisonTable: val }));
+                            }}
+                            className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]"
+                        />
+                    </label>
                 </div>
 
                 <div className="space-y-6">
@@ -2378,7 +2403,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                                 <span className="font-medium text-slate-800 truncate mr-2">{p.model_name}</span>
                                                                 <span className="flex items-center gap-2">
                                                                     {p.hsn_code && <span className="text-[10px] text-slate-400 font-mono">HSN: {p.hsn_code}</span>}
-                                                                    <span className="text-xs font-mono text-slate-500 whitespace-nowrap">{currencySymbol}{p.price_without_gst.toLocaleString('en-IN')}</span>
+                                                                    <span className="text-xs font-mono text-slate-500 whitespace-nowrap">{currencySymbol}{p.price_without_gst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                                                 </span>
                                                             </button>
                                                         ))}
@@ -2393,17 +2418,52 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                             </td>}
                                             {visibleColumns.hsn && <td className="py-2"><input className="w-full bg-transparent outline-none text-slate-600 text-xs" value={item.hsn_sac || ''} onChange={e => updateItem(idx, 'hsn_sac', e.target.value)} placeholder="—" /></td>}
                                             {visibleColumns.quantity && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right" value={item.quantity} onChange={e => updateItem(idx, 'quantity', e.target.value)} /></td>}
-                                            {visibleColumns.rate && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right font-medium text-slate-800" value={item.unit_price !== undefined && item.unit_price !== null ? item.unit_price : ''} onChange={e => updateItem(idx, 'unit_price', e.target.value)} placeholder="0.00" title="Rate per unit (Excl. GST)" /></td>}
-                                            {visibleColumns.discount && <td className="py-2 text-right"><input type="number" step="any" className="w-full bg-transparent outline-none text-right" value={item.discount || ''} onChange={e => updateItem(idx, 'discount', e.target.value)} placeholder="0.00" /></td>}
+                                            {visibleColumns.rate && (
+                                                <td className="py-2 text-right">
+                                                    <input 
+                                                        type="number" 
+                                                        step="0.01" 
+                                                        className="w-full bg-transparent outline-none text-right font-medium text-slate-800" 
+                                                        value={item.unit_price !== undefined && item.unit_price !== null ? item.unit_price : ''} 
+                                                        onChange={e => updateItem(idx, 'unit_price', e.target.value)} 
+                                                        onBlur={e => {
+                                                            const val = parseFloat(e.target.value);
+                                                            if (!isNaN(val)) updateItem(idx, 'unit_price', Math.round(val * 100) / 100);
+                                                        }}
+                                                        placeholder="0.00" 
+                                                        title="Rate per unit (Excl. GST)" 
+                                                    />
+                                                </td>
+                                            )}
+                                            {visibleColumns.discount && (
+                                                <td className="py-2 text-right">
+                                                    <input 
+                                                        type="number" 
+                                                        step="0.01" 
+                                                        className="w-full bg-transparent outline-none text-right" 
+                                                        value={item.discount !== undefined && item.discount !== null ? item.discount : ''} 
+                                                        onChange={e => updateItem(idx, 'discount', e.target.value)} 
+                                                        onBlur={e => {
+                                                            const val = parseFloat(e.target.value);
+                                                            if (!isNaN(val)) updateItem(idx, 'discount', Math.round(val * 100) / 100);
+                                                        }}
+                                                        placeholder="0.00" 
+                                                    />
+                                                </td>
+                                            )}
                                             {visibleColumns.taxableValue && <td className="py-2 text-right text-slate-600">{(item.taxable_value || 0).toFixed(2)}</td>}
                                             {visibleColumns.total && (
                                                 <td className="py-2 text-right font-semibold pr-2">
                                                     <input
                                                         type="number"
-                                                        step="any"
+                                                        step="0.01"
                                                         className="w-full bg-transparent outline-none text-right font-semibold text-slate-900 border-b border-transparent hover:border-slate-300 focus:border-[#8EBF45]"
                                                         value={item.total_value !== undefined && item.total_value !== null ? item.total_value : ''}
                                                         onChange={e => updateItem(idx, 'total_value', e.target.value)}
+                                                        onBlur={e => {
+                                                            const val = parseFloat(e.target.value);
+                                                            if (!isNaN(val)) updateItem(idx, 'total_value', Math.round(val * 100) / 100);
+                                                        }}
                                                         placeholder="0.00"
                                                         title="Total Amount (Incl. GST) - edit to back-calculate unit rate"
                                                     />
@@ -2505,8 +2565,34 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             );
                         })()}
 
-                        {showBatteryComparisonTable && (
-                            <BatteryComparisonTable printMode={false} />
+                        {showBatteryComparisonTable ? (
+                            <div className="relative group/comp mb-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowBatteryComparisonTable(false);
+                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: false }));
+                                    }}
+                                    className="absolute -top-2 right-2 hidden group-hover/comp:flex items-center gap-1 text-[10px] bg-red-50 hover:bg-red-100 text-red-600 px-2 py-0.5 rounded shadow-sm z-10"
+                                    title="Hide comparison table"
+                                >
+                                    <Trash2 size={11} /> Hide Comparison
+                                </button>
+                                <BatteryComparisonTable printMode={false} />
+                            </div>
+                        ) : (
+                            <div className="flex justify-start my-2 no-print">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowBatteryComparisonTable(true);
+                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: true }));
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-[#8EBF45] hover:text-[#7aa73b] bg-[#8EBF45]/10 hover:bg-[#8EBF45]/20 border border-[#8EBF45]/30 px-3 py-1.5 rounded-md transition-all shadow-sm"
+                                >
+                                    <span>⚡</span> + Add Lithium vs Lead-Acid Comparison Table
+                                </button>
+                            </div>
                         )}
 
                         <div className="flex flex-col border-t pt-2 mt-2">
@@ -2536,11 +2622,15 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                         <input
                                                             type="number"
                                                             min="0"
-                                                            step={subtotalDiscountType === 'percent' ? '0.5' : '1'}
+                                                            step="0.01"
                                                             className="w-16 text-right text-xs bg-slate-50 hover:bg-slate-100 focus:bg-white border border-dashed border-slate-300 rounded px-1 py-0.5 text-red-600 font-semibold focus:outline-none focus:border-[#8EBF45]"
                                                             value={subtotalDiscountValue || ''}
-                                                            placeholder="0"
+                                                            placeholder="0.00"
                                                             onChange={(e) => handleSubtotalDiscountChange(parseFloat(e.target.value) || 0, subtotalDiscountType)}
+                                                            onBlur={(e) => {
+                                                                const val = parseFloat(e.target.value);
+                                                                if (!isNaN(val)) handleSubtotalDiscountChange(Math.round(val * 100) / 100, subtotalDiscountType);
+                                                            }}
                                                         />
                                                     </div>
                                                 </div>
@@ -2729,8 +2819,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                             {(visibleColumns as any).image && <td className="py-1.5 text-center">{item.image_url && <img src={item.image_url} alt="" className="w-10 h-10 object-contain rounded inline-block" />}</td>}
                                                             {visibleColumns.hsn && <td className="py-1.5 text-slate-600 text-xs">{item.hsn_sac || '—'}</td>}
                                                             {visibleColumns.quantity && <td className="py-1.5 text-right">{item.quantity}</td>}
-                                                            {visibleColumns.rate && <td className="py-1.5 text-right">{item.unit_price}</td>}
-                                                            {visibleColumns.discount && <td className="py-1.5 text-right">{item.discount || 0}</td>}
+                                                            {visibleColumns.rate && <td className="py-1.5 text-right">{(Number(item.unit_price) || 0).toFixed(2)}</td>}
+                                                            {visibleColumns.discount && <td className="py-1.5 text-right">{(Number(item.discount) || 0).toFixed(2)}</td>}
                                                             {visibleColumns.taxableValue && <td className="py-1.5 text-right text-slate-600">{(item.taxable_value || 0).toFixed(2)}</td>}
                                                             {visibleColumns.total && <td className="py-1.5 text-right font-semibold pr-2">{(item.total_value || 0).toFixed(2)}</td>}
                                                         </tr>
@@ -2792,7 +2882,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                         );
                                     })()}
 
-                                    {showBatteryComparisonTable && (
+                                    {showBatteryComparisonTable && (pageIdx === paginatedPages.length - 1) && (
                                         <BatteryComparisonTable printMode={true} />
                                     )}
 

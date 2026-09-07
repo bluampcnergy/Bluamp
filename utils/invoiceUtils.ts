@@ -67,16 +67,16 @@ export const recalculateInvoiceTotals = (
   const rounding_adjustment = roundedGrandTotal - grandTotalBeforeRounding;
 
   return {
-    subtotal_taxable: raw.subtotal_taxable,
-    subtotal_discount: discountAmt,
-    subtotal_discount_percent: discountPercent,
+    subtotal_taxable: Math.round(raw.subtotal_taxable * 100) / 100,
+    subtotal_discount: Math.round(discountAmt * 100) / 100,
+    subtotal_discount_percent: Math.round(discountPercent * 100) / 100,
     subtotal_discount_type: subtotalDiscountType,
     subtotal_discount_value: subtotalDiscount,
-    discount_total: raw.discount_total + discountAmt,
-    cgst_total: raw.cgst_total,
-    sgst_total: raw.sgst_total,
-    igst_total: raw.igst_total,
-    rounding_adjustment,
+    discount_total: Math.round((raw.discount_total + discountAmt) * 100) / 100,
+    cgst_total: Math.round(raw.cgst_total * 100) / 100,
+    sgst_total: Math.round(raw.sgst_total * 100) / 100,
+    igst_total: Math.round(raw.igst_total * 100) / 100,
+    rounding_adjustment: Math.round(rounding_adjustment * 100) / 100,
     grand_total: roundedGrandTotal,
   };
 };
@@ -434,7 +434,7 @@ export const computeInvoiceChanges = (
     const nItem = newItems[i];
 
     if (!oItem && nItem) {
-      changes.push(`Added Item #${i + 1}: "${nItem.description || 'Item'}" (Qty: ${nItem.quantity || 1} @ ₹${Number(nItem.unit_price || 0).toLocaleString('en-IN')})`);
+      changes.push(`Added Item #${i + 1}: "${nItem.description || 'Item'}" (Qty: ${nItem.quantity || 1} @ ₹${Number(nItem.unit_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`);
     } else if (oItem && !nItem) {
       changes.push(`Removed Item #${i + 1}: "${oItem.description || 'Item'}" (Qty: ${oItem.quantity || 1})`);
     } else if (oItem && nItem) {
@@ -446,7 +446,7 @@ export const computeInvoiceChanges = (
         itemChanges.push(`Qty: ${oItem.quantity} ➔ ${nItem.quantity}`);
       }
       if (Number(oItem.unit_price) !== Number(nItem.unit_price)) {
-        itemChanges.push(`Rate: ₹${Number(oItem.unit_price).toLocaleString('en-IN')} ➔ ₹${Number(nItem.unit_price).toLocaleString('en-IN')}`);
+        itemChanges.push(`Rate: ₹${Number(oItem.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ➔ ₹${Number(nItem.unit_price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       }
       if ((oItem.hsn_sac || '').trim() !== (nItem.hsn_sac || '').trim()) {
         itemChanges.push(`HSN: "${oItem.hsn_sac || '-'}" ➔ "${nItem.hsn_sac || '-'}"`);

@@ -80,10 +80,10 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
                                 <div className="text-[8px] text-slate-400">Upfront price (excl. GST)</div>
                             </td>
                             <td className="py-1 px-2.5 bg-emerald-50/30 border-x border-emerald-100 font-bold text-slate-900">
-                                ₹{lithiumPrice.toLocaleString('en-IN')}
+                                ₹{lithiumPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="py-1 px-2.5 text-slate-600">
-                                ~₹{leadAcidPrice.toLocaleString('en-IN')}
+                                ~₹{leadAcidPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="py-1 px-2.5 text-slate-600">
                                 Lead-acid seems cheaper only initially
@@ -131,13 +131,13 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
                                 <div className="text-[8px] text-slate-500 font-normal">Initial + repeat battery purchases</div>
                             </td>
                             <td className="py-1 px-2.5 bg-emerald-100/50 border-x border-emerald-200 text-emerald-900 text-xs">
-                                ₹{lithiumPrice.toLocaleString('en-IN')}
+                                ₹{lithiumPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="py-1 px-2.5 text-red-700 text-xs">
-                                ₹{leadAcid10YearTotal.toLocaleString('en-IN')}+
+                                ₹{leadAcid10YearTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+
                             </td>
                             <td className="py-1 px-2.5 text-emerald-700 font-extrabold">
-                                Saves ₹{savings.toLocaleString('en-IN')}+ (~70% savings)
+                                Saves ₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+ (~70% savings)
                             </td>
                         </tr>
 
@@ -168,7 +168,7 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
             {/* Bottom Takeaway */}
             <div className="bg-emerald-50 border-t border-emerald-100 px-3 py-1 flex items-center justify-between text-[8.5px] text-emerald-900">
                 <span>
-                    <strong>Bottom Line:</strong> A 12.8V 100Ah Lithium battery gives <strong>more usable backup</strong> than a 150Ah Lead-Acid battery, lasts <strong>10+ years</strong> without water maintenance, and cuts lifetime cost by <strong>~₹{savings.toLocaleString('en-IN')}</strong>.
+                    <strong>Bottom Line:</strong> A 12.8V 100Ah Lithium battery gives <strong>more usable backup</strong> than a 150Ah Lead-Acid battery, lasts <strong>10+ years</strong> without water maintenance, and cuts lifetime cost by <strong>~₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>.
                 </span>
                 <span className="font-bold text-emerald-800 whitespace-nowrap ml-2">
                     Levelized Cost: ₹5.10 vs ₹17.50 / kWh

@@ -275,7 +275,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                             const amountInWordsStr = amountToWords(doc.totals?.grand_total || 0, doc.totals?.currency);
                             const currencySymbol = getCurrencySymbol(doc.totals?.currency);
                             const items = doc.items || [];
-                            const isDocQuoteOrProforma = docType === 'generated_quotation' || docType === 'quotation' || docType === 'generated_proforma_invoice' || docType === 'proforma' || customTitle?.toLowerCase().includes('quotation') || customTitle?.toLowerCase().includes('proforma');
+                            const isDocQuoteOrProforma = docType === 'generated_quotation' || docType === 'quotation' || docType === 'generated_proforma_invoice' || docType === 'proforma' || customTitle?.toLowerCase().includes('quotation') || customTitle?.toLowerCase().includes('proforma') || customTitle?.toLowerCase().includes('quote');
                             const showComparison = (config as any).showBatteryComparisonTable !== undefined 
                                 ? Boolean((config as any).showBatteryComparisonTable) 
                                 : isDocQuoteOrProforma;
@@ -365,8 +365,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                                         {(config.visibleColumns as any).image && <td className="py-1.5 text-center">{item.image_url && <img src={item.image_url} alt="" className="w-10 h-10 object-contain rounded inline-block" />}</td>}
                                                         {config.visibleColumns.hsn && <td className="py-1.5 text-slate-600 text-xs">{item.hsn_sac || '—'}</td>}
                                                         {config.visibleColumns.quantity && <td className="py-1.5 text-right">{item.quantity}</td>}
-                                                        {config.visibleColumns.rate && <td className="py-1.5 text-right">{item.unit_price}</td>}
-                                                        {config.visibleColumns.discount && <td className="py-1.5 text-right">{item.discount || 0}</td>}
+                                                        {config.visibleColumns.rate && <td className="py-1.5 text-right">{(Number(item.unit_price) || 0).toFixed(2)}</td>}
+                                                        {config.visibleColumns.discount && <td className="py-1.5 text-right">{(Number(item.discount) || 0).toFixed(2)}</td>}
                                                         {config.visibleColumns.taxableValue && <td className="py-1.5 text-right text-slate-600">{(item.taxable_value || 0).toFixed(2)}</td>}
                                                         {config.visibleColumns.total && <td className="py-1.5 text-right font-semibold pr-2">{(item.total_value || 0).toFixed(2)}</td>}
                                                     </tr>
@@ -428,7 +428,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                     );
                                 })()}
 
-                                {showComparison && (
+                                {showComparison && (pageIdx === paginatedPages.length - 1) && (
                                     <BatteryComparisonTable printMode={true} />
                                 )}
 
