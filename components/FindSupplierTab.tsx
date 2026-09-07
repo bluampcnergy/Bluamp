@@ -7,6 +7,79 @@ import {
   formatWhatsAppNumber 
 } from '../services/supplierSearchService';
 
+const CopyableContact: React.FC<{
+  text: string;
+  copyValue?: string;
+  type: 'phone' | 'email';
+  title?: string;
+  maxWidthClass?: string;
+}> = ({ text, copyValue, type, title, maxWidthClass = '' }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const val = (copyValue || text || '').trim();
+    if (!val) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(val);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = val;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1 group/contact relative">
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={copied ? 'Copied to clipboard!' : (title || `Click to copy ${type === 'phone' ? 'phone' : 'email'}`)}
+        className="inline-flex items-center gap-1 text-left rounded px-1.5 py-0.5 -mx-1 hover:bg-slate-200/70 active:bg-slate-300 transition-colors cursor-pointer"
+      >
+        <span className={`font-semibold text-slate-800 ${maxWidthClass} hover:underline underline-offset-2 decoration-slate-400 select-all`}>
+          {text}
+        </span>
+        <span
+          className={`shrink-0 transition-colors p-0.5 rounded ${
+            copied
+              ? 'text-emerald-600 bg-emerald-100 ring-1 ring-emerald-300'
+              : 'text-slate-400 group-hover/contact:text-slate-700 hover:bg-slate-200'
+          }`}
+          title={copied ? 'Copied!' : 'Copy'}
+        >
+          {copied ? (
+            <svg className="w-3 h-3 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect width="13" height="13" x="9" y="9" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          )}
+        </span>
+      </button>
+      {copied && (
+        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300 shadow-xs animate-fade-in">
+          ✓ Copied!
+        </span>
+      )}
+    </span>
+  );
+};
+
 interface FindSupplierTabProps {
   companyProfiles: CompanyProfile[];
   setCompanyProfiles: React.Dispatch<React.SetStateAction<CompanyProfile[]>>;
@@ -449,23 +522,29 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                       {/* CONTACT DETAILS & ENRICHMENT */}
                       <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {/* Phone / WhatsApp */}
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400">📱 Phone:</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-slate-400 shrink-0">📱 Phone:</span>
                           {sup.phoneNumber ? (
-                            <span className="font-semibold text-slate-800 flex items-center gap-1">
-                              {cleanPhone || sup.phoneNumber}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <CopyableContact
+                                text={cleanPhone || sup.phoneNumber}
+                                copyValue={cleanPhone || sup.phoneNumber}
+                                type="phone"
+                                title="Click to copy phone number"
+                              />
                               {waUrl && (
                                 <a 
                                   href={waUrl} 
                                   target="_blank" 
                                   rel="noopener noreferrer" 
-                                  className="text-emerald-600 hover:underline font-bold text-[11px]"
+                                  className="text-emerald-600 hover:underline font-bold text-[11px] inline-flex items-center gap-0.5 ml-1"
                                   title="Open WhatsApp chat"
+                                  onClick={e => e.stopPropagation()}
                                 >
                                   💬 WhatsApp
                                 </a>
                               )}
-                            </span>
+                            </div>
                           ) : (
                             <span className="text-rose-500 italic text-[11px]">Missing Phone</span>
                           )}
@@ -473,9 +552,15 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
 
                         {/* Email Address */}
                         <div className="flex items-center gap-1.5">
-                          <span className="text-slate-400">📧 Email:</span>
+                          <span className="text-slate-400 shrink-0">📧 Email:</span>
                           {sup.email ? (
-                            <span className="font-semibold text-slate-800 truncate max-w-[180px]">{sup.email}</span>
+                            <CopyableContact
+                              text={sup.email}
+                              copyValue={sup.email}
+                              type="email"
+                              maxWidthClass="truncate max-w-[180px]"
+                              title="Click to copy email address"
+                            />
                           ) : (
                             <span className="text-rose-500 italic text-[11px]">Missing Email</span>
                           )}
@@ -571,10 +656,35 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                       </button>
                     </div>
 
-                    <div className="text-xs text-slate-600 space-y-1">
+                    <div className="text-xs text-slate-600 space-y-1.5">
                       <p>📍 <strong>Address:</strong> {sup.address}</p>
-                      <p>📱 <strong>Phone:</strong> {cleanPhone || sup.phoneNumber || 'Not found'}</p>
-                      <p>📧 <strong>Email:</strong> {sup.email || 'Not found'}</p>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-500 shrink-0">📱 <strong>Phone:</strong></span>
+                        {sup.phoneNumber ? (
+                          <CopyableContact
+                            text={cleanPhone || sup.phoneNumber}
+                            copyValue={cleanPhone || sup.phoneNumber}
+                            type="phone"
+                            title="Click to copy phone number"
+                          />
+                        ) : (
+                          <span className="italic text-slate-400">Not found</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-500 shrink-0">📧 <strong>Email:</strong></span>
+                        {sup.email ? (
+                          <CopyableContact
+                            text={sup.email}
+                            copyValue={sup.email}
+                            type="email"
+                            maxWidthClass="truncate max-w-[200px]"
+                            title="Click to copy email address"
+                          />
+                        ) : (
+                          <span className="italic text-slate-400">Not found</span>
+                        )}
+                      </div>
                       <p>👤 <strong>Contact:</strong> {sup.contactPerson}</p>
                     </div>
 
