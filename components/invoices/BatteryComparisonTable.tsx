@@ -21,12 +21,12 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
             <table className="w-full text-left border-collapse">
                 <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
-                        <th className="py-0.5 px-2 w-[24%]">Comparison</th>
-                        <th className="py-0.5 px-2 w-[38%] bg-emerald-50/70 text-emerald-900 border-x border-emerald-100">
-                            <span className="font-bold">⚡ 12.8V 100Ah Lithium</span>{' '}
+                        <th className="py-0.5 px-2 w-[22%]">Comparison</th>
+                        <th className="py-0.5 px-2 w-[39%] bg-emerald-50/70 text-emerald-900 border-x border-emerald-100">
+                            <span className="font-bold">⚡ DC Energy's 12.8V 100Ah Lithium</span>{' '}
                             <span className="text-[8px] bg-emerald-600 text-white px-1 py-0.2 rounded font-bold">Recommended</span>
                         </th>
-                        <th className="py-0.5 px-2 w-[38%] text-slate-600">12V 150Ah Lead-Acid (Tubular)</th>
+                        <th className="py-0.5 px-2 w-[39%] text-slate-600">12V 150Ah Lead-Acid (Tubular)</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -52,7 +52,18 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
                         </td>
                     </tr>
 
-                    {/* Line 3: 10-Year Total Battery Cost */}
+                    {/* Line 3: Maintenance & Safety (Single Line) */}
+                    <tr>
+                        <td className="py-0.5 px-2 font-medium text-slate-700">Maintenance &amp; Safety</td>
+                        <td className="py-0.5 px-2 bg-emerald-50/30 border-x border-emerald-100 text-slate-700">
+                            <strong>Zero maintenance</strong>, no acid fumes, ~11 kg
+                        </td>
+                        <td className="py-0.5 px-2 text-slate-600">
+                            Water top-ups, acid fumes, ~55 kg
+                        </td>
+                    </tr>
+
+                    {/* Line 4: 10-Year Total Battery Cost */}
                     <tr className="bg-slate-50/50">
                         <td className="py-0.5 px-2 font-semibold text-slate-800">10-Year Battery Cost</td>
                         <td className="py-0.5 px-2 bg-emerald-100/50 border-x border-emerald-200 font-bold text-emerald-900">
@@ -64,24 +75,13 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
                             <span className="text-[8px] font-normal text-slate-500">(4 batteries, ₹17.50 / kWh)</span>
                         </td>
                     </tr>
-
-                    {/* Line 4: Maintenance & Home Living */}
-                    <tr>
-                        <td className="py-0.5 px-2 font-medium text-slate-700">Maintenance &amp; Home Safety</td>
-                        <td className="py-0.5 px-2 bg-emerald-50/30 border-x border-emerald-100 text-slate-700">
-                            <strong>Zero Maintenance</strong>, Smart BMS, no acid fumes, compact (~11 kg)
-                        </td>
-                        <td className="py-0.5 px-2 text-slate-600">
-                            Regular distilled water top-up, toxic acid fumes, heavy (~55 kg)
-                        </td>
-                    </tr>
                 </tbody>
             </table>
 
             {/* 1 Text Line Below */}
             <div className="bg-emerald-50/80 border-t border-emerald-100 px-2 py-0.5 text-[8.5px] print:text-[8px] text-emerald-900 font-medium flex items-center justify-between">
                 <span>
-                    <strong>💡 Bottom Line:</strong> 100Ah Lithium delivers <strong>+28% more usable backup time</strong> than 150Ah Lead-Acid, zero acid fumes/maintenance, and saves <strong>₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+</strong> over 10 years.
+                    <strong>💡 Bottom Line:</strong> DC Energy's 100Ah Lithium delivers <strong>+28% more usable backup time</strong> than 150Ah Lead-Acid, zero acid fumes/maintenance, and saves <strong>₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+</strong> over 10 years.
                 </span>
             </div>
         </div>

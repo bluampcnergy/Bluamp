@@ -2565,36 +2565,6 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             );
                         })()}
 
-                        {showBatteryComparisonTable ? (
-                            <div className="relative group/comp mb-2">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowBatteryComparisonTable(false);
-                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: false }));
-                                    }}
-                                    className="absolute -top-2 right-2 hidden group-hover/comp:flex items-center gap-1 text-[10px] bg-red-50 hover:bg-red-100 text-red-600 px-2 py-0.5 rounded shadow-sm z-10"
-                                    title="Hide comparison table"
-                                >
-                                    <Trash2 size={11} /> Hide Comparison
-                                </button>
-                                <BatteryComparisonTable printMode={false} />
-                            </div>
-                        ) : (
-                            <div className="flex justify-start my-2 no-print">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowBatteryComparisonTable(true);
-                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: true }));
-                                    }}
-                                    className="flex items-center gap-1.5 text-xs font-semibold text-[#8EBF45] hover:text-[#7aa73b] bg-[#8EBF45]/10 hover:bg-[#8EBF45]/20 border border-[#8EBF45]/30 px-3 py-1.5 rounded-md transition-all shadow-sm"
-                                >
-                                    <span>⚡</span> + Add Lithium vs Lead-Acid Comparison Table
-                                </button>
-                            </div>
-                        )}
-
                         <div className="flex flex-col border-t pt-2 mt-2">
                                 {(config.showTotalsTable ?? true) && (
                                     <div className="flex justify-between items-start gap-4">
@@ -2716,6 +2686,37 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 <p className="text-[10px] font-bold text-slate-600">Issuer's Signature</p>
                             </div>
                         </div>
+
+                        {/* Battery Comparison Table (Below Signatures and QR) */}
+                        {showBatteryComparisonTable ? (
+                            <div className="relative group/comp mt-3 mb-1 break-inside-avoid">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowBatteryComparisonTable(false);
+                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: false }));
+                                    }}
+                                    className="absolute -top-2 right-2 hidden group-hover/comp:flex items-center gap-1 text-[10px] bg-red-50 hover:bg-red-100 text-red-600 px-2 py-0.5 rounded shadow-sm z-10"
+                                    title="Hide comparison table"
+                                >
+                                    <Trash2 size={11} /> Hide Comparison
+                                </button>
+                                <BatteryComparisonTable printMode={false} />
+                            </div>
+                        ) : (
+                            <div className="flex justify-start my-2 no-print">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowBatteryComparisonTable(true);
+                                        setConfig(prev => ({ ...prev, showBatteryComparisonTable: true }));
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs font-semibold text-[#8EBF45] hover:text-[#7aa73b] bg-[#8EBF45]/10 hover:bg-[#8EBF45]/20 border border-[#8EBF45]/30 px-3 py-1.5 rounded-md transition-all shadow-sm"
+                                >
+                                    <span>⚡</span> + Add Lithium vs Lead-Acid Comparison Table
+                                </button>
+                            </div>
+                        )}
 
                         <div className="mt-auto pt-2 text-center text-[10px] text-slate-400">{safeRender(config.footerText)}</div>
                     </div>{/* end screen-only */}
@@ -2882,10 +2883,6 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                         );
                                     })()}
 
-                                    {showBatteryComparisonTable && (pageIdx === paginatedPages.length - 1) && (
-                                        <BatteryComparisonTable printMode={true} />
-                                    )}
-
                                     {/* ---- SUMMARY ---- */}
                                     <div className="flex flex-col border-t pt-1 mt-1">
                                             {(config.showTotalsTable ?? true) && (
@@ -2960,6 +2957,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                             <p className="text-[9px] font-bold text-slate-600">Issuer's Signature</p>
                                         </div>
                                     </div>
+
+                                    {/* ---- BATTERY COMPARISON TABLE (BELOW SIGNATURES & QR) ---- */}
+                                    {showBatteryComparisonTable && (pageIdx === paginatedPages.length - 1) && (
+                                        <div className="mt-1 break-inside-avoid">
+                                            <BatteryComparisonTable printMode={true} />
+                                        </div>
+                                    )}
 
                                     {/* ---- FOOTER ---- */}
                                     <div className="pt-1 text-center text-[9px] text-slate-400">{safeRender(config.footerText)}</div>

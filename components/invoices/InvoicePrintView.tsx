@@ -428,10 +428,6 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                     );
                                 })()}
 
-                                {showComparison && (pageIdx === paginatedPages.length - 1) && (
-                                    <BatteryComparisonTable printMode={true} />
-                                )}
-
                                 {/* SUMMARY */}
                                 <div className="flex flex-col border-t pt-1 mt-1">
                                     {(config.showTotalsTable ?? true) && (
@@ -513,6 +509,13 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                         <p className="text-[9px] font-bold text-slate-600">Issuer's Signature</p>
                                     </div>
                                 </div>
+
+                                {/* BATTERY COMPARISON TABLE (BELOW SIGNATURES & QR) */}
+                                {showComparison && (pageIdx === paginatedPages.length - 1) && (
+                                    <div className="mt-1 break-inside-avoid">
+                                        <BatteryComparisonTable printMode={true} />
+                                    </div>
+                                )}
 
                                 {/* FOOTER */}
                                 <div className="pt-1 text-center text-[9px] text-slate-400">{safeRender(config.footerText)}</div>
