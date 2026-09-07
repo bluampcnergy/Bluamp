@@ -386,7 +386,7 @@ export interface ExtractedInvoice {
   created_at?: string;
   timestamp?: string;
   filename: string;
-  document_type: 'invoice' | 'receipt' | 'credit_note' | 'debit_note' | 'generated_invoice' | 'generated_po' | 'generated_debit_note' | 'generated_credit_note' | 'generated_quotation' | 'generated_proforma_invoice' | 'purchase_order' | 'quotation' | 'proforma_invoice' | 'other';
+  document_type: 'invoice' | 'receipt' | 'credit_note' | 'debit_note' | 'delivery_challan' | 'generated_invoice' | 'generated_po' | 'generated_delivery_challan' | 'generated_debit_note' | 'generated_credit_note' | 'generated_quotation' | 'generated_proforma_invoice' | 'purchase_order' | 'quotation' | 'proforma_invoice' | 'other';
   source_type: 'sales' | 'purchase';
   issuer_details: InvoiceParty;
   receiver_details: InvoiceParty;

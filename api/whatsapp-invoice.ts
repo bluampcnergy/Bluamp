@@ -104,7 +104,7 @@ async function getStaffUserByPhone(senderPhone: string, fallbackName?: string): 
 const invoiceSchema = {
   type: Type.OBJECT,
   properties: {
-    document_type: { type: Type.STRING, enum: ["invoice", "receipt", "credit_note", "debit_note", "purchase_order", "bill", "other"] },
+    document_type: { type: Type.STRING, enum: ["invoice", "delivery_challan", "receipt", "credit_note", "debit_note", "purchase_order", "bill", "other"] },
     source_type: { type: Type.STRING, enum: ["sales", "purchase"] },
     expense_category: {
       type: Type.STRING,
@@ -381,8 +381,13 @@ async function processInboundInvoice(
 
     // 5. Insert into Database
     currentStep = 'Inserting invoice record into database';
+    const isChallan = extracted.document_type === 'delivery_challan' ||
+      invNumber.toUpperCase().startsWith('DCH') ||
+      cleanFilename.toLowerCase().includes('challan') ||
+      cleanFilename.toLowerCase().includes('dch');
+
     const dbPayload = {
-      document_type: extracted.document_type || 'invoice',
+      document_type: isChallan ? 'delivery_challan' : (extracted.document_type || 'invoice'),
       source_type: extracted.source_type || 'purchase',
       filename: publicFileUrl || cleanFilename,
       image_link: publicFileUrl || null,

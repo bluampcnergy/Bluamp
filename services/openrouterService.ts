@@ -46,12 +46,13 @@ CRITICAL RULES:
 4. **METADATA**:
    - Dates: YYYY-MM-DD.
    - Money: Numbers only (no symbols).
-   - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy", 'purchase'. Default 'purchase'.
+   - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy" or vendor bill, 'purchase'. Default 'purchase'.
+   - Document Type: If titled "Delivery Challan" or starts with "DCh", 'delivery_challan'. Default 'invoice'.
    - ITC: Default 'set_off' for purchases unless blocked.
 
 Return a JSON object matching this schema exactly:
 {
-  "document_type": "invoice" | "receipt" | "credit_note" | "debit_note" | "other",
+  "document_type": "invoice" | "delivery_challan" | "receipt" | "credit_note" | "debit_note" | "other",
   "source_type": "sales" | "purchase",
   "issuer_details": {
     "name": string,
@@ -195,9 +196,24 @@ Return a JSON object matching this schema exactly:
 
     const parsedData = cleanAndParseJSON(rawContent);
 
+    const invNum = (parsedData.invoice_metadata?.invoice_number || '').toUpperCase();
+    const customTitle = ((parsedData.invoice_metadata as any)?.custom_title || '').toLowerCase();
+    const isChallan = parsedData.document_type === 'delivery_challan' ||
+        invNum.startsWith('DCH') ||
+        filename.toLowerCase().includes('challan') ||
+        filename.toLowerCase().includes('dch') ||
+        customTitle.includes('challan');
+
+    const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
+    const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+
     return {
       ...EMPTY_INVOICE,
       ...parsedData,
+      document_type: isChallan
+        ? (isOurCompany ? 'generated_delivery_challan' : 'delivery_challan')
+        : (parsedData.document_type || 'invoice'),
+      source_type: isOurCompany ? 'sales' : 'purchase',
       filename,
       timestamp: new Date().toISOString(),
       raw_text: `Extracted via OpenRouter`,

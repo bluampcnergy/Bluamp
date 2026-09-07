@@ -191,7 +191,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
 
     // Filters
     const [invoiceType, setInvoiceType] = useState<'purchase' | 'sales'>('purchase');
-    const [documentCategory, setDocumentCategory] = useState<'invoice' | 'po' | 'quotation' | 'proforma_invoice' | 'debit_note' | 'credit_note'>('invoice');
+    const [documentCategory, setDocumentCategory] = useState<'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma_invoice' | 'debit_note' | 'credit_note'>('invoice');
     const [filterStart, setFilterStart] = useState('');
     const [filterEnd, setFilterEnd] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -332,6 +332,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                 } else {
                     query = query.eq('source_type', invoiceType).in('document_type', ['po', 'generated_po', 'purchase_order']);
                 }
+            } else if (documentCategory === 'delivery_challan') {
+                query = query.eq('source_type', invoiceType).in('document_type', ['delivery_challan', 'generated_delivery_challan', 'generated_invoice', 'invoice', 'other']);
             } else {
                 query = query.eq('source_type', invoiceType);
 
@@ -362,7 +364,29 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
             const { data, error } = await query;
 
             if (error) throw error;
-            setInvoices(data as ExtractedInvoice[]);
+            
+            let result = (data || []) as ExtractedInvoice[];
+
+            if (documentCategory === 'delivery_challan') {
+                // Filter strictly to delivery challans (matching document_type or DCh prefix or challan in title)
+                result = result.filter(inv => {
+                    const dt = String(inv.document_type || '').toLowerCase();
+                    const num = String(inv.invoice_metadata?.invoice_number || '').trim();
+                    const customTitle = String(inv.invoice_metadata?.custom_title || (inv.invoice_metadata as any)?.title || '').toLowerCase();
+                    return dt.includes('challan') || /^dch/i.test(num) || customTitle.includes('challan');
+                });
+            } else if (documentCategory === 'invoice') {
+                // Filter OUT delivery challans so they NEVER pollute the Invoices dashboard
+                result = result.filter(inv => {
+                    const dt = String(inv.document_type || '').toLowerCase();
+                    const num = String(inv.invoice_metadata?.invoice_number || '').trim();
+                    const customTitle = String(inv.invoice_metadata?.custom_title || (inv.invoice_metadata as any)?.title || '').toLowerCase();
+                    const isChallan = dt.includes('challan') || /^dch/i.test(num) || customTitle.includes('challan');
+                    return !isChallan;
+                });
+            }
+
+            setInvoices(result);
         } catch (error: any) {
             console.error('Error fetching invoices:', error);
             setErrorMsg(error.message || "Failed to load invoices from database.");
@@ -609,6 +633,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
             <div className="flex gap-2 pb-2 overflow-x-auto scrollbar-hide border-b border-slate-200">
                 {[
                     { id: 'invoice', label: 'Invoices' },
+                    { id: 'delivery_challan', label: 'Delivery Challans' },
                     { id: 'quotation', label: 'Quotations' },
                     { id: 'po', label: 'Purchase Orders' },
                     { id: 'proforma_invoice', label: 'Proforma Invoices' },
@@ -621,6 +646,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                             setDocumentCategory(cat.id as any);
                             if (cat.id === 'po') {
                                 setInvoiceType('purchase');
+                            } else if (cat.id === 'delivery_challan') {
+                                setInvoiceType('sales');
                             }
                         }}
                         className={`whitespace-nowrap px-4 py-2 rounded-t-lg text-sm font-semibold transition-colors
@@ -636,8 +663,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
 
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-2xl font-black text-[#0D0D0D] font-brand tracking-tight">Invoice Dashboard</h2>
-                    <p className="text-slate-500 text-sm">Real-time view of records with expandable detailed view.</p>
+                    <h2 className="text-2xl font-black text-[#0D0D0D] font-brand tracking-tight">
+                        {documentCategory === 'delivery_challan' ? 'Delivery Challan Dashboard' :
+                         documentCategory === 'po' ? 'Purchase Order Dashboard' :
+                         documentCategory === 'quotation' ? 'Quotation Dashboard' :
+                         documentCategory === 'proforma_invoice' ? 'Proforma Invoice Dashboard' :
+                         documentCategory === 'credit_note' ? 'Credit Note Dashboard' :
+                         documentCategory === 'debit_note' ? 'Debit Note Dashboard' : 'Invoice Dashboard'}
+                    </h2>
+                    <p className="text-slate-500 text-sm">
+                        {documentCategory === 'delivery_challan' 
+                            ? 'Real-time view of outward goods shipment delivery challans and inward receipts.'
+                            : 'Real-time view of records with expandable detailed view.'}
+                    </p>
                 </div>
 
                 <div className="bg-slate-200 p-1 rounded-xl flex items-center shadow-inner">
@@ -645,13 +683,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                         onClick={() => setInvoiceType('purchase')}
                         className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${invoiceType === 'purchase' ? 'bg-[#8EBF45] text-[#0D0D0D] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
-                        Purchase
+                        {documentCategory === 'delivery_challan' ? 'Inward Challans' : 'Purchase'}
                     </button>
                     <button
                         onClick={() => setInvoiceType('sales')}
                         className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${invoiceType === 'sales' ? 'bg-[#8EBF45] text-[#0D0D0D] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                     >
-                        Sales
+                        {documentCategory === 'delivery_challan' ? 'Outward Challans' : 'Sales'}
                     </button>
                 </div>
 
@@ -675,10 +713,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
 
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid md:grid-cols-12 gap-4 items-end">
                 <div className="md:col-span-6">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">Search Invoices</label>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 block">
+                        {documentCategory === 'delivery_challan' ? 'Search Delivery Challans' : 'Search Invoices'}
+                    </label>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400 w-5 h-5" />
-                        <input type="text" className="w-full pl-10 p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]/20 focus:border-[#8EBF45]" placeholder="Search by Invoice #, Supplier, or Customer..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        <input type="text" className="w-full pl-10 p-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#8EBF45]/20 focus:border-[#8EBF45]" placeholder={documentCategory === 'delivery_challan' ? "Search by Challan #, Consignor, or Consignee..." : "Search by Invoice #, Supplier, or Customer..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                 </div>
                 <div className="md:col-span-3">
@@ -705,7 +745,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                 <th className="p-4">Date</th>
                                 <th className="p-4">Issuer</th>
                                 <th className="p-4">Receiver</th>
-                                <th className="p-4">Inv #</th>
+                                <th className="p-4">{documentCategory === 'delivery_challan' ? 'Challan #' : documentCategory === 'po' ? 'PO #' : 'Inv #'}</th>
                                 <th className="p-4 text-right">Taxable</th>
                                 <th className="p-4 text-right">Total</th>
                                 <th className="p-4 text-center">Actions</th>
@@ -729,7 +769,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                                             <td className="p-4 text-slate-500 whitespace-nowrap">{safeRender(inv.invoice_metadata?.invoice_date) || (inv.created_at ? new Date(inv.created_at).toLocaleDateString() : 'N/A')}</td>
                                             <td className="p-4 font-bold text-[#0D0D0D]">{safeRender(inv.issuer_details?.name) || 'Unknown'}</td>
                                             <td className="p-4 font-medium">{safeRender(inv.receiver_details?.name) || 'Unknown'}</td>
-                                            <td className="p-4 text-slate-500 font-mono font-bold">{safeRender(inv.invoice_metadata?.invoice_number) || '-'}</td>
+                                            <td className="p-4 text-slate-500 font-mono font-bold flex items-center gap-1.5">
+                                                <span>{safeRender(inv.invoice_metadata?.invoice_number) || '-'}</span>
+                                                {(inv.document_type?.includes('challan') || (inv.invoice_metadata?.invoice_number || '').startsWith('DCh/')) && (
+                                                    <span className="text-[9px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-black uppercase tracking-tight">Challan</span>
+                                                )}
+                                            </td>
                                             <td className="p-4 text-right font-mono">{(inv.totals?.subtotal_taxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                             <td className="p-4 text-right font-black text-[#0D0D0D]">₹{(inv.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                             <td className="p-4 text-center flex justify-center items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -876,7 +921,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, setView, onEditInvoi
                 {filteredInvoices.length > 0 && (
                     <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="text-xs text-slate-500 font-medium">
-                            Showing <span className="font-bold text-slate-700">{((currentPage - 1) * PAGE_SIZE) + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)}</span> of <span className="font-bold text-slate-700">{filteredInvoices.length}</span> {documentCategory === 'quotation' ? 'quotations' : documentCategory === 'po' ? 'purchase orders' : 'invoices'}
+                            Showing <span className="font-bold text-slate-700">{((currentPage - 1) * PAGE_SIZE) + 1}</span> to <span className="font-bold text-slate-700">{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)}</span> of <span className="font-bold text-slate-700">{filteredInvoices.length}</span> {documentCategory === 'quotation' ? 'quotations' : documentCategory === 'po' ? 'purchase orders' : documentCategory === 'delivery_challan' ? 'delivery challans' : 'invoices'}
                         </div>
 
                         <div className="flex items-center gap-2">

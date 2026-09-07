@@ -66,16 +66,24 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
   }, []);
 
   const updateField = (section: keyof ExtractedInvoice, field: string, value: any) => {
-    const updated = {
-      ...data,
-      [section]: {
-        ...(data[section] as any),
-        [field]: value
-      }
-    };
+    let updated: ExtractedInvoice;
+    if (section === 'source_type' || section === 'document_type') {
+      updated = {
+        ...data,
+        [section]: value
+      };
+    } else {
+      updated = {
+        ...data,
+        [section]: {
+          ...(data[section] as any),
+          [field]: value
+        }
+      };
+    }
 
-    if (field === 'source_type') {
-      const currentMetadata = updated.invoice_metadata || {};
+    if (field === 'source_type' || section === 'source_type') {
+      const currentMetadata = (updated.invoice_metadata || {}) as any;
       if (value === 'sales') {
         updated.invoice_metadata = { ...currentMetadata, input_tax_credit: 'not_applicable' };
       } else if (value === 'purchase' && currentMetadata.input_tax_credit === 'not_applicable') {
@@ -184,15 +192,32 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
           <FileText className="w-4 h-4 text-[#658C3E]" />
           <span>Invoice & Document Metadata</span>
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Doc Type</label>
+            <select
+              className="p-2 border rounded-xl text-xs font-bold border-slate-200 bg-white text-slate-800 outline-none focus:border-[#658C3E]"
+              value={data.document_type || 'invoice'}
+              onChange={(e) => updateField('document_type', 'document_type', e.target.value)}
+            >
+              <option value="invoice">Tax Invoice</option>
+              <option value="delivery_challan">Delivery Challan</option>
+              <option value="purchase_order">Purchase Order</option>
+              <option value="receipt">Receipt</option>
+              <option value="debit_note">Debit Note</option>
+              <option value="credit_note">Credit Note</option>
+              <option value="bill">Bill</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
           <InputField
-            label="Invoice Number"
+            label="Invoice / Doc No."
             value={data.invoice_metadata?.invoice_number}
             onChange={(v) => updateMetadata('invoice_number', v)}
-            placeholder="INV-001"
+            placeholder="INV-001 or DCh/..."
           />
           <InputField
-            label="Invoice Date"
+            label="Document Date"
             type="date"
             value={data.invoice_metadata?.invoice_date}
             onChange={(v) => updateMetadata('invoice_date', v)}
@@ -204,14 +229,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ data, onChange }) => {
             onChange={(v) => updateMetadata('due_date', v)}
           />
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Transaction Type</label>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Direction / Type</label>
             <select
               className="p-2 border rounded-xl text-xs font-bold border-slate-200 bg-white text-slate-800 outline-none focus:border-[#658C3E]"
               value={data.source_type || 'purchase'}
               onChange={(e) => updateField('source_type', 'source_type', e.target.value)}
             >
-              <option value="purchase">Purchase (Vendor Inward Bill)</option>
-              <option value="sales">Sales (Outward Invoice)</option>
+              <option value="purchase">Purchase (Inward / Vendor)</option>
+              <option value="sales">Sales (Outward / Issued)</option>
             </select>
           </div>
         </div>

@@ -149,24 +149,13 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
         }
     }, [activeTab, fetchPending]);
 
-    // Load Price List from Supabase & Self-Heal Misclassified Generated Sales Invoices
+    // Load Price List from Supabase
     useEffect(() => {
-        const loadPricesAndHeal = async () => {
+        const loadPrices = async () => {
             const { data } = await supabase.from('price_list').select('*').order('model_name');
             if (data) setPriceList(data as PriceListItem[]);
-
-            // Repair any generated sales documents misclassified as 'purchase'
-            try {
-                await supabase
-                    .from('invoices')
-                    .update({ source_type: 'sales' })
-                    .eq('source_type', 'purchase')
-                    .in('document_type', ['generated_invoice', 'generated_quotation', 'generated_proforma_invoice', 'generated_debit_note', 'generated_credit_note']);
-            } catch (healErr) {
-                console.warn('[InvoiceModule] Self-healing misclassified invoices failed:', healErr);
-            }
         };
-        loadPricesAndHeal();
+        loadPrices();
     }, []);
 
     // --- Helper Functions ---
@@ -240,6 +229,31 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 extracted = await extractInvoiceData(base64Data, mimeType, job.file.name);
             }
 
+            // Determine if document is a delivery challan
+            const fileNameLower = (job.file.name || '').toLowerCase();
+            const invNum = (extracted.invoice_metadata?.invoice_number || '').toUpperCase();
+            const customTitle = ((extracted.invoice_metadata as any)?.custom_title || '').toLowerCase();
+            const isChallan = extracted.document_type === 'delivery_challan' ||
+                invNum.startsWith('DCH') ||
+                fileNameLower.includes('challan') ||
+                fileNameLower.includes('dch') ||
+                customTitle.includes('challan');
+
+            const issuerName = (extracted.issuer_details?.name || '').toLowerCase();
+            const isIssuedByUs = issuerName.includes('datlion') || issuerName.includes('cnergy');
+
+            // Default all imported/scanned files strictly to purchase unless explicitly issued by Datlion Cnergy
+            const finalSourceType = isIssuedByUs ? 'sales' : 'purchase';
+            const finalDocType = isChallan
+                ? (isIssuedByUs ? 'generated_delivery_challan' : 'delivery_challan')
+                : (extracted.document_type || 'invoice');
+
+            extracted = {
+                ...extracted,
+                source_type: finalSourceType,
+                document_type: finalDocType
+            };
+
             // Duplicate Check
             let isDuplicate = false;
             if (extracted.invoice_metadata?.invoice_number) {
@@ -291,7 +305,14 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
             id,
             file: undefined,
             status: 'review',
-            data: { ...EMPTY_INVOICE, filename: 'Manual Entry', timestamp: new Date().toISOString(), uploaded_by: currentUser?.username || 'system' }
+            data: {
+                ...EMPTY_INVOICE,
+                document_type: 'invoice',
+                source_type: 'purchase',
+                filename: 'Manual Entry',
+                timestamp: new Date().toISOString(),
+                uploaded_by: currentUser?.username || 'system'
+            }
         };
         setBatchQueue(prev => [job, ...prev]);
         setActiveJobId(id);
@@ -359,6 +380,8 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
             const { id, timestamp, created_at, ...payload } = job.data as any;
             const cleanPayload = {
                 ...payload,
+                source_type: payload.source_type || 'purchase',
+                document_type: payload.document_type || 'invoice',
                 requires_review: false // Finalized
             };
 
@@ -388,6 +411,8 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
             const { id, timestamp, created_at, ...payload } = activeJob.data as any;
             const cleanPayload = {
                 ...payload,
+                source_type: payload.source_type || 'purchase',
+                document_type: payload.document_type || 'invoice',
                 requires_review: false // Mark as reviewed
             };
 

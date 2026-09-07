@@ -56,9 +56,12 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         return null;
     }, [initialData]);
 
-    const [docType, setDocType] = useState<'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(() => {
+    const [docType, setDocType] = useState<'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>(() => {
         if (initialData?.document_type) {
             const dt = initialData.document_type;
+            const invNum = initialData.invoice_metadata?.invoice_number || '';
+            const title = (initialData.invoice_metadata?.ui_config?.customTitle || (initialData.invoice_metadata as any)?.custom_title || (initialData.invoice_metadata as any)?.title || '').toLowerCase();
+            if (dt === 'generated_delivery_challan' || dt === 'delivery_challan' || /^dch/i.test(invNum) || title.includes('challan')) return 'delivery_challan';
             if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') return 'po';
             if (dt === 'generated_quotation' || dt === 'quotation') return 'quotation';
             if (dt === 'generated_proforma_invoice' || dt === 'proforma_invoice' || dt === 'proforma') return 'proforma';
@@ -75,17 +78,17 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         if ((initialData?.invoice_metadata as any)?.custom_title) return (initialData?.invoice_metadata as any).custom_title;
         if ((initialData?.invoice_metadata as any)?.title) return (initialData?.invoice_metadata as any).title;
         if (draft?.customTitle) return draft.customTitle;
-        return (docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
+        return (docType === 'delivery_challan' ? 'DELIVERY CHALLAN' : docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
     });
 
     const [doc, setDoc] = useState<ExtractedInvoice>(() => {
         const base = initialData || draft?.doc || EMPTY_INVOICE;
-        const computedSourceType = (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
+        const computedSourceType = initialData?.source_type ? initialData.source_type : (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
         return { 
             ...EMPTY_INVOICE,
             ...base, 
             source_type: computedSourceType, 
-            document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
+            document_type: docType === 'delivery_challan' ? 'generated_delivery_challan' : docType === 'invoice' ? (initialData?.document_type === 'invoice' ? 'invoice' : 'generated_invoice') : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
             receiver_details: base.receiver_details || EMPTY_INVOICE.receiver_details,
             issuer_details: { 
                 ...EMPTY_INVOICE.issuer_details,
@@ -506,7 +509,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         // 1. Doc Type & Template
         if (data.document_type) {
             setDocType(data.document_type);
-            setCustomTitle(data.document_type === 'invoice' ? 'INVOICE' : data.document_type === 'po' ? 'PURCHASE ORDER' : data.document_type === 'quotation' ? 'QUOTATION' : data.document_type === 'debit_note' ? 'DEBIT NOTE' : data.document_type === 'credit_note' ? 'CREDIT NOTE' : 'PROFORMA INVOICE');
+            setCustomTitle(data.document_type === 'delivery_challan' ? 'DELIVERY CHALLAN' : data.document_type === 'invoice' ? 'INVOICE' : data.document_type === 'po' ? 'PURCHASE ORDER' : data.document_type === 'quotation' ? 'QUOTATION' : data.document_type === 'debit_note' ? 'DEBIT NOTE' : data.document_type === 'credit_note' ? 'CREDIT NOTE' : 'PROFORMA INVOICE');
         }
         if (data.template_name) {
             const normalizedAiName = String(data.template_name).toLowerCase().trim();
@@ -810,14 +813,23 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         generateInvoiceNumber(tmpl.type as string);
     };
 
-    const handleDocTypeChange = (type: 'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note') => {
+    const handleDocTypeChange = (type: 'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note') => {
         setDocType(type);
-        const titleMap: Record<string, string> = { invoice: 'INVOICE', po: 'PURCHASE ORDER', quotation: 'QUOTATION', proforma: 'PROFORMA INVOICE', debit_note: 'DEBIT NOTE', credit_note: 'CREDIT NOTE' };
+        const titleMap: Record<string, string> = { 
+            invoice: 'INVOICE', 
+            delivery_challan: 'DELIVERY CHALLAN', 
+            po: 'PURCHASE ORDER', 
+            quotation: 'QUOTATION', 
+            proforma: 'PROFORMA INVOICE', 
+            debit_note: 'DEBIT NOTE', 
+            credit_note: 'CREDIT NOTE' 
+        };
         setCustomTitle(titleMap[type] || 'INVOICE');
         generateInvoiceNumber(type);
         setDoc(prev => ({
             ...prev,
             source_type: type === 'po' ? 'purchase' : 'sales',
+            document_type: type === 'delivery_challan' ? 'generated_delivery_challan' : type === 'invoice' ? 'generated_invoice' : type === 'po' ? 'generated_po' : type === 'quotation' ? 'generated_quotation' : type === 'debit_note' ? 'generated_debit_note' : type === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
             invoice_metadata: { ...prev.invoice_metadata, note_type: (type === 'debit_note' ? 'debit' : type === 'credit_note' ? 'credit' : undefined) as any }
         }));
         // Auto-expand note section for DN/CN
@@ -1187,7 +1199,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
             const record = {
                 ...doc,
-                source_type: docType === 'po' ? 'purchase' : 'sales',
+                source_type: doc.source_type || initialData?.source_type || (docType === 'po' ? 'purchase' : 'sales'),
                 invoice_metadata: {
                     ...doc.invoice_metadata,
                     terms: config.terms,
@@ -1210,7 +1222,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     }
                 },
                 filename: invNum,
-                document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
+                document_type: docType === 'delivery_challan' ? 'generated_delivery_challan' : docType === 'invoice' ? (initialData?.document_type === 'invoice' ? 'invoice' : 'generated_invoice') : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
                 uploaded_by: doc.uploaded_by || currentUser?.username || 'system',
                 requires_review: false
             };
@@ -1277,7 +1289,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             // Force invoice number as filename
             const record = {
                 ...doc,
-                source_type: docType === 'po' ? 'purchase' : 'sales',
+                source_type: doc.source_type || initialData?.source_type || (docType === 'po' ? 'purchase' : 'sales'),
                 invoice_metadata: {
                     ...doc.invoice_metadata,
                     terms: config.terms,
@@ -1299,7 +1311,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     }
                 },
                 filename: invNum,
-                document_type: docType === 'invoice' ? 'generated_invoice' : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
+                document_type: docType === 'delivery_challan' ? 'generated_delivery_challan' : docType === 'invoice' ? (initialData?.document_type === 'invoice' ? 'invoice' : 'generated_invoice') : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
                 uploaded_by: currentUser?.username || 'system',
                 requires_review: false
             };
@@ -1354,6 +1366,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             else if (currentDocType === 'proforma') typeTag = 'PRO';
             else if (currentDocType === 'debit_note') typeTag = 'DN';
             else if (currentDocType === 'credit_note') typeTag = 'CN';
+            else if (currentDocType === 'delivery_challan') typeTag = 'DCh';
 
             const newPrefix = `${typeTag}/DC/${fyStr}/`;
             
@@ -1404,8 +1417,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             code = otherPartyName.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
         }
 
-        // Handle Prefix (DC for Invoice/PO, Q for Quotation, P for Proforma)
-        const prefixBase = currentDocType === 'quotation' ? 'Q' : currentDocType === 'proforma' ? 'P' : 'DC';
+        // Handle Prefix (DC for Invoice/PO, Q for Quotation, P for Proforma, DCh for Challan)
+        const prefixBase = currentDocType === 'quotation' ? 'Q' : currentDocType === 'proforma' ? 'P' : currentDocType === 'delivery_challan' ? 'DCh' : 'DC';
         const fyPrefix = `${prefixBase}.${code}.${fyStr}.`;
 
         // Fetch all invoices for THIS financial year to find the maximum sequence
@@ -1509,8 +1522,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             <div className="w-full lg:w-1/3 bg-white border-r border-slate-200 overflow-y-auto p-4 no-print shadow-xl z-10 h-full">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold text-slate-800">Document Maker</h2>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-wrap">
                         <button onClick={() => handleDocTypeChange('invoice')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'invoice' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Invoice</button>
+                        <button onClick={() => handleDocTypeChange('delivery_challan')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'delivery_challan' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-indigo-600 border-indigo-200'}`}>Challan</button>
                         <button onClick={() => handleDocTypeChange('quotation')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'quotation' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Quote</button>
                         <button onClick={() => handleDocTypeChange('po')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'po' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>PO</button>
                         <button onClick={() => handleDocTypeChange('proforma')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'proforma' ? 'bg-[#0D0D0D] text-white border-[#0D0D0D]' : 'bg-white text-slate-600 border-slate-200'}`}>Proforma</button>
@@ -1518,6 +1532,39 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <button onClick={() => handleDocTypeChange('credit_note')} className={`px-2 py-1 text-xs rounded-lg border ${docType === 'credit_note' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-600 border-emerald-200'}`}>CN</button>
                     </div>
                 </div>
+
+                {docType === 'delivery_challan' && (
+                    <div className="mb-4 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between shadow-2xs">
+                        <div>
+                            <span className="text-xs font-bold text-indigo-900 block">Challan Flow</span>
+                            <span className="text-[10px] text-indigo-600">Issued = Outward, Received = Inward</span>
+                        </div>
+                        <div className="flex gap-1 bg-white p-0.5 rounded-lg border border-indigo-200">
+                            <button
+                                type="button"
+                                onClick={() => setDoc(prev => ({ ...prev, source_type: 'sales' }))}
+                                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors ${
+                                    (doc.source_type || 'sales') === 'sales'
+                                        ? 'bg-indigo-600 text-white shadow-2xs'
+                                        : 'text-indigo-600 hover:bg-indigo-50'
+                                }`}
+                            >
+                                Outward
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDoc(prev => ({ ...prev, source_type: 'purchase' }))}
+                                className={`px-2.5 py-1 text-xs font-bold rounded transition-colors ${
+                                    doc.source_type === 'purchase'
+                                        ? 'bg-purple-600 text-white shadow-2xs'
+                                        : 'text-purple-700 hover:bg-purple-50'
+                                }`}
+                            >
+                                Inward
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {isEditingExistingRecord && (
                     <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-xl shadow-2xs">

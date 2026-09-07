@@ -80,8 +80,12 @@ const GSTReturnPanel: React.FC = () => {
 
             if (error) throw error;
             
-            // Client-side filtering for specific month/year combinations
+            // Client-side filtering for specific month/year combinations (excluding non-taxable delivery challans)
             const fetchedInvoices = (data as ExtractedInvoice[]).filter(inv => {
+                const num = (inv.invoice_metadata?.invoice_number || '').toUpperCase();
+                const dt = (inv.document_type || '').toLowerCase();
+                if (dt.includes('challan') || num.startsWith('DCH/')) return false;
+
                 const dateStr = inv.invoice_metadata?.invoice_date;
                 if (!dateStr) return false;
                 const d = new Date(dateStr);

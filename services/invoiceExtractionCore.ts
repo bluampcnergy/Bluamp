@@ -8,7 +8,7 @@ export const invoiceExtractionSchema = {
   properties: {
     document_type: {
       type: Type.STRING,
-      enum: ["invoice", "receipt", "credit_note", "debit_note", "purchase_order", "bill", "other"]
+      enum: ["invoice", "delivery_challan", "receipt", "credit_note", "debit_note", "purchase_order", "bill", "other"]
     },
     source_type: {
       type: Type.STRING,
@@ -65,8 +65,10 @@ export const invoiceExtractionSchema = {
           type: Type.STRING,
           enum: ["set_off", "non_set_off", "not_applicable"]
         },
-        payment_mode: { type: Type.STRING, nullable: true }
-      }
+        related_invoice_number: { type: Type.STRING, nullable: true },
+        note_reason: { type: Type.STRING, nullable: true }
+      },
+      required: ["invoice_number", "invoice_date"]
     },
     items: {
       type: Type.ARRAY,
@@ -74,7 +76,7 @@ export const invoiceExtractionSchema = {
         type: Type.OBJECT,
         properties: {
           description: { type: Type.STRING },
-          item_type: { type: Type.STRING, enum: ["Cell", "BMS", "Bat-misc", "Service", "Consumable", "Other"] },
+          item_type: { type: Type.STRING },
           make_model: { type: Type.STRING, nullable: true },
           hsn_sac: { type: Type.STRING, nullable: true },
           quantity: { type: Type.NUMBER },
@@ -98,9 +100,8 @@ export const invoiceExtractionSchema = {
         cgst_total: { type: Type.NUMBER },
         sgst_total: { type: Type.NUMBER },
         igst_total: { type: Type.NUMBER },
-        round_off: { type: Type.NUMBER, nullable: true },
-        grand_total: { type: Type.NUMBER },
-        currency: { type: Type.STRING }
+        round_off: { type: Type.NUMBER },
+        grand_total: { type: Type.NUMBER }
       },
       required: ["subtotal_taxable", "grand_total"]
     },
@@ -117,8 +118,10 @@ CRITICAL EXTRACTION RULES:
 
 1. **DOCUMENT & SOURCE TYPE CLASSIFICATION**:
    - Company Name: "Datlion Cnergy" / "Datlion Cnergy Private Limited"
+   - If the document is titled or labeled "Delivery Challan", "Challan", "Dispatch Challan", "Transport Challan", or doc number starts with "DCh" -> set 'document_type' to 'delivery_challan'.
    - If the ISSUER is "Datlion Cnergy" -> 'sales'.
    - If the RECEIVER / BUYER is "Datlion Cnergy" (or any supplier bill sent to Datlion Cnergy) -> 'purchase' (Expense).
+   - IMPORTANT: ALL imported / scanned supplier bills and inward delivery challans default strictly to 'purchase'.
    - If unsure, default to 'purchase'.
 
 2. **EXPENSE CATEGORY AUTO-TAGGING**:
@@ -191,6 +194,18 @@ export async function extractInvoiceFromBufferWithGemini(
       ...recalculated
     };
   }
+
+  // Ensure delivery challans and purchase defaults are strictly respected
+  const invNum = (parsed.invoice_metadata?.invoice_number || '').toUpperCase();
+  const isChallan = parsed.document_type === 'delivery_challan' ||
+    invNum.startsWith('DCH') ||
+    (parsed.invoice_metadata?.custom_title || '').toLowerCase().includes('challan');
+  
+  const issuerName = (parsed.issuer_details?.name || '').toLowerCase();
+  const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+
+  parsed.document_type = isChallan ? 'delivery_challan' : (parsed.document_type || 'invoice');
+  parsed.source_type = isOurCompany ? 'sales' : 'purchase';
 
   return parsed as ExtractedInvoice;
 }

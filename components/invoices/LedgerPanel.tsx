@@ -237,6 +237,7 @@ const LedgerPanel: React.FC<LedgerPanelProps> = ({ currentUser, companyProfiles 
         const dt = (inv.document_type || meta.document_type || '').toLowerCase();
         if (dt.includes('credit_note')) return 'Credit Note';
         if (dt.includes('debit_note')) return 'Debit Note';
+        if (dt.includes('delivery_challan') || dt.includes('challan')) return 'Delivery Challan';
         if (dt.includes('po') || dt.includes('purchase_order')) return 'PO';
         if (dt.includes('quotation')) return 'Quotation';
         if (dt.includes('proforma')) return 'Proforma';

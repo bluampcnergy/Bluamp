@@ -19,7 +19,7 @@ export const extractInvoiceData = async (
         const invoiceSchema = {
             type: "object",
             properties: {
-                document_type: { type: "string", enum: ["invoice", "receipt", "credit_note", "debit_note", "other"] },
+                document_type: { type: "string", enum: ["invoice", "delivery_challan", "receipt", "credit_note", "debit_note", "other"] },
                 source_type: { type: "string", enum: ["sales", "purchase"] },
                 issuer_details: {
                     type: "object",
@@ -127,7 +127,8 @@ export const extractInvoiceData = async (
         4. **METADATA**:
            - Dates: YYYY-MM-DD.
            - Money: Numbers only (no symbols).
-           - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy", 'purchase'. Default 'purchase'.
+           - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy" or document is from a vendor/supplier, 'purchase'. Default 'purchase'.
+           - Document Type: If titled or labeled "Delivery Challan" or document number starts with "DCh", 'delivery_challan'. Default 'invoice'.
            - ITC: Default 'set_off' for purchases unless blocked.`;
 
         const response = await fetch('/api/gemini', {
@@ -152,8 +153,23 @@ export const extractInvoiceData = async (
         const data = await response.json();
         const parsedData = cleanAndParseJSON(data.text);
 
+        const invNum = (parsedData.invoice_metadata?.invoice_number || '').toUpperCase();
+        const customTitle = ((parsedData.invoice_metadata as any)?.custom_title || '').toLowerCase();
+        const isChallan = parsedData.document_type === 'delivery_challan' ||
+            invNum.startsWith('DCH') ||
+            filename.toLowerCase().includes('challan') ||
+            filename.toLowerCase().includes('dch') ||
+            customTitle.includes('challan');
+
+        const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
+        const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+
         return {
           ...parsedData,
+          document_type: isChallan
+            ? (isOurCompany ? 'generated_delivery_challan' : 'delivery_challan')
+            : (parsedData.document_type || 'invoice'),
+          source_type: isOurCompany ? 'sales' : 'purchase',
           filename,
           timestamp: new Date().toISOString(),
           raw_text: "Stored securely", 
@@ -191,7 +207,7 @@ export const generateTextResponse = async (prompt: string): Promise<string> => {
 const aiAssistantSchema = {
     type: "object",
     properties: {
-      document_type: { type: "string", enum: ["invoice", "po", "quotation", "proforma"] },
+      document_type: { type: "string", enum: ["invoice", "delivery_challan", "po", "quotation", "proforma"] },
       template_name: { type: "string" },
       company_match: {
         type: "object",

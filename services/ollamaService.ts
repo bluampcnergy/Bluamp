@@ -116,8 +116,8 @@ export const extractInvoiceDataLocal = async (
     2. TAXES: Extract GST Rate (%) and Amounts (CGST, SGST, IGST) for each item.
     
     Structure requirements:
-    - "document_type": "invoice", "receipt", "credit_note"
-    - "source_type": "sales" (if issuer is Datlion Cnergy) or "purchase" (if receiver is Datlion Cnergy)
+    - "document_type": "invoice", "delivery_challan", "receipt", "credit_note"
+    - "source_type": "sales" (if issuer is Datlion Cnergy) or "purchase" (if receiver is Datlion Cnergy or vendor bill). Default "purchase".
     - "issuer_details": { name, gstin, address, email, phone, contact_person }
     - "receiver_details": { name, gstin, address, email, phone, contact_person }
     - "invoice_metadata": { invoice_number, invoice_date (YYYY-MM-DD), input_tax_credit ("set_off" or "non_set_off") }
@@ -196,9 +196,24 @@ export const extractInvoiceDataLocal = async (
         }
     }
 
+    const invNum = (parsedData.invoice_metadata?.invoice_number || '').toUpperCase();
+    const customTitle = ((parsedData.invoice_metadata as any)?.custom_title || '').toLowerCase();
+    const isChallan = parsedData.document_type === 'delivery_challan' ||
+        invNum.startsWith('DCH') ||
+        filename.toLowerCase().includes('challan') ||
+        filename.toLowerCase().includes('dch') ||
+        customTitle.includes('challan');
+
+    const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
+    const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+
     return {
       ...EMPTY_INVOICE, 
-      ...parsedData,   
+      ...parsedData,
+      document_type: isChallan
+        ? (isOurCompany ? 'generated_delivery_challan' : 'delivery_challan')
+        : (parsedData.document_type || 'invoice'),
+      source_type: isOurCompany ? 'sales' : 'purchase',
       filename,
       timestamp: new Date().toISOString(),
       raw_text: `Extracted via Local Model (${modelName})`,
