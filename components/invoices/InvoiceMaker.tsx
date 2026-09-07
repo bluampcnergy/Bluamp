@@ -8,6 +8,7 @@ import { Save, Printer, Plus, Trash2, SettingsIcon, Columns, Wallet, Download, R
 import { QRCodeSVG } from 'qrcode.react';
 import { ImportIcon } from '../icons/ImportIcon';
 import AiChatPanel from './AiChatPanel';
+import { BatteryComparisonTable } from './BatteryComparisonTable';
 
 interface InvoiceMakerProps {
     currentUser: { username: string; role?: 'admin' | 'user' | 'billing' | 'dashboard_user' } | null;
@@ -28,6 +29,7 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     showTotalsTable?: boolean;
     showTaxTable?: boolean;
     showSubtotalDiscount?: boolean;
+    showBatteryComparisonTable?: boolean;
     visibleColumns?: {
         index: boolean;
         description: boolean;
@@ -135,7 +137,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             showReceiverSign: docType === 'po' ? false : true,
             showQRCode: true,
             showTotalsTable: true,
-            showTaxTable: hasTaxes
+            showTaxTable: (docType === 'quotation' || docType === 'proforma') ? false : hasTaxes
         };
     });
 
@@ -157,6 +159,15 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         const t = (initialData?.totals as any) || draft?.doc?.totals;
         const disc = Number(t?.subtotal_discount_value ?? t?.subtotal_discount ?? 0);
         return disc > 0 || Boolean(initialData?.invoice_metadata?.ui_config?.showSubtotalDiscount || draft?.config?.showSubtotalDiscount);
+    });
+    const [showBatteryComparisonTable, setShowBatteryComparisonTable] = useState<boolean>(() => {
+        if (initialData?.invoice_metadata?.ui_config?.showBatteryComparisonTable !== undefined) {
+            return Boolean(initialData.invoice_metadata.ui_config.showBatteryComparisonTable);
+        }
+        if (draft?.config?.showBatteryComparisonTable !== undefined) {
+            return Boolean(draft.config.showBatteryComparisonTable);
+        }
+        return docType === 'quotation' || docType === 'proforma';
     });
 
     const recalcDocTotals = (items: InvoiceItem[], discVal = subtotalDiscountValue, discType = subtotalDiscountType) => {
@@ -866,6 +877,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             document_type: type === 'delivery_challan' ? 'generated_delivery_challan' : type === 'invoice' ? 'generated_invoice' : type === 'po' ? 'generated_po' : type === 'quotation' ? 'generated_quotation' : type === 'debit_note' ? 'generated_debit_note' : type === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
             invoice_metadata: { ...prev.invoice_metadata, note_type: (type === 'debit_note' ? 'debit' : type === 'credit_note' ? 'credit' : undefined) as any }
         }));
+        if (type === 'quotation' || type === 'proforma') {
+            setShowBatteryComparisonTable(true);
+            setConfig(prev => ({ ...prev, showBatteryComparisonTable: true, showTaxTable: false }));
+        }
         // Auto-expand note section for DN/CN
         if (type === 'debit_note' || type === 'credit_note') {
             setShowNoteSection(true);
@@ -1245,6 +1260,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     ui_config: {
                         ...config,
                         showSubtotalDiscount,
+                        showBatteryComparisonTable,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1335,6 +1351,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     ui_config: {
                         ...config,
                         showSubtotalDiscount,
+                        showBatteryComparisonTable,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1886,6 +1903,21 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 )}
                             </div>
                         </div>
+                    )}
+                    {(docType === 'quotation' || docType === 'proforma' || showBatteryComparisonTable) && (
+                        <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={showBatteryComparisonTable}
+                                onChange={e => {
+                                    const val = e.target.checked;
+                                    setShowBatteryComparisonTable(val);
+                                    setConfig(prev => ({ ...prev, showBatteryComparisonTable: val }));
+                                }}
+                                className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]"
+                            />
+                            <span>Show Lithium vs Lead-Acid Comparison Table</span>
+                        </label>
                     )}
                 </div>
 
@@ -2473,6 +2505,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             );
                         })()}
 
+                        {showBatteryComparisonTable && (
+                            <BatteryComparisonTable printMode={false} />
+                        )}
+
                         <div className="flex flex-col border-t pt-2 mt-2">
                                 {(config.showTotalsTable ?? true) && (
                                     <div className="flex justify-between items-start gap-4">
@@ -2755,6 +2791,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                             </div>
                                         );
                                     })()}
+
+                                    {showBatteryComparisonTable && (
+                                        <BatteryComparisonTable printMode={true} />
+                                    )}
 
                                     {/* ---- SUMMARY ---- */}
                                     <div className="flex flex-col border-t pt-1 mt-1">

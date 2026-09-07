@@ -6,6 +6,7 @@ import { ExtractedInvoice, InvoiceItem, InvoiceTemplate } from '../../types';
 import { getTaxMode, safeRender, amountToWords, getCurrencySymbol } from '../../utils/invoiceUtils';
 import { Printer, Download, X } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
+import { BatteryComparisonTable } from './BatteryComparisonTable';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -57,6 +58,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
             it => Number(it.cgst_amount || 0) > 0 || Number(it.sgst_amount || 0) > 0 || Number(it.igst_amount || 0) > 0 || Number(it.igst_rate || 0) > 0
         );
         const isQuotation = invoice.document_type === 'generated_quotation' || invoice.document_type === 'quotation';
+        const isProforma = invoice.document_type === 'generated_proforma_invoice' || invoice.document_type === 'proforma' || (invoice.invoice_metadata as any)?.ui_config?.customTitle?.toLowerCase().includes('proforma');
+        const isQuoteOrProforma = isQuotation || isProforma;
 
         // First try to load from invoice metadata ui_config
         if (invoice.invoice_metadata?.ui_config) {
@@ -73,7 +76,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                 showReceiverSign: ui.showReceiverSign ?? true,
                 showQRCode: ui.showQRCode ?? true,
                 showTotalsTable: ui.showTotalsTable ?? true,
-                showTaxTable: ui.showTaxTable !== undefined ? ui.showTaxTable : hasTaxes,
+                showTaxTable: ui.showTaxTable !== undefined ? ui.showTaxTable : (isQuoteOrProforma ? false : hasTaxes),
+                showBatteryComparisonTable: ui.showBatteryComparisonTable !== undefined ? ui.showBatteryComparisonTable : isQuoteOrProforma,
                 billedToLabel: ui.billedToLabel || prev.billedToLabel,
                 shippedToLabel: ui.shippedToLabel || prev.shippedToLabel,
                 visibleColumns: ui.visibleColumns || {
@@ -102,7 +106,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                         showReceiverSign: c.showReceiverSign ?? true,
                         showQRCode: c.showQRCode ?? true,
                         showTotalsTable: c.showTotalsTable ?? true,
-                        showTaxTable: isQuotation ? false : (c.showTaxTable !== undefined ? c.showTaxTable : hasTaxes),
+                        showTaxTable: isQuoteOrProforma ? false : (c.showTaxTable !== undefined ? c.showTaxTable : hasTaxes),
+                        showBatteryComparisonTable: isQuoteOrProforma,
                         visibleColumns: {
                             ...prev.visibleColumns,
                             taxableValue: hasTaxes
@@ -270,6 +275,10 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                             const amountInWordsStr = amountToWords(doc.totals?.grand_total || 0, doc.totals?.currency);
                             const currencySymbol = getCurrencySymbol(doc.totals?.currency);
                             const items = doc.items || [];
+                            const isDocQuoteOrProforma = docType === 'generated_quotation' || docType === 'quotation' || docType === 'generated_proforma_invoice' || docType === 'proforma' || customTitle?.toLowerCase().includes('quotation') || customTitle?.toLowerCase().includes('proforma');
+                            const showComparison = (config as any).showBatteryComparisonTable !== undefined 
+                                ? Boolean((config as any).showBatteryComparisonTable) 
+                                : isDocQuoteOrProforma;
 
                             return (
                                 <React.Fragment key={docIdx}>
@@ -418,6 +427,10 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                         </div>
                                     );
                                 })()}
+
+                                {showComparison && (
+                                    <BatteryComparisonTable printMode={true} />
+                                )}
 
                                 {/* SUMMARY */}
                                 <div className="flex flex-col border-t pt-1 mt-1">
