@@ -679,18 +679,28 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             localInitialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
         } catch (e) {}
 
-        const initialQty = editingGood 
-            ? (editingGood.initialQuantity || localInitialMap[goodId] || editingGood.quantity || formData.quantity || 1)
+        let initialQty = editingGood 
+            ? (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (editingGood.initialQuantity || localInitialMap[goodId] || editingGood.quantity || formData.quantity || 1))
             : (formData.initialQuantity && formData.initialQuantity > 0 ? formData.initialQuantity : (formData.quantity || 1));
+
+        if (initialQty < formData.quantity) {
+            initialQty = formData.quantity;
+        }
+
+        localInitialMap[goodId] = initialQty;
+        try {
+            localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialMap));
+        } catch (e) {}
 
         // Date timestamp from invoiceDate or fallback to now
         const batchTimestamp = formData.invoiceDate
             ? new Date(formData.invoiceDate).getTime() || Date.now()
             : (editingGood ? editingGood.timestamp : Date.now());
 
-        // Prepare Received Good
+        // Prepare Received Good (cleanly omitting invoiceDate from the persistent object)
+        const { invoiceDate, ...cleanFormData } = formData;
         const newGood: ReceivedGood = {
-            ...formData,
+            ...cleanFormData,
             id: goodId,
             initialQuantity: initialQty,
             lowStockThresholdPercent: formData.lowStockThresholdPercent ?? 20,
@@ -741,7 +751,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             }
 
             const oldNameTrimmed = editingGood.name.trim().toLowerCase();
-            const isMasterPropChanged = (editingGood.name.trim() !== newGood.name.trim()) || (editingGood.category !== newGood.category);
+            const isMasterPropChanged = 
+                (editingGood.name.trim() !== newGood.name.trim()) || 
+                (editingGood.category !== newGood.category) ||
+                (editingGood.uom !== newGood.uom) ||
+                (editingGood.lowStockThresholdPercent !== newGood.lowStockThresholdPercent) ||
+                (Boolean(editingGood.isIgnoredForAlerts) !== Boolean(newGood.isIgnoredForAlerts));
 
             setReceivedGoods(prev => prev.map(g => {
                 if (g.id === goodId) return newGood;

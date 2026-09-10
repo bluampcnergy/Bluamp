@@ -9,18 +9,46 @@ const CLIENT_ONLY_FIELDS: Record<string, string[]> = {
   received_goods: ['initialQuantity', 'lowStockThresholdPercent', 'isIgnoredForAlerts'],
 };
 
+// Whitelist of columns physically existing in the Supabase 'received_goods' table.
+// Strips any client-only properties (such as invoiceDate, initialQuantity, lowStockThresholdPercent, etc.)
+// to prevent PostgREST PGRST204 ("column not found in schema cache") errors.
+const VALID_RECEIVED_GOODS_COLUMNS = new Set([
+  'id', 'name', 'makeModel', 'supplier', 'quantity', 'status', 'damagedCount',
+  'invoiceNumber', 'serials', 'timestamp', 'category', 'testReportLink',
+  'gradingConfig', 'consumed_serials', 'notes', 'serialIndexMap',
+  'min_threshold', 'safety_buffer_percent', 'is_ignored_for_alerts', 'uom',
+  'initial_quantity'
+]);
+
 // Strip client-only fields before sending to Supabase
 const sanitizeForUpload = (tableName: string, item: any): any => {
-  const fieldsToStrip = CLIENT_ONLY_FIELDS[tableName];
-  if (!fieldsToStrip || fieldsToStrip.length === 0) return item;
-  const cleaned = { ...item };
-
   if (tableName === 'received_goods') {
+    const cleaned: Record<string, any> = { ...item };
+
+    // Map client fields to database columns
+    if (typeof item.initialQuantity === 'number') {
+      cleaned.initial_quantity = item.initialQuantity;
+    }
+    if (typeof item.lowStockThresholdPercent === 'number') {
+      cleaned.safety_buffer_percent = item.lowStockThresholdPercent;
+    }
     if (typeof item.isIgnoredForAlerts === 'boolean') {
       cleaned.is_ignored_for_alerts = item.isIgnoredForAlerts;
     }
+
+    // Retain only valid database columns to guarantee no PGRST204 errors
+    const sanitized: Record<string, any> = {};
+    for (const key of Object.keys(cleaned)) {
+      if (VALID_RECEIVED_GOODS_COLUMNS.has(key)) {
+        sanitized[key] = cleaned[key];
+      }
+    }
+    return sanitized;
   }
 
+  const fieldsToStrip = CLIENT_ONLY_FIELDS[tableName];
+  if (!fieldsToStrip || fieldsToStrip.length === 0) return item;
+  const cleaned = { ...item };
   for (const field of fieldsToStrip) {
     delete cleaned[field];
   }
@@ -48,7 +76,12 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
 
     return items.map(item => {
       const currentQty = item.quantity || 0;
-      let initialQty = item.initialQuantity || (item.id && localInitialQtyMap[item.id] > 0 ? localInitialQtyMap[item.id] : 0);
+      let initialQty = typeof item.initialQuantity === 'number' && item.initialQuantity > 0
+        ? item.initialQuantity
+        : (typeof item.initial_quantity === 'number' && item.initial_quantity > 0
+          ? item.initial_quantity
+          : (item.id && localInitialQtyMap[item.id] > 0 ? localInitialQtyMap[item.id] : 0));
+
       if (!initialQty || initialQty <= 0) {
         initialQty = (item.serials && item.serials.length > 0 ? item.serials.length : currentQty) || 1;
         if (item.id && currentQty > 0) {
@@ -60,7 +93,9 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
       }
       const lowStockThresholdPercent = typeof item.lowStockThresholdPercent === 'number'
         ? item.lowStockThresholdPercent
-        : (typeof item.low_stock_threshold_percent === 'number' ? item.low_stock_threshold_percent : 20);
+        : (typeof item.safety_buffer_percent === 'number'
+          ? item.safety_buffer_percent
+          : (typeof item.low_stock_threshold_percent === 'number' ? item.low_stock_threshold_percent : 20));
 
       const dbIgnoredVal = typeof item.isIgnoredForAlerts === 'boolean'
         ? item.isIgnoredForAlerts
@@ -344,6 +379,24 @@ export function useSupabase<T>(
     }
   };
 
+  const flushSync = useCallback(() => {
+    if (!syncEnabled.current || !initialFetchDone.current) return;
+
+    if (syncTimer.current) {
+      clearTimeout(syncTimer.current);
+      syncTimer.current = null;
+    }
+
+    const currentData = dataRef.current;
+    const baseline = lastSyncedData.current;
+
+    if (currentData !== baseline) {
+      lastSyncedData.current = currentData;
+      setCache(tableName, currentData);
+      syncToSupabase(currentData, baseline);
+    }
+  }, [tableName, idKey]);
+
   const scheduleDebouncedSync = useCallback(() => {
     if (!syncEnabled.current || !initialFetchDone.current) return;
 
@@ -352,16 +405,23 @@ export function useSupabase<T>(
     }
 
     syncTimer.current = setTimeout(() => {
-      const currentData = dataRef.current;
-      const baseline = lastSyncedData.current;
+      flushSync();
+    }, 250); // 250ms responsive sync (down from 1500ms delay)
+  }, [flushSync]);
 
-      if (currentData !== baseline) {
-        syncToSupabase(currentData, baseline);
-        lastSyncedData.current = currentData;
-        setCache(tableName, currentData);
+  // Flush pending sync immediately on page unload / reload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      flushSync();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (syncTimer.current) {
+        clearTimeout(syncTimer.current);
       }
-    }, 1500);
-  }, [tableName, idKey]);
+    };
+  }, [flushSync]);
 
   const setSupabaseData = useCallback((action: React.SetStateAction<T[]>) => {
     setData(prev => {
