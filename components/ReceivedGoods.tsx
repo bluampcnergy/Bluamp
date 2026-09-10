@@ -287,9 +287,35 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     const items = JSON.parse(pendingImport);
                     if (Array.isArray(items) && items.length > 0) {
                         setTimeout(() => {
-                            const confirmed = window.confirm(`Found ${items.length} items imported from Invoice Module. Add to storage?`);
-                            if (confirmed) {
-                                const newGoods: ReceivedGood[] = items.map((item: any, index: number) => {
+                            // Filter items to detect if an inward batch with this invoice number already exists for this item
+                            const duplicateItems: any[] = [];
+                            const uniqueItems: any[] = [];
+
+                            items.forEach((item: any) => {
+                                const normName = (item.name || '').trim().toLowerCase();
+                                const normInv = (item.invoiceNumber || '').trim().toLowerCase();
+                                const isDup = normInv && receivedGoods.some(g => 
+                                    (g.name || '').trim().toLowerCase() === normName &&
+                                    (g.invoiceNumber || '').trim().toLowerCase() === normInv
+                                );
+                                if (isDup) duplicateItems.push(item);
+                                else uniqueItems.push(item);
+                            });
+
+                            if (uniqueItems.length === 0 && duplicateItems.length > 0) {
+                                alert(`⚠️ Duplicate Inward Prevented:\n\nAll ${duplicateItems.length} item(s) from invoice #${items[0]?.invoiceNumber || ''} have already been inwarded in Raw Materials.\n\nImport was automatically skipped to prevent double-counting inventory.`);
+                                localStorage.removeItem('pendingInventoryImport');
+                                return;
+                            }
+
+                            let confirmPrompt = `Found ${items.length} items imported from Invoice Module. Add to storage?`;
+                            if (duplicateItems.length > 0) {
+                                confirmPrompt = `Found ${items.length} items from Invoice Module.\n\n⚠️ ${duplicateItems.length} item(s) already exist with the same invoice number for this item in Raw Materials and will be skipped to prevent duplicates.\n\nAdd the remaining ${uniqueItems.length} unique items to storage?`;
+                            }
+
+                            const confirmed = window.confirm(confirmPrompt);
+                            if (confirmed && uniqueItems.length > 0) {
+                                const newGoods: ReceivedGood[] = uniqueItems.map((item: any, index: number) => {
                                     let statusEnum = ReceivedGoodStatus.ND;
                                     if (item.status === 'Damaged') statusEnum = ReceivedGoodStatus.D;
                                     else if (item.status === 'Partially Received') statusEnum = ReceivedGoodStatus.PR;
@@ -309,7 +335,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     };
                                 });
                                 setReceivedGoods(prev => [...newGoods, ...prev]);
-                                addLogEntry('Imported Storage Items', `Imported ${newGoods.length} items from invoice scan.`);
+                                addLogEntry('Imported Storage Items', `Imported ${newGoods.length} items from invoice scan.${duplicateItems.length > 0 ? ` (Skipped ${duplicateItems.length} duplicate invoice entries)` : ''}`);
                             }
                             localStorage.removeItem('pendingInventoryImport');
                         }, 100);
@@ -323,7 +349,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             }
         };
         checkImport();
-    }, []);
+    }, [receivedGoods]);
 
     // Group Raw Materials into Master Item Cards
     const masterGroupedGoods: MasterGroupedGood[] = useMemo(() => {
@@ -410,6 +436,54 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             return matchesCategory && matchesSearch && matchesNotes && matchesLowStock && matchesIgnored;
         });
     }, [masterGroupedGoods, selectedCategory, searchTerm, filterNotes, filterLowStock, filterIgnored]);
+
+    // Target Item Name for the current modal session (normalized)
+    const modalTargetItemName = useMemo(() => {
+        return (formData.name || inwardBatchMasterTarget?.name || editingGood?.name || '').trim();
+    }, [formData.name, inwardBatchMasterTarget, editingGood]);
+
+    // Active Master Group matching the modal's item (if any exists in inventory)
+    const activeMasterGroupForModal = useMemo(() => {
+        if (!modalTargetItemName) return null;
+        return masterGroupedGoods.find(g => g.name.trim().toLowerCase() === modalTargetItemName.toLowerCase()) || null;
+    }, [masterGroupedGoods, modalTargetItemName]);
+
+    // All previous batches on record for this specific item (excluding the batch currently being edited)
+    const previousBatchesForModalItem = useMemo(() => {
+        if (!modalTargetItemName) return [];
+        const normName = modalTargetItemName.toLowerCase();
+        return receivedGoods.filter(g => 
+            (g.name || '').trim().toLowerCase() === normName &&
+            (!editingGood || g.id !== editingGood.id)
+        );
+    }, [receivedGoods, modalTargetItemName, editingGood]);
+
+    // Distinct past invoices for this item with latest batch metadata
+    const previousInvoicesForModalItem = useMemo(() => {
+        const invMap = new Map<string, ReceivedGood>();
+        previousBatchesForModalItem.forEach(batch => {
+            const inv = (batch.invoiceNumber || '').trim();
+            if (inv && !invMap.has(inv.toLowerCase())) {
+                invMap.set(inv.toLowerCase(), batch);
+            }
+        });
+        return Array.from(invMap.values());
+    }, [previousBatchesForModalItem]);
+
+    // Detect if entered invoice number matches a previous batch for this item
+    const duplicateInvoiceBatch = useMemo(() => {
+        const currentInv = (formData.invoiceNumber || '').trim().toLowerCase();
+        if (!currentInv || !modalTargetItemName) return null;
+        return previousBatchesForModalItem.find(b => 
+            (b.invoiceNumber || '').trim().toLowerCase() === currentInv
+        ) || null;
+    }, [formData.invoiceNumber, modalTargetItemName, previousBatchesForModalItem]);
+
+    // Helper to switch modal from editing an existing batch to adding a new inward batch
+    const handleSwitchToNewInwardBatch = () => {
+        if (!activeMasterGroupForModal) return;
+        handleAddBatchToMaster(activeMasterGroupForModal);
+    };
 
     const toggleExpandMaster = (masterKey: string) => {
         setExpandedMasterKeys(prev => {
@@ -558,6 +632,24 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Validation: Prevent duplicate invoice entry for the same item
+        const trimmedInvoice = (formData.invoiceNumber || '').trim();
+        const normItemName = (formData.name || inwardBatchMasterTarget?.name || editingGood?.name || '').trim().toLowerCase();
+
+        if (trimmedInvoice && normItemName) {
+            const existingBatch = receivedGoods.find(g => 
+                (g.name || '').trim().toLowerCase() === normItemName &&
+                (g.invoiceNumber || '').trim().toLowerCase() === trimmedInvoice.toLowerCase() &&
+                (!editingGood || g.id !== editingGood.id)
+            );
+
+            if (existingBatch) {
+                alert(`⚠️ Duplicate Inward Batch Prevented:\n\nAn inward batch with invoice #${trimmedInvoice} already exists for "${formData.name || inwardBatchMasterTarget?.name || editingGood?.name}".\n\nExisting Batch Details:\n• Received Date: ${new Date(existingBatch.timestamp).toLocaleDateString()}\n• Quantity: ${existingBatch.quantity} ${existingBatch.uom || 'qty'}\n• Supplier: ${existingBatch.supplier || 'N/A'}\n\nPlease verify the invoice number or update the existing batch.`);
+                return;
+            }
+        }
+
         const goodId = editingGood ? editingGood.id : `rec-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
         const isCell = isTrackedCategory(formData.category, formData.uom);
 
@@ -808,9 +900,30 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 }
 
                 const importedGoods: ReceivedGood[] = [];
+                let skippedDuplicatesCount = 0;
+
                 for (let i = 1; i < lines.length; i++) {
                     const row = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
                     if (!row[0]) continue;
+
+                    const rowName = row[0].trim().toLowerCase();
+                    const rowInv = (row[7] || '').trim().toLowerCase();
+
+                    // Check duplicate invoice against existing receivedGoods or earlier rows in this CSV
+                    if (rowInv) {
+                        const existsInInventory = receivedGoods.some(g => 
+                            (g.name || '').trim().toLowerCase() === rowName &&
+                            (g.invoiceNumber || '').trim().toLowerCase() === rowInv
+                        );
+                        const existsInBatch = importedGoods.some(g =>
+                            g.name.trim().toLowerCase() === rowName &&
+                            (g.invoiceNumber || '').trim().toLowerCase() === rowInv
+                        );
+                        if (existsInInventory || existsInBatch) {
+                            skippedDuplicatesCount++;
+                            continue;
+                        }
+                    }
 
                     importedGoods.push({
                         id: `csv-${Date.now()}-${i}`,
@@ -833,8 +946,14 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                 if (importedGoods.length > 0) {
                     setReceivedGoods(prev => [...importedGoods, ...prev]);
-                    addLogEntry('CSV Bulk Import', `Imported ${importedGoods.length} raw material items.`);
-                    alert(`Successfully imported ${importedGoods.length} items from CSV!`);
+                    addLogEntry('CSV Bulk Import', `Imported ${importedGoods.length} raw material items.${skippedDuplicatesCount > 0 ? ` (Skipped ${skippedDuplicatesCount} duplicate invoice entries)` : ''}`);
+                    let alertMsg = `Successfully imported ${importedGoods.length} items from CSV!`;
+                    if (skippedDuplicatesCount > 0) {
+                        alertMsg += `\n\n⚠️ Skipped ${skippedDuplicatesCount} row(s) because inward batches with the same invoice number already exist for those items.`;
+                    }
+                    alert(alertMsg);
+                } else if (skippedDuplicatesCount > 0) {
+                    alert(`⚠️ No new items imported.\n\nAll ${skippedDuplicatesCount} row(s) in the CSV were skipped because matching invoice batches already exist for those items in Raw Materials.`);
                 }
             }
         };
@@ -1227,6 +1346,59 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 size="xl"
             >
                 <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Active Master SKU Context Banner / Inward Mode Switcher */}
+                    {inwardBatchMasterTarget && activeMasterGroupForModal && (
+                        <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2.5">
+                                <span className="p-2 bg-emerald-100 text-emerald-800 rounded-lg">
+                                    <Package size={16} />
+                                </span>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xs font-bold text-slate-900">
+                                            Adding Inward Batch to: <span className="text-[#658C3E]">{inwardBatchMasterTarget.name}</span>
+                                        </p>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900">
+                                            ✨ New Inward Batch
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5">
+                                        Current stock: <span className="font-semibold text-slate-800">{activeMasterGroupForModal.totalQuantity} {activeMasterGroupForModal.uom}</span> across {activeMasterGroupForModal.batches.length} existing batch(es)
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {editingGood && activeMasterGroupForModal && (
+                        <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2.5">
+                                <span className="p-2 bg-amber-100 text-amber-800 rounded-lg">
+                                    <PencilIcon />
+                                </span>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-xs font-bold text-slate-900">
+                                            Editing Batch: <span className="font-mono text-amber-900">{editingGood.invoiceNumber || 'No Invoice'}</span> ({editingGood.quantity} {editingGood.uom})
+                                        </p>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5">
+                                        Master SKU: <span className="font-semibold text-slate-800">{activeMasterGroupForModal.name}</span> (Total stock: {activeMasterGroupForModal.totalQuantity} {activeMasterGroupForModal.uom})
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleSwitchToNewInwardBatch}
+                                className="text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 border border-slate-300 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-xs"
+                                title="Switch from editing this existing batch to logging a brand new inward batch for this item"
+                            >
+                                <PlusIcon className="w-3.5 h-3.5" />
+                                <span>➕ Add New Inward Batch Instead</span>
+                            </button>
+                        </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="col-span-full">
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Master Item Name</label>
@@ -1335,15 +1507,82 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             </select>
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Invoice / Bill Number</label>
+                        <div className="col-span-1 md:col-span-2">
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider">
+                                    Invoice / Bill Number
+                                </label>
+                                {duplicateInvoiceBatch ? (
+                                    <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 animate-pulse">
+                                        <AlertTriangle size={12} /> Duplicate Detected
+                                    </span>
+                                ) : (formData.invoiceNumber || '').trim().length > 0 ? (
+                                    <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                        <CheckCircle size={12} /> Unique Invoice
+                                    </span>
+                                ) : null}
+                            </div>
                             <input
                                 type="text"
                                 value={formData.invoiceNumber}
                                 onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-mono"
-                                placeholder="INV-2026-001"
+                                className={`w-full border rounded-lg p-2.5 outline-none text-sm bg-white font-mono transition-all ${
+                                    duplicateInvoiceBatch 
+                                        ? 'border-rose-500 bg-rose-50/40 text-rose-900 focus:ring-2 focus:ring-rose-400 font-bold' 
+                                        : 'border-slate-200 focus:ring-2 focus:ring-[#8EBF45]'
+                                }`}
+                                placeholder="e.g. INV-2026-001"
                             />
+                            
+                            {/* Duplicate Warning Alert */}
+                            {duplicateInvoiceBatch && (
+                                <div className="mt-2.5 p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-800 text-xs shadow-xs animate-in fade-in duration-150">
+                                    <div className="flex items-start gap-2.5">
+                                        <AlertTriangle size={17} className="text-rose-600 shrink-0 mt-0.5" />
+                                        <div className="space-y-1">
+                                            <p className="font-bold text-rose-900">
+                                                Invoice #{duplicateInvoiceBatch.invoiceNumber} already exists for this item!
+                                            </p>
+                                            <p className="text-[11px] text-rose-700">
+                                                An inward batch of <span className="font-bold">{duplicateInvoiceBatch.quantity} {duplicateInvoiceBatch.uom || 'qty'}</span> was already recorded on <span className="font-bold">{new Date(duplicateInvoiceBatch.timestamp).toLocaleDateString()}</span> from <span className="font-bold">{duplicateInvoiceBatch.supplier || 'Unknown Supplier'}</span>.
+                                            </p>
+                                            <p className="text-[11px] font-semibold text-rose-800">
+                                                To avoid duplicate inventory, verify the bill number or edit the existing batch.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Previous Invoices Chips for this Item */}
+                            {previousInvoicesForModalItem.length > 0 && (
+                                <div className="mt-2.5">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                        Previous Invoices on file for this item ({previousInvoicesForModalItem.length}):
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-0.5">
+                                        {previousInvoicesForModalItem.map(prevGood => {
+                                            const isMatch = (formData.invoiceNumber || '').trim().toLowerCase() === (prevGood.invoiceNumber || '').trim().toLowerCase();
+                                            return (
+                                                <button
+                                                    key={prevGood.id}
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({ ...prev, invoiceNumber: prevGood.invoiceNumber }))}
+                                                    title={`Received: ${new Date(prevGood.timestamp).toLocaleDateString()} | Qty: ${prevGood.quantity} ${prevGood.uom || 'qty'} | Supplier: ${prevGood.supplier || 'N/A'}`}
+                                                    className={`text-[11px] font-mono px-2 py-0.5 rounded-md border transition-all ${
+                                                        isMatch 
+                                                            ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold shadow-xs'
+                                                            : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                                                    }`}
+                                                >
+                                                    {prevGood.invoiceNumber}
+                                                    <span className="ml-1 text-[10px] opacity-75 font-sans">({prevGood.quantity})</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -1552,7 +1791,16 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             </button>
                         ) : <div></div>}
 
-                        <button type="submit" className="bg-[#8EBF45] text-[#0D0D0D] px-8 py-2.5 rounded-lg hover:bg-[#658C3E] hover:text-white transition-all font-black uppercase tracking-widest text-xs shadow-lg active:scale-95">
+                        <button 
+                            type="submit" 
+                            disabled={Boolean(duplicateInvoiceBatch)}
+                            title={duplicateInvoiceBatch ? "Cannot save: duplicate invoice number detected for this item" : undefined}
+                            className={`px-8 py-2.5 rounded-lg font-black uppercase tracking-widest text-xs shadow-lg transition-all ${
+                                duplicateInvoiceBatch
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 shadow-none'
+                                    : 'bg-[#8EBF45] text-[#0D0D0D] hover:bg-[#658C3E] hover:text-white active:scale-95'
+                            }`}
+                        >
                             {editingGood ? 'Update Batch' : 'Save Batch'}
                         </button>
                     </div>
