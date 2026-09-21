@@ -11,6 +11,7 @@ import { RefreshCw, Trash2, Download, Package, FileText, CheckCircle, AlertTrian
 import { ImportIcon } from './icons/ImportIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { getItemStockAlertInfo } from '../utils/stockAlerts';
+import { SearchableSupplierDropdown } from './SearchableSupplierDropdown';
 
 interface ReceivedGoodsProps {
     receivedGoods: ReceivedGood[];
@@ -99,6 +100,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     const [formData, setFormData] = useState(initialFormState);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('');
     const [filterNotes, setFilterNotes] = useState(false);
     const [filterLowStock, setFilterLowStock] = useState(false);
     const [filterIgnored, setFilterIgnored] = useState(false);
@@ -432,10 +434,12 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             const matchesNotes = !filterNotes || (group.notes && group.notes !== 'actual physical qty = ');
             const matchesLowStock = !filterLowStock || group.isLowStock || group.isOutOfStock;
             const matchesIgnored = !filterIgnored || group.isIgnoredForAlerts;
+            const matchesSupplier = !selectedSupplierFilter ||
+                group.suppliers.some(s => s.toLowerCase().trim() === selectedSupplierFilter.toLowerCase().trim());
 
-            return matchesCategory && matchesSearch && matchesNotes && matchesLowStock && matchesIgnored;
+            return matchesCategory && matchesSearch && matchesSupplier && matchesNotes && matchesLowStock && matchesIgnored;
         });
-    }, [masterGroupedGoods, selectedCategory, searchTerm, filterNotes, filterLowStock, filterIgnored]);
+    }, [masterGroupedGoods, selectedCategory, searchTerm, selectedSupplierFilter, filterNotes, filterLowStock, filterIgnored]);
 
     // Target Item Name for the current modal session (normalized)
     const modalTargetItemName = useMemo(() => {
@@ -1096,6 +1100,28 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 >
                     🔕 Ignored Items
                 </button>
+
+                <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
+
+                {/* Searchable Supplier Filter */}
+                <div className="w-full sm:w-64">
+                    <SearchableSupplierDropdown
+                        value={selectedSupplierFilter}
+                        onChange={(val) => setSelectedSupplierFilter(val)}
+                        companyProfiles={companyProfiles}
+                        placeholder="Filter by Supplier..."
+                        onAddNewCompany={() => setIsAddCompanyModalOpen(true)}
+                    />
+                </div>
+                {selectedSupplierFilter && (
+                    <button
+                        onClick={() => setSelectedSupplierFilter('')}
+                        className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-all border border-slate-200 flex items-center gap-1 shrink-0"
+                        title="Clear supplier filter"
+                    >
+                        <span>✕ Clear Supplier</span>
+                    </button>
+                )}
             </div>
 
             {/* Consolidated Master Item Cards Grid */}
@@ -1511,15 +1537,13 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">Supplier / Vendor</label>
-                            <select
+                            <SearchableSupplierDropdown
                                 value={formData.supplier}
-                                onChange={e => handleSupplierChange(e.target.value)}
-                                className="w-full border border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#8EBF45] outline-none text-sm bg-white font-bold"
-                            >
-                                <option value="">Select Supplier</option>
-                                {companyProfiles.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                                <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New Company...</option>
-                            </select>
+                                onChange={val => handleSupplierChange(val)}
+                                companyProfiles={companyProfiles}
+                                onAddNewCompany={() => setIsAddCompanyModalOpen(true)}
+                                placeholder="Search & select supplier / vendor..."
+                            />
                         </div>
 
                         <div className="col-span-1 md:col-span-2">

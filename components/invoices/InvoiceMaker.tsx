@@ -9,6 +9,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ImportIcon } from '../icons/ImportIcon';
 import AiChatPanel from './AiChatPanel';
 import { BatteryComparisonTable } from './BatteryComparisonTable';
+import { SearchableSupplierDropdown } from '../SearchableSupplierDropdown';
 
 interface InvoiceMakerProps {
     currentUser: { username: string; role?: 'admin' | 'user' | 'billing' | 'dashboard_user' } | null;
@@ -2014,12 +2015,21 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 <div className="space-y-6">
                     {/* Issuer */}
                     <div className="bg-slate-50 p-3 rounded border">
-                        <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-bold text-slate-700">From (Issuer)</h3>
-                            <select className="text-xs p-1 border rounded max-w-[120px]" onChange={(e) => handleDropdownChange('issuer', e.target.value)}>
-                                <option value="">Load Profile</option>
-                                {companyProfiles.map(cp => <option key={cp.id} value={cp.name}>{cp.name}</option>)}
-                                <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New...</option>
-                            </select>
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-sm font-bold text-slate-700">From (Issuer)</h3>
+                            <SearchableSupplierDropdown
+                                compact={true}
+                                value=""
+                                placeholder="Load Profile..."
+                                companyProfiles={companyProfiles}
+                                onChange={(selectedName) => {
+                                    if (selectedName) handleDropdownChange('issuer', selectedName);
+                                }}
+                                onAddNewCompany={() => {
+                                    setLastSelectedType('issuer');
+                                    setIsAddCompanyModalOpen(true);
+                                }}
+                            />
                         </div>
                         <input className="w-full text-sm p-2 border rounded mb-2" placeholder="Company Name" value={doc.issuer_details.name || ''} onChange={e => updateParty('issuer', 'name', e.target.value)} />
                         <textarea className="w-full text-sm p-2 border rounded" placeholder="Address" rows={2} value={doc.issuer_details.address || ''} onChange={e => updateParty('issuer', 'address', e.target.value)} />
@@ -2049,11 +2059,19 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <div className="bg-orange-50/50 p-3 rounded border mb-6">
                             <div className="flex justify-between items-center mb-2">
                                 <h3 className="text-sm font-bold text-slate-700">Supplier Details</h3>
-                                <select className="text-xs p-1 border rounded max-w-[120px]" onChange={(e) => handleDropdownChange('supplier', e.target.value)}>
-                                    <option value="">Load Profile</option>
-                                    {companyProfiles.map(cp => <option key={cp.id} value={cp.name}>{cp.name}</option>)}
-                                    <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New...</option>
-                                </select>
+                                <SearchableSupplierDropdown
+                                    compact={true}
+                                    value=""
+                                    placeholder="Load Profile..."
+                                    companyProfiles={companyProfiles}
+                                    onChange={(selectedName) => {
+                                        if (selectedName) handleDropdownChange('supplier', selectedName);
+                                    }}
+                                    onAddNewCompany={() => {
+                                        setLastSelectedType('supplier');
+                                        setIsAddCompanyModalOpen(true);
+                                    }}
+                                />
                             </div>
                             <input className="w-full text-sm p-2 border rounded mb-2" placeholder="Supplier Name" value={doc.supplier_details?.name || ''} onChange={e => updateParty('supplier', 'name', e.target.value)} />
                             <textarea className="w-full text-sm p-2 border rounded" placeholder="Address" rows={2} value={doc.supplier_details?.address || ''} onChange={e => updateParty('supplier', 'address', e.target.value)} />
@@ -2072,11 +2090,19 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     <div className="bg-slate-50 p-3 rounded border">
                         <div className="flex justify-between items-center mb-2">
                             <h3 className="text-sm font-bold text-slate-700">Billed To (Receiver)</h3>
-                            <select className="text-xs p-1 border rounded max-w-[120px]" onChange={(e) => handleDropdownChange('receiver', e.target.value)}>
-                                <option value="">Load Profile</option>
-                                {companyProfiles.map(cp => <option key={cp.id} value={cp.name}>{cp.name}</option>)}
-                                <option value="ADD_NEW" className="font-bold text-[#658C3E]">+ Add New...</option>
-                            </select>
+                            <SearchableSupplierDropdown
+                                compact={true}
+                                value=""
+                                placeholder="Load Profile..."
+                                companyProfiles={companyProfiles}
+                                onChange={(selectedName) => {
+                                    if (selectedName) handleDropdownChange('receiver', selectedName);
+                                }}
+                                onAddNewCompany={() => {
+                                    setLastSelectedType('receiver');
+                                    setIsAddCompanyModalOpen(true);
+                                }}
+                            />
                         </div>
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-xs text-slate-400">Label:</span>

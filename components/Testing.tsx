@@ -65,6 +65,13 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
     const [batchLocation, setBatchLocation] = useState<string>('');
     const [showBatchNote, setShowBatchNote] = useState(false);
 
+    // Smart Cell Selection State
+    const [desiredQuantity, setDesiredQuantity] = useState<number>(16);
+    const [permittedGrades, setPermittedGrades] = useState<Set<string>>(new Set());
+    const [cellSortOrder, setCellSortOrder] = useState<'cap_desc' | 'cap_asc' | 'res_asc' | 'res_desc' | 'cap_desc_res_asc' | 'res_asc_cap_desc'>('cap_desc_res_asc');
+    const [selectionFeedback, setSelectionFeedback] = useState<{ type: 'success' | 'warning' | 'info'; message: string } | null>(null);
+    const [showAutoSelectPanel, setShowAutoSelectPanel] = useState(true);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Filter eligible goods sorted by date desc
@@ -674,6 +681,124 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
         });
     }, [selectedBatch, testResults]);
 
+    // Keep permittedGrades updated when uniqueGrades change
+    useEffect(() => {
+        if (uniqueGrades.length > 0) {
+            setPermittedGrades(prev => {
+                if (prev.size === 0) {
+                    const nonFail = uniqueGrades.filter(g => g !== 'Fail');
+                    return new Set(nonFail.length > 0 ? [nonFail[0]] : [uniqueGrades[0]]);
+                }
+                return prev;
+            });
+        }
+    }, [uniqueGrades]);
+
+    const togglePermittedGrade = (grade: string) => {
+        setPermittedGrades(prev => {
+            const next = new Set(prev);
+            if (next.has(grade)) next.delete(grade);
+            else next.add(grade);
+            return next;
+        });
+    };
+
+    const handleAutoSelectCells = () => {
+        if (!selectedBatch) return;
+        if (!desiredQuantity || desiredQuantity <= 0) {
+            alert('Please enter a valid number of cells to select (> 0).');
+            return;
+        }
+        if (permittedGrades.size === 0) {
+            alert('Please select at least one permitted grade.');
+            return;
+        }
+
+        // 1. Gather all cells with their test data
+        const cellsWithData = selectedBatch.serials.map(serial => {
+            const res = getResult(serial);
+            return {
+                serial,
+                voltage: res.voltage ?? 0,
+                resistance: (res.resistance !== undefined && !isNaN(res.resistance)) ? res.resistance : Infinity,
+                capacity: (res.capacity !== undefined && !isNaN(res.capacity)) ? res.capacity : 0,
+                grade: res.grade || 'Ungraded'
+            };
+        });
+
+        // 2. Filter by permitted grades
+        const eligibleCells = cellsWithData.filter(cell => {
+            return permittedGrades.has(cell.grade);
+        });
+
+        if (eligibleCells.length === 0) {
+            setSelectionFeedback({
+                type: 'warning',
+                message: `No cells found in this batch matching permitted grade(s): ${Array.from(permittedGrades).join(', ')}. Please adjust permitted grades or test/grade more cells.`
+            });
+            return;
+        }
+
+        // 3. Sort eligible cells
+        eligibleCells.sort((a, b) => {
+            if (cellSortOrder === 'cap_desc') {
+                return b.capacity - a.capacity;
+            } else if (cellSortOrder === 'cap_asc') {
+                return a.capacity - b.capacity;
+            } else if (cellSortOrder === 'res_asc') {
+                return a.resistance - b.resistance;
+            } else if (cellSortOrder === 'res_desc') {
+                return b.resistance - a.resistance;
+            } else if (cellSortOrder === 'cap_desc_res_asc') {
+                if (b.capacity !== a.capacity) {
+                    return b.capacity - a.capacity;
+                }
+                return a.resistance - b.resistance;
+            } else if (cellSortOrder === 'res_asc_cap_desc') {
+                if (a.resistance !== b.resistance) {
+                    return a.resistance - b.resistance;
+                }
+                return b.capacity - a.capacity;
+            }
+            return 0;
+        });
+
+        // 4. Select top N cells
+        const selected = eligibleCells.slice(0, desiredQuantity);
+        const selectedSet = new Set(selected.map(c => c.serial));
+        setSelectedSerials(selectedSet);
+
+        // 5. Summary metrics
+        const count = selected.length;
+        const validCapCells = selected.filter(c => c.capacity > 0);
+        const avgCap = validCapCells.length > 0
+            ? (validCapCells.reduce((sum, c) => sum + c.capacity, 0) / validCapCells.length).toFixed(2)
+            : 'N/A';
+        const validResCells = selected.filter(c => c.resistance !== Infinity && c.resistance > 0);
+        const avgRes = validResCells.length > 0
+            ? (validResCells.reduce((sum, c) => sum + c.resistance, 0) / validResCells.length).toFixed(2)
+            : 'N/A';
+
+        if (count < desiredQuantity) {
+            setSelectionFeedback({
+                type: 'warning',
+                message: `Selected ${count} cells (only ${count} eligible cells available; ${desiredQuantity} requested). Avg Cap: ${avgCap} Ah, Avg Res: ${avgRes} mΩ.`
+            });
+        } else {
+            setSelectionFeedback({
+                type: 'success',
+                message: `✅ Selected ${count} cells matching [${Array.from(permittedGrades).join(', ')}] ordered by ${
+                    cellSortOrder === 'cap_desc' ? 'Capacity (High→Low)' :
+                    cellSortOrder === 'cap_asc' ? 'Capacity (Low→High)' :
+                    cellSortOrder === 'res_asc' ? 'Resistance (Low→High)' :
+                    cellSortOrder === 'res_desc' ? 'Resistance (High→Low)' :
+                    cellSortOrder === 'cap_desc_res_asc' ? 'Capacity Desc + Resistance Asc' :
+                    'Resistance Asc + Capacity Desc'
+                }. Avg Cap: ${avgCap} Ah, Avg Res: ${avgRes} mΩ.`
+            });
+        }
+    };
+
     const downloadTestingCSVTemplate = () => {
         const csvContent = "Serial Number,Voltage,Resistance,Capacity,Grade,Location\nLFP-32700-001,3.28,6.5,6000,Grade A,Rack A-1\nLFP-32700-002,3.27,6.8,5950,Grade A,Rack A-1";
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -987,6 +1112,223 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                             <Save size={16} className="mr-2" />
                                             Save Grading & Batch Info
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* SMART CELL SELECTION PANEL FOR BATTERY PACK ASSEMBLY */}
+                    {(selectedBatch.category || '').toLowerCase().includes('cell') && (
+                        <div className="mb-4 bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-blue-50/90 p-4 rounded-xl border border-emerald-200/80 shadow-xs">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-sm font-bold shadow-xs shrink-0">
+                                        ⚡
+                                    </span>
+                                    <div>
+                                        <h3 className="text-sm font-black text-slate-800 tracking-tight flex items-center gap-2 flex-wrap">
+                                            <span>Smart Cell Selection for Battery Assembly</span>
+                                            <span className="bg-emerald-200 text-emerald-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                                Auto Pack Matcher
+                                            </span>
+                                        </h3>
+                                        <p className="text-[11px] text-slate-500 font-medium">
+                                            Select desired quantity of cells by number of cells, permitted grades, and sort priority (Capacity &amp; Resistance).
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAutoSelectPanel(prev => !prev)}
+                                    className="text-xs font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 bg-white/80 px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0"
+                                >
+                                    {showAutoSelectPanel ? 'Hide Controls ▲' : 'Show Controls ▼'}
+                                </button>
+                            </div>
+
+                            {showAutoSelectPanel && (
+                                <div className="space-y-3 pt-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+                                        {/* 1. Number of Cells */}
+                                        <div>
+                                            <div className="flex justify-between items-center mb-1">
+                                                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                    Number of Cells *
+                                                </label>
+                                                <span className="text-[10px] text-slate-400 font-bold">
+                                                    Batch: {selectedBatch.serials?.length || 0}
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max={selectedBatch.serials?.length || 9999}
+                                                value={desiredQuantity}
+                                                onChange={e => setDesiredQuantity(parseInt(e.target.value) || 0)}
+                                                className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-[#8EBF45] focus:border-[#8EBF45] outline-none"
+                                                placeholder="e.g. 16"
+                                            />
+                                            {/* Quick Presets */}
+                                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase">Presets:</span>
+                                                {[
+                                                    { label: '4S (4)', count: 4 },
+                                                    { label: '8S (8)', count: 8 },
+                                                    { label: '16S (16)', count: 16 },
+                                                    { label: '24S (24)', count: 24 },
+                                                    { label: '32S (32)', count: 32 },
+                                                ].map(p => (
+                                                    <button
+                                                        key={p.label}
+                                                        type="button"
+                                                        onClick={() => setDesiredQuantity(p.count)}
+                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all border ${
+                                                            desiredQuantity === p.count
+                                                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                        }`}
+                                                    >
+                                                        {p.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* 2. Grades Permitted */}
+                                        <div className="lg:col-span-2">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                    Grades Permitted *
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const nonFail = uniqueGrades.filter(g => g !== 'Fail');
+                                                            setPermittedGrades(new Set(nonFail.length > 0 ? nonFail : uniqueGrades));
+                                                        }}
+                                                        className="text-[10px] font-bold text-emerald-700 hover:underline"
+                                                    >
+                                                        Select Passing
+                                                    </button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPermittedGrades(new Set())}
+                                                        className="text-[10px] font-bold text-slate-500 hover:underline"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Grade Toggle Chips */}
+                                            <div className="flex flex-wrap gap-1.5 p-1.5 bg-white border border-slate-200 rounded-lg min-h-[34px] items-center">
+                                                {(uniqueGrades.length > 0 ? uniqueGrades : ['Grade I', 'Grade II', 'Grade III', 'Fail']).map(g => {
+                                                    const isChecked = permittedGrades.has(g);
+                                                    const isFail = g === 'Fail';
+                                                    return (
+                                                        <button
+                                                            key={g}
+                                                            type="button"
+                                                            onClick={() => togglePermittedGrade(g)}
+                                                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1 border ${
+                                                                isChecked
+                                                                    ? isFail
+                                                                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                                                        : 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                            }`}
+                                                        >
+                                                            <span>{isChecked ? '✓' : '+'}</span>
+                                                            <span>{g}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => togglePermittedGrade('Ungraded')}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${
+                                                        permittedGrades.has('Ungraded')
+                                                            ? 'bg-slate-700 text-white border-slate-700'
+                                                            : 'bg-white text-slate-400 border-dashed border-slate-300 hover:text-slate-600'
+                                                    }`}
+                                                >
+                                                    {permittedGrades.has('Ungraded') ? '✓ Ungraded' : '+ Ungraded'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* 3. Ordered By (Capacity and Resistance) */}
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                                                Ordered By (Capacity &amp; Res) *
+                                            </label>
+                                            <select
+                                                value={cellSortOrder}
+                                                onChange={e => setCellSortOrder(e.target.value as any)}
+                                                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-[#8EBF45] focus:border-[#8EBF45] outline-none"
+                                            >
+                                                <option value="cap_desc_res_asc">⚡ Cap Desc + Res Asc (Recommended)</option>
+                                                <option value="res_asc_cap_desc">🎯 Res Asc + Cap Desc (Lowest IR)</option>
+                                                <option value="cap_desc">🔋 Capacity: High → Low (Desc)</option>
+                                                <option value="cap_asc">🔋 Capacity: Low → High (Asc)</option>
+                                                <option value="res_asc">⚡ Resistance: Low → High (Lowest IR)</option>
+                                                <option value="res_desc">⚡ Resistance: High → Low (Highest IR)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Actions & Feedback Row */}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-emerald-200/60">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={handleAutoSelectCells}
+                                                className="px-4 py-2 bg-gradient-to-r from-[#8EBF45] to-[#658C3E] hover:opacity-95 text-slate-950 font-black text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                                <span>⚡ Select {desiredQuantity} Cells</span>
+                                            </button>
+
+                                            {selectedSerials.size > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedSerials(new Set());
+                                                        setSelectionFeedback(null);
+                                                    }}
+                                                    className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                                                >
+                                                    ✕ Clear Selection ({selectedSerials.size})
+                                                </button>
+                                            )}
+
+                                            {onSendToProduction && selectedSerials.size > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSendToProductionClick}
+                                                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-lg shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                                                >
+                                                    <span>🚀 Send {selectedSerials.size} Cells to Production</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {selectionFeedback && (
+                                            <div
+                                                className={`text-xs px-3 py-1.5 rounded-lg border font-bold flex items-center gap-2 ${
+                                                    selectionFeedback.type === 'success'
+                                                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                                        : selectionFeedback.type === 'warning'
+                                                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                                        : 'bg-blue-100 text-blue-900 border-blue-300'
+                                                }`}
+                                            >
+                                                <span>{selectionFeedback.message}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { InboundOrderTracking, CompanyProfile, ReceivedGood } from '../types';
+import { SearchableSupplierDropdown } from './SearchableSupplierDropdown';
 
 interface InboundTrackingTabProps {
   orders?: InboundOrderTracking[];
@@ -789,20 +790,12 @@ export const InboundTrackingTab: React.FC<InboundTrackingTabProps> = ({
               {/* Row 4: Supplier Company */}
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Supplier Company *</label>
-                <input
-                  type="text"
-                  required
-                  list="supplier-suggestions-list"
+                <SearchableSupplierDropdown
                   value={formData.supplier_name}
-                  onChange={e => setFormData(prev => ({ ...prev, supplier_name: e.target.value }))}
-                  placeholder="e.g. EVE Energy, Daly BMS, Local Sourcing"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#8EBF45] outline-none"
+                  onChange={val => setFormData(prev => ({ ...prev, supplier_name: val }))}
+                  companyProfiles={companyProfiles}
+                  placeholder="Search & select supplier company..."
                 />
-                <datalist id="supplier-suggestions-list">
-                  {companyProfiles.map(cp => (
-                    <option key={cp.id} value={cp.name} />
-                  ))}
-                </datalist>
               </div>
 
               {/* Row 5: Transport Number / LR Number */}
