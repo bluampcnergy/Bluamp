@@ -6,6 +6,7 @@ import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 import { PencilIcon } from './icons/PencilIcon';
 import { ImportIcon } from './icons/ImportIcon';
+import { SearchIcon } from './icons/SearchIcon';
 import { ChevronDown, ChevronUp, Download, Save, Package } from './invoices/Icons';
 import { ArrowRightIcon } from './icons/ArrowRightIcon';
 
@@ -891,16 +892,6 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                     </div>
                                 )}
                             </div>
-                            <div className="flex flex-col">
-                                <label className="text-[10px] text-gray-500 font-bold uppercase mb-1">Search SN</label>
-                                <input
-                                    type="text"
-                                    placeholder="Serials..."
-                                    className="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-[#8EBF45] outline-none w-32 text-sm"
-                                    value={serialSearchTerm}
-                                    onChange={e => setSerialSearchTerm(e.target.value)}
-                                />
-                            </div>
                         </div>
                     </div>
 
@@ -1001,6 +992,49 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                             )}
                         </div>
                     )}
+
+                    {/* Search SN Toolbar - Placed above No. / Serial Number columns and below grading criteria */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pt-1">
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>Search SN</span>
+                            </label>
+                            <div className="relative">
+                                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search serial number..."
+                                    className="pl-8 pr-7 py-1.5 border border-gray-300 rounded-lg shadow-xs focus:ring-2 focus:ring-[#8EBF45] outline-none w-52 sm:w-64 text-xs sm:text-sm font-mono bg-white"
+                                    value={serialSearchTerm}
+                                    onChange={e => setSerialSearchTerm(e.target.value)}
+                                />
+                                {serialSearchTerm && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSerialSearchTerm('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold p-0.5"
+                                        title="Clear search"
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </div>
+                            {serialSearchTerm && (
+                                <span className="text-xs text-gray-500 font-medium">
+                                    Found: <strong className="text-gray-800">{processedSerials.length}</strong>
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="text-xs text-gray-500 font-medium flex items-center gap-2">
+                            <span>Total: <strong className="text-gray-700">{selectedBatch.serials?.length || 0}</strong> serials</span>
+                            {selectedSerials.size > 0 && (
+                                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-bold">
+                                    {selectedSerials.size} selected
+                                </span>
+                            )}
+                        </div>
+                    </div>
 
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
