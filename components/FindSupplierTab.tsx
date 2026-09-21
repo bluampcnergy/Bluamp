@@ -96,6 +96,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
 }) => {
   const [city, setCity] = useState('Pune');
   const [productQuery, setProductQuery] = useState('3.2V 280Ah LFP Cell');
+  const [radiusKm, setRadiusKm] = useState<number>(25);
   const [activeSourceFilter, setActiveSourceFilter] = useState<'all' | 'maps' | 'indiamart' | 'google' | 'other'>('all');
   const [viewMode, setViewMode] = useState<'search' | 'shortlist'>('search');
 
@@ -120,15 +121,16 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
     handleSearch();
   }, []);
 
-  const handleSearch = async (overrideProduct?: string) => {
+  const handleSearch = async (overrideProduct?: string, overrideRadius?: number) => {
     const queryToUse = overrideProduct || productQuery;
+    const radiusToUse = overrideRadius !== undefined ? overrideRadius : radiusKm;
     if (!queryToUse.trim() || isLoading) return;
 
     setIsLoading(true);
     setNotification(null);
 
     try {
-      const results = await searchSuppliersAcrossWeb(city, queryToUse);
+      const results = await searchSuppliersAcrossWeb(city, queryToUse, radiusToUse);
       
       // Retain shortlisted status if supplier was already shortlisted
       const updated = results.map(r => {
@@ -137,7 +139,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
       });
 
       setSuppliers(updated);
-      showNotification('success', `Found ${results.length} suppliers for "${queryToUse}" in ${city}`);
+      showNotification('success', `Found ${results.length} suppliers for "${queryToUse}" within ${radiusToUse} km in ${city}`);
     } catch (err: any) {
       showNotification('error', `Search error: ${err.message || 'Failed to search'}`);
     } finally {
@@ -234,16 +236,21 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
   };
 
   const shortlistedList = suppliers.filter(s => s.isShortlisted);
+  const mapsSuppliers = suppliers.filter(s => s.source === 'maps' || s.sourceLabel?.toLowerCase().includes('map'));
+  const indiamartSuppliers = suppliers.filter(s => s.source === 'indiamart' || s.sourceLabel?.toLowerCase().includes('indiamart'));
+  const googleSuppliers = suppliers.filter(s => s.source === 'google' || s.sourceLabel?.toLowerCase().includes('google') || s.sourceLabel?.toLowerCase().includes('web'));
+  const otherSuppliers = suppliers.filter(s => s.source === 'tradeindia' || s.source === 'other' || s.sourceLabel?.toLowerCase().includes('director') || s.sourceLabel?.toLowerCase().includes('trade'));
+
   const filteredSuppliers = suppliers.filter(s => {
     if (activeSourceFilter === 'all') return true;
-    if (activeSourceFilter === 'maps') return s.source === 'maps';
-    if (activeSourceFilter === 'indiamart') return s.source === 'indiamart';
-    if (activeSourceFilter === 'google') return s.source === 'google';
-    if (activeSourceFilter === 'other') return s.source === 'tradeindia' || s.source === 'other';
+    if (activeSourceFilter === 'maps') return s.source === 'maps' || s.sourceLabel?.toLowerCase().includes('map');
+    if (activeSourceFilter === 'indiamart') return s.source === 'indiamart' || s.sourceLabel?.toLowerCase().includes('indiamart');
+    if (activeSourceFilter === 'google') return s.source === 'google' || s.sourceLabel?.toLowerCase().includes('google') || s.sourceLabel?.toLowerCase().includes('web');
+    if (activeSourceFilter === 'other') return s.source === 'tradeindia' || s.source === 'other' || s.sourceLabel?.toLowerCase().includes('director') || s.sourceLabel?.toLowerCase().includes('trade');
     return true;
   });
 
-  const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(`${productQuery} suppliers in ${city}`)}&t=&z=12&ie=UTF8&iwloc=&output=embed`;
+  const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(`${productQuery} suppliers in ${city} within ${radiusKm}km`)}&t=&z=12&ie=UTF8&iwloc=&output=embed`;
 
   return (
     <div className="flex flex-col h-full bg-slate-50 space-y-4">
@@ -316,7 +323,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
           </div>
 
           {/* Product Query Box */}
-          <div className="md:col-span-6">
+          <div className="md:col-span-4">
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Product / Material Name *</label>
             <div className="relative">
               <span className="absolute left-3 top-2.5 text-slate-400 text-xs">📦</span>
@@ -331,6 +338,28 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
             </div>
           </div>
 
+          {/* Radius / KM Range Selector */}
+          <div className="md:col-span-2">
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">Maps Radius *</label>
+            <div className="relative">
+              <span className="absolute left-2.5 top-2.5 text-slate-400 text-xs">🎯</span>
+              <select
+                value={radiusKm}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  setRadiusKm(val);
+                }}
+                className="w-full pl-7 pr-2 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-[#8EBF45] outline-none cursor-pointer"
+              >
+                <option value={10}>10 km</option>
+                <option value={25}>25 km (Default)</option>
+                <option value={50}>50 km</option>
+                <option value={100}>100 km</option>
+                <option value={200}>200 km (Region)</option>
+              </select>
+            </div>
+          </div>
+
           {/* Search Button */}
           <div className="md:col-span-3 flex items-end">
             <button
@@ -341,7 +370,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
               {isLoading ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Searching Web & Maps...</span>
+                  <span>Searching Maps & Web...</span>
                 </>
               ) : (
                 <>
@@ -403,7 +432,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
             <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📍</span>
-                <h3 className="text-xs font-bold">Google Maps Live Plugin ({city})</h3>
+                <h3 className="text-xs font-bold">Google Maps Live Plugin ({city} • {radiusKm}km)</h3>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">Interactive Location Map</span>
             </div>
@@ -434,35 +463,59 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                 </button>
                 <button
                   onClick={() => setActiveSourceFilter('maps')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
-                    activeSourceFilter === 'maps' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                    activeSourceFilter === 'maps' ? 'bg-slate-900 text-white ring-2 ring-emerald-500/50' : 'text-slate-600 hover:bg-slate-200'
                   }`}
+                  title={`Google Maps Engine (${radiusKm} km radius) - Primary Engine`}
                 >
-                  📍 Google Maps
+                  <span>📍 Google Maps</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeSourceFilter === 'maps' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {mapsSuppliers.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveSourceFilter('indiamart')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
                     activeSourceFilter === 'indiamart' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
                   }`}
+                  title="IndiaMart Top 5"
                 >
-                  🏭 IndiaMart
+                  <span>🏭 IndiaMart</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeSourceFilter === 'indiamart' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {indiamartSuppliers.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveSourceFilter('google')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
                     activeSourceFilter === 'google' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
                   }`}
+                  title="Web Search Top 5"
                 >
-                  🌐 Web Search
+                  <span>🌐 Web Search</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeSourceFilter === 'google' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {googleSuppliers.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveSourceFilter('other')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
                     activeSourceFilter === 'other' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
                   }`}
+                  title="Directories Top 5"
                 >
-                  📦 Directories
+                  <span>📦 Directories</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    activeSourceFilter === 'other' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {otherSuppliers.length}
+                  </span>
                 </button>
               </div>
             </div>

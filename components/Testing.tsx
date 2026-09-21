@@ -68,7 +68,7 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
     // Smart Cell Selection State
     const [desiredQuantity, setDesiredQuantity] = useState<number>(16);
     const [permittedGrades, setPermittedGrades] = useState<Set<string>>(new Set());
-    const [cellSortOrder, setCellSortOrder] = useState<'cap_desc' | 'cap_asc' | 'res_asc' | 'res_desc' | 'cap_desc_res_asc' | 'res_asc_cap_desc'>('cap_desc_res_asc');
+    const [cellSortOrder, setCellSortOrder] = useState<'cap_desc' | 'cap_asc' | 'res_asc' | 'res_desc' | 'cap_desc_res_asc' | 'res_asc_cap_desc'>('cap_asc');
     const [selectionFeedback, setSelectionFeedback] = useState<{ type: 'success' | 'warning' | 'info'; message: string } | null>(null);
     const [showAutoSelectPanel, setShowAutoSelectPanel] = useState(true);
 
@@ -1271,10 +1271,10 @@ const Testing: React.FC<TestingProps> = ({ receivedGoods, testResults, setTestRe
                                                 onChange={e => setCellSortOrder(e.target.value as any)}
                                                 className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-[#8EBF45] focus:border-[#8EBF45] outline-none"
                                             >
-                                                <option value="cap_desc_res_asc">⚡ Cap Desc + Res Asc (Recommended)</option>
+                                                <option value="cap_asc">🔋 Capacity: Low → High (Default)</option>
+                                                <option value="cap_desc">🔋 Capacity: High → Low</option>
+                                                <option value="cap_desc_res_asc">⚡ Cap Desc + Res Asc</option>
                                                 <option value="res_asc_cap_desc">🎯 Res Asc + Cap Desc (Lowest IR)</option>
-                                                <option value="cap_desc">🔋 Capacity: High → Low (Desc)</option>
-                                                <option value="cap_asc">🔋 Capacity: Low → High (Asc)</option>
                                                 <option value="res_asc">⚡ Resistance: Low → High (Lowest IR)</option>
                                                 <option value="res_desc">⚡ Resistance: High → Low (Highest IR)</option>
                                             </select>

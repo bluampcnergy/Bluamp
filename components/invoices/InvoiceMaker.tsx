@@ -97,11 +97,57 @@ export const getDocPrefix = (
     return { prefix: `${prefixBase}.${code}.${fyStr}.${mm}.`, isNewSystem: false, fyStr, mm };
 };
 
+const SEQUENCE_CACHE_KEY = 'dc_invoice_sequence_cache';
+
+interface SequenceCacheStorage {
+    fy: string;
+    counts: Record<string, number>;
+    timestamp: number;
+}
+
+const getCurrentFyStr = (date: Date = new Date()): string => {
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+    const fyStart = month >= 4 ? year : year - 1;
+    const fyEnd = fyStart + 1;
+    return `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
+};
+
+const getStoredSequenceCache = (currentFy: string): Record<string, number> => {
+    try {
+        const raw = localStorage.getItem(SEQUENCE_CACHE_KEY);
+        if (raw) {
+            const data: SequenceCacheStorage = JSON.parse(raw);
+            if (data.fy === currentFy && data.counts && typeof data.counts === 'object') {
+                return data.counts;
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to parse sequence cache from localStorage:', e);
+    }
+    return {};
+};
+
+const saveSequenceCacheToStorage = (currentFy: string, counts: Record<string, number>) => {
+    try {
+        const data: SequenceCacheStorage = {
+            fy: currentFy,
+            counts,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(SEQUENCE_CACHE_KEY, JSON.stringify(data));
+    } catch (e) {
+        console.warn('Failed to save sequence cache to localStorage:', e);
+    }
+};
+
 const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry, setInvoiceDraft }) => {
+    const currentFyStr = useMemo(() => getCurrentFyStr(new Date()), []);
+
     // Refs for instant, race-condition-free document number generation
     const currentDocTypeRef = useRef<'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>('invoice');
     const latestGenRequestId = useRef(0);
-    const sequenceCache = useRef<Record<string, number>>({});
+    const sequenceCache = useRef<Record<string, number>>(getStoredSequenceCache(currentFyStr));
 
     // Load draft from local storage if not editing an existing record
     const draft = useMemo(() => {
@@ -134,15 +180,53 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         currentDocTypeRef.current = docType;
     }, [docType]);
 
+    const [customTitle, setCustomTitle] = useState(() => {
+        if (initialData?.invoice_metadata?.ui_config?.customTitle) return initialData.invoice_metadata.ui_config.customTitle;
+        if ((initialData?.invoice_metadata as any)?.custom_title) return (initialData?.invoice_metadata as any).custom_title;
+        if ((initialData?.invoice_metadata as any)?.title) return (initialData?.invoice_metadata as any).title;
+        if (draft?.customTitle) return draft.customTitle;
+        return (docType === 'delivery_challan' ? 'DELIVERY CHALLAN' : docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
+    });
+
+    const [doc, setDoc] = useState<ExtractedInvoice>(() => {
+        const base = initialData || draft?.doc || EMPTY_INVOICE;
+        const computedSourceType = initialData?.source_type ? initialData.source_type : (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
+
+        // Calculate initial document number immediately from persistent cache if creating a new document
+        let initialInvNum = base.invoice_metadata?.invoice_number || '';
+        if (!initialInvNum && !initialData?.id) {
+            const { prefix } = getDocPrefix(docType, new Date(), undefined, base.receiver_details?.name, base.issuer_details?.name);
+            const cachedSeq = sequenceCache.current[prefix];
+            if (cachedSeq !== undefined && cachedSeq > 0) {
+                initialInvNum = `${prefix}${String(cachedSeq + 1).padStart(3, '0')}`;
+            }
+        }
+
+        return { 
+            ...EMPTY_INVOICE,
+            ...base, 
+            source_type: computedSourceType, 
+            document_type: docType === 'delivery_challan' ? 'generated_delivery_challan' : docType === 'invoice' ? (initialData?.document_type === 'invoice' ? 'invoice' : 'generated_invoice') : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
+            receiver_details: base.receiver_details || EMPTY_INVOICE.receiver_details,
+            issuer_details: { 
+                ...EMPTY_INVOICE.issuer_details,
+                ...(base.issuer_details || {}),
+                bank_details: { upi_id: '8956340980@ibl', ...(base.issuer_details?.bank_details || {}) } 
+            },
+            shipped_to_details: base.shipped_to_details || (base.invoice_metadata as any)?.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
+            supplier_details: base.supplier_details || (base.invoice_metadata as any)?.supplier_details || EMPTY_INVOICE.supplier_details,
+            invoice_metadata: {
+                ...EMPTY_INVOICE.invoice_metadata,
+                ...(base.invoice_metadata || {}),
+                invoice_number: initialInvNum
+            }
+        };
+    });
+
     // Fast pre-fetch of all sequence numbers for the current financial year to enable instant docType switching
     useEffect(() => {
         const prefetchSequences = async () => {
-            const date = new Date();
-            const month = date.getMonth() + 1;
-            const year = date.getFullYear();
-            const fyStart = month >= 4 ? year : year - 1;
-            const fyEnd = fyStart + 1;
-            const fyStr = `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
+            const fyStr = currentFyStr;
 
             try {
                 const { data } = await supabase
@@ -152,8 +236,11 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
                 if (data && data.length > 0) {
                     const tags = ['INV', 'PO', 'QUO', 'PRO', 'DN', 'CN', 'DCh'];
-                    const counts: Record<string, number> = {};
-                    tags.forEach(t => { counts[`${t}/DC/${fyStr}/`] = 0; });
+                    const counts: Record<string, number> = { ...sequenceCache.current };
+                    tags.forEach(t => { 
+                        const prefix = `${t}/DC/${fyStr}/`;
+                        if (counts[prefix] === undefined) counts[prefix] = 0;
+                    });
 
                     data.forEach(row => {
                         const invNum = row.invoice_metadata?.invoice_number;
@@ -171,6 +258,30 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                     });
 
                     Object.assign(sequenceCache.current, counts);
+                    saveSequenceCacheToStorage(fyStr, sequenceCache.current);
+
+                    // If creating a new document, ensure the active doc has the true next sequence number
+                    if (!initialData?.id) {
+                        const { prefix } = getDocPrefix(currentDocTypeRef.current, new Date(), undefined, doc?.receiver_details?.name, doc?.issuer_details?.name);
+                        const verifiedMax = sequenceCache.current[prefix] || 0;
+                        const verifiedNext = `${prefix}${String(verifiedMax + 1).padStart(3, '0')}`;
+                        setDoc(prev => {
+                            const cur = prev.invoice_metadata?.invoice_number;
+                            if (!cur || cur.startsWith(prefix)) {
+                                const curSeq = cur ? parseInt(cur.substring(prefix.length), 10) : 0;
+                                if (!curSeq || curSeq <= verifiedMax) {
+                                    return {
+                                        ...prev,
+                                        invoice_metadata: {
+                                            ...prev.invoice_metadata,
+                                            invoice_number: verifiedNext
+                                        }
+                                    };
+                                }
+                            }
+                            return prev;
+                        });
+                    }
                 }
             } catch (err) {
                 console.warn('Pre-fetch sequences error:', err);
@@ -178,35 +289,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         };
 
         prefetchSequences();
-    }, []);
-
-    const [customTitle, setCustomTitle] = useState(() => {
-        if (initialData?.invoice_metadata?.ui_config?.customTitle) return initialData.invoice_metadata.ui_config.customTitle;
-        if ((initialData?.invoice_metadata as any)?.custom_title) return (initialData?.invoice_metadata as any).custom_title;
-        if ((initialData?.invoice_metadata as any)?.title) return (initialData?.invoice_metadata as any).title;
-        if (draft?.customTitle) return draft.customTitle;
-        return (docType === 'delivery_challan' ? 'DELIVERY CHALLAN' : docType === 'po' ? 'PURCHASE ORDER' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'credit_note' ? 'CREDIT NOTE' : 'INVOICE');
-    });
-
-    const [doc, setDoc] = useState<ExtractedInvoice>(() => {
-        const base = initialData || draft?.doc || EMPTY_INVOICE;
-        const computedSourceType = initialData?.source_type ? initialData.source_type : (draft?.docType || initialData?.document_type) === 'generated_po' || (draft?.docType as string) === 'po' || docType === 'po' ? 'purchase' : 'sales';
-        return { 
-            ...EMPTY_INVOICE,
-            ...base, 
-            source_type: computedSourceType, 
-            document_type: docType === 'delivery_challan' ? 'generated_delivery_challan' : docType === 'invoice' ? (initialData?.document_type === 'invoice' ? 'invoice' : 'generated_invoice') : docType === 'po' ? 'generated_po' : docType === 'quotation' ? 'generated_quotation' : docType === 'debit_note' ? 'generated_debit_note' : docType === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
-            receiver_details: base.receiver_details || EMPTY_INVOICE.receiver_details,
-            issuer_details: { 
-                ...EMPTY_INVOICE.issuer_details,
-                ...(base.issuer_details || {}),
-                bank_details: { upi_id: '8956340980@ibl', ...(base.issuer_details?.bank_details || {}) } 
-            },
-            shipped_to_details: base.shipped_to_details || (base.invoice_metadata as any)?.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
-            supplier_details: base.supplier_details || (base.invoice_metadata as any)?.supplier_details || EMPTY_INVOICE.supplier_details,
-            invoice_metadata: base.invoice_metadata || EMPTY_INVOICE.invoice_metadata
-        };
-    });
+    }, [currentFyStr, initialData?.id]);
 
     // Default config with accurate state restoration
     const [config, setConfig] = useState<ExtendedConfig>(() => {
@@ -1514,6 +1597,16 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             const { error: insertError } = await supabase.from('invoices').insert([cleanRecord]);
             if (insertError) throw insertError;
 
+            // Update sequence cache with saved number so next invoice is immediately +1
+            const { prefix } = getDocPrefix(docType, new Date(), undefined, doc.receiver_details?.name, doc.issuer_details?.name);
+            if (invNum.startsWith(prefix)) {
+                const seq = parseInt(invNum.substring(prefix.length), 10);
+                if (!isNaN(seq)) {
+                    sequenceCache.current[prefix] = Math.max(sequenceCache.current[prefix] || 0, seq);
+                    saveSequenceCacheToStorage(currentFyStr, sequenceCache.current);
+                }
+            }
+
             try { localStorage.removeItem('invoice_maker_draft'); } catch (e) {}
             if (addLogEntry) addLogEntry('Saved Document', `Saved ${docType.toUpperCase()} document #${invNum} to Dashboard.`);
             alert("Document saved to Dashboard!");
@@ -1580,8 +1673,9 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             });
         }
 
-        // Cache the latest verified sequence
+        // Cache the latest verified sequence in memory and localStorage
         sequenceCache.current[prefix] = maxSeq;
+        saveSequenceCacheToStorage(currentFyStr, sequenceCache.current);
 
         // Race condition guard: ignore if a newer request was dispatched or user switched docType
         if (reqId !== latestGenRequestId.current || currentDocTypeRef.current !== targetDocType) {
