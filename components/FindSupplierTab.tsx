@@ -4,7 +4,8 @@ import {
   SourcedSupplier, 
   searchSuppliersAcrossWeb, 
   enrichSupplierContactAI, 
-  formatWhatsAppNumber 
+  formatWhatsAppNumber,
+  isHallucinatedOrDummyContact
 } from '../services/supplierSearchService';
 
 const CopyableContact: React.FC<{
@@ -199,15 +200,17 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
       const exists = companyProfiles.some(p => p.name.toLowerCase() === sup.name.toLowerCase());
       
       const { cleanPhone } = formatWhatsAppNumber(sup.phoneNumber);
+      const safePhone = isHallucinatedOrDummyContact(sup.phoneNumber) ? '' : (cleanPhone || sup.phoneNumber);
+      const safeEmail = isHallucinatedOrDummyContact(sup.email) ? '' : sup.email;
 
       const profileToAdd: CompanyProfile = {
         id: `cp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         name: sup.name,
         gstNumber: sup.gstNumber || '',
         shippingAddress: sup.address || `${city}, India`,
-        email: sup.email || '',
+        email: safeEmail || '',
         contactPerson: sup.contactPerson || 'Sales Department',
-        phoneNumber: cleanPhone || sup.phoneNumber || '',
+        phoneNumber: safePhone || '',
       };
 
       if (!exists) {
@@ -519,7 +522,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                         </button>
                       </div>
 
-                      {/* CONTACT DETAILS & ENRICHMENT */}
+                      {/* CONTACT DETAILS & VERIFIED SEARCH LINKS */}
                       <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {/* Phone / WhatsApp */}
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -546,12 +549,34 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                               )}
                             </div>
                           ) : (
-                            <span className="text-rose-500 italic text-[11px]">Missing Phone</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-slate-400 italic text-[11px]">Not publicly listed</span>
+                              <a
+                                href={sup.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${sup.name} ${sup.address || city}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-600 hover:text-indigo-800 hover:underline text-[10px] font-bold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200"
+                                title="View supplier place & phone on Google Maps"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                📍 Check Maps
+                              </a>
+                              <a
+                                href={sup.indiaMartUrl || `https://www.indiamart.com/search.mp?ss=${encodeURIComponent(`${sup.name} ${productQuery}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-700 hover:text-emerald-900 hover:underline text-[10px] font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+                                title="View supplier profile on IndiaMart"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                🏭 IndiaMart
+                              </a>
+                            </div>
                           )}
                         </div>
 
                         {/* Email Address */}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-slate-400 shrink-0">📧 Email:</span>
                           {sup.email ? (
                             <CopyableContact
@@ -562,7 +587,19 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                               title="Click to copy email address"
                             />
                           ) : (
-                            <span className="text-rose-500 italic text-[11px]">Missing Email</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-slate-400 italic text-[11px]">Not publicly listed</span>
+                              <a
+                                href={sup.googleSearchUrl || `https://www.google.com/search?q=${encodeURIComponent(`${sup.name} ${city} contact phone email`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sky-600 hover:text-sky-800 hover:underline text-[10px] font-bold bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200"
+                                title="Search company contact details on Google"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                🌐 Search Web
+                              </a>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -658,7 +695,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
 
                     <div className="text-xs text-slate-600 space-y-1.5">
                       <p>📍 <strong>Address:</strong> {sup.address}</p>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-500 shrink-0">📱 <strong>Phone:</strong></span>
                         {sup.phoneNumber ? (
                           <CopyableContact
@@ -668,10 +705,28 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                             title="Click to copy phone number"
                           />
                         ) : (
-                          <span className="italic text-slate-400">Not found</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="italic text-slate-400">Not listed</span>
+                            <a
+                              href={sup.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${sup.name} ${sup.address || city}`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-indigo-600 hover:text-indigo-800 hover:underline text-[10px] font-bold bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200"
+                            >
+                              📍 Maps
+                            </a>
+                            <a
+                              href={sup.indiaMartUrl || `https://www.indiamart.com/search.mp?ss=${encodeURIComponent(`${sup.name} ${productQuery}`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-700 hover:text-emerald-900 hover:underline text-[10px] font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200"
+                            >
+                              🏭 IndiaMart
+                            </a>
+                          </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-500 shrink-0">📧 <strong>Email:</strong></span>
                         {sup.email ? (
                           <CopyableContact
@@ -682,7 +737,17 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
                             title="Click to copy email address"
                           />
                         ) : (
-                          <span className="italic text-slate-400">Not found</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="italic text-slate-400">Not listed</span>
+                            <a
+                              href={sup.googleSearchUrl || `https://www.google.com/search?q=${encodeURIComponent(`${sup.name} ${city} contact phone email`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky-600 hover:text-sky-800 hover:underline text-[10px] font-bold bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200"
+                            >
+                              🌐 Search
+                            </a>
+                          </div>
                         )}
                       </div>
                       <p>👤 <strong>Contact:</strong> {sup.contactPerson}</p>

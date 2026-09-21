@@ -60,19 +60,35 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json({ text: response.text });
         }
 
-        if (action === 'findSuppliers') {
+        if (action === 'findSuppliers' || action === 'enrichSupplier') {
             const { prompt, schema } = payload;
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: prompt,
-                config: {
-                    responseMimeType: 'application/json',
-                    responseSchema: schema,
-                    temperature: 0.2,
-                    maxOutputTokens: 8192,
-                }
-            });
-            return res.status(200).json({ text: response.text });
+            try {
+                // Attempt with Google Search Grounding for live, real-time web search results
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not output markdown, preambles, or conversational text.",
+                    config: {
+                        tools: [{ googleSearch: {} }],
+                        temperature: 0.1,
+                        maxOutputTokens: 8192,
+                    }
+                });
+                return res.status(200).json({ text: response.text });
+            } catch (searchErr: any) {
+                console.warn('Search grounding fallback to structured JSON output:', searchErr?.message);
+                // Fallback attempt: Generate with structured JSON schema
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                    config: {
+                        responseMimeType: 'application/json',
+                        responseSchema: schema,
+                        temperature: 0.1,
+                        maxOutputTokens: 8192,
+                    }
+                });
+                return res.status(200).json({ text: response.text });
+            }
         }
 
         if (action === 'parseVoiceIntent') {

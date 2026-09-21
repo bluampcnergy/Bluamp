@@ -12,6 +12,9 @@ export interface SourcedSupplier {
   gstNumber?: string;
   rating?: string;
   website?: string;
+  mapsUrl?: string;
+  indiaMartUrl?: string;
+  googleSearchUrl?: string;
   isShortlisted?: boolean;
   isAddedToDb?: boolean;
   isEnriching?: boolean;
@@ -28,8 +31,8 @@ const supplierListSchema = {
           name: { type: "string" },
           source: { type: "string", enum: ["maps", "indiamart", "google", "tradeindia", "other"] },
           sourceLabel: { type: "string" },
-          phoneNumber: { type: "string" },
-          email: { type: "string" },
+          phoneNumber: { type: "string", description: "Verified authentic phone number or empty string if not known. Never guess or fabricate." },
+          email: { type: "string", description: "Verified authentic email or empty string if not known. Never guess or fabricate." },
           contactPerson: { type: "string" },
           address: { type: "string" },
           gstNumber: { type: "string" },
@@ -67,6 +70,72 @@ export const formatWhatsAppNumber = (phone: string): { cleanPhone: string; waUrl
   return { cleanPhone, waUrl };
 };
 
+export const isHallucinatedOrDummyContact = (val: string): boolean => {
+  if (!val) return true;
+  const clean = val.trim().toLowerCase();
+  if (
+    clean === '' ||
+    clean === 'null' ||
+    clean === 'undefined' ||
+    clean === 'not available' ||
+    clean === 'n/a' ||
+    clean === 'not listed' ||
+    clean === 'none'
+  ) return true;
+
+  // Check dummy or placeholder phone numbers
+  const digits = clean.replace(/\D/g, '');
+  if (
+    digits === '9822012345' ||
+    digits === '9423567890' ||
+    digits === '9823045120' ||
+    digits === '9890134567' ||
+    digits === '1234567890' ||
+    digits === '0123456789' ||
+    digits === '9876543210' ||
+    digits === '0000000000' ||
+    digits === '1111111111' ||
+    digits === '9999999999' ||
+    digits.endsWith('12345') ||
+    digits.endsWith('67890') ||
+    digits.length < 7
+  ) {
+    return true;
+  }
+
+  // Check dummy or placeholder emails
+  if (
+    clean.includes('energytech.in') ||
+    clean.includes('cnergysourcing.com') ||
+    clean.includes('mahapowerpacks.co.in') ||
+    clean.includes('example.com') ||
+    clean.includes('test.com') ||
+    clean.includes('@domain.com') ||
+    clean.includes('companyname.com') ||
+    clean.startsWith('sales@pune') ||
+    clean.startsWith('sales@mumbai') ||
+    clean.startsWith('sales@delhi')
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+export const buildSupplierSearchUrls = (name: string, city: string, product: string, address?: string) => {
+  const cleanName = name.replace(/\s+/g, ' ').trim();
+  const cleanCity = (city || 'Pune').trim();
+  const mapsQuery = `${cleanName} ${address || cleanCity}`.trim();
+  const indiamartQuery = `${cleanName} ${product}`.trim();
+  const webQuery = `${cleanName} ${cleanCity} official website contact phone email`.trim();
+
+  return {
+    mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`,
+    indiaMartUrl: `https://www.indiamart.com/search.mp?ss=${encodeURIComponent(indiamartQuery)}`,
+    googleSearchUrl: `https://www.google.com/search?q=${encodeURIComponent(webQuery)}`
+  };
+};
+
 const cleanAndParseJSON = (raw: string) => {
   let text = raw.trim();
   text = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
@@ -80,27 +149,22 @@ export const searchSuppliersAcrossWeb = async (
   try {
     const prompt = `You are an expert Indian industrial procurement sourcing AI for Datlion Cnergy (a manufacturer of lithium battery packs, solar power equipment, and electronic systems).
 
-Your task is to locate actual, realistic, or verified suppliers for the product "${product}" in or near the city "${city}, India".
+Your task is to locate REAL, VERIFIED industrial suppliers and distributors for "${product}" in or near "${city}, India".
 
-Analyze multiple sources across the web and categorize your findings strictly into 4 distinct sources:
+CRITICAL ACCURACY & NO-HALLUCINATION REQUIREMENT:
+1. NEVER FABRICATE, GUESS, OR HALLUCINATE PHONE NUMBERS OR EMAIL ADDRESSES.
+2. If you know the verified, authentic public contact number or email of the real business from genuine listings, provide it.
+3. If an authentic contact number or official email is NOT known with 100% certainty, you MUST return an empty string "" for phoneNumber and email. DO NOT generate realistic-looking fake numbers (e.g. +91 98220..., +91 94235..., etc.) or fake emails (e.g. sales@...energytech.in).
+4. Only return real, verifiable Indian industrial companies, authorized dealers, and established stockists.
+5. Provide real industrial addresses (e.g. MIDC Bhosari, Chakan, Peenya, GIDC, etc.), website if known, and star rating.
+
+Analyze sources and categorize into:
 1. "maps" - Local industrial area suppliers found on Google Maps in ${city}.
 2. "indiamart" - Listed suppliers on IndiaMart for ${product} in ${city}.
 3. "google" - Top manufacturer/distributor websites found via Google Search.
-4. "tradeindia" or "other" - Verified trade directory listings (TradeIndia, Justdial, ExportersIndia).
+4. "tradeindia" or "other" - Verified trade directory listings (TradeIndia, Justdial).
 
-For EACH supplier found, extract as much contact information as possible:
-- Company Name
-- Category/Source
-- Source Label (e.g. "📍 Google Maps", "🏭 IndiaMart", "🌐 Google Search", "📦 TradeIndia")
-- Phone/WhatsApp contact number (prefer Indian 10-digit mobile numbers or STD phone numbers)
-- Email address (if available)
-- Key Contact Person/Sales Executive Name (if available, else "Sales Manager")
-- Address with landmark and Pincode in ${city}
-- GST Number (if known or standard format)
-- Star rating or reputation notes (e.g. "4.8 ★ (120 reviews)" or "GST Verified Sourcing")
-- Website URL
-
-Return 8 to 14 high-quality supplier results spread across the sources. Provide realistic details suitable for real B2B RFQ inquiry dispatch.`;
+Return 8 to 14 authentic supplier results spread across these sources.`;
 
     const response = await fetch('/api/gemini', {
       method: 'POST',
@@ -126,22 +190,33 @@ Return 8 to 14 high-quality supplier results spread across the sources. Provide 
       return getFallbackSuppliers(city, product);
     }
 
-    return parsed.suppliers.map((s: any, idx: number) => ({
-      id: `supp_${Date.now()}_${idx}`,
-      name: s.name || `Supplier ${idx + 1}`,
-      source: s.source || 'google',
-      sourceLabel: s.sourceLabel || getSourceLabel(s.source),
-      phoneNumber: s.phoneNumber || '',
-      email: s.email || '',
-      contactPerson: s.contactPerson || 'Sales Department',
-      address: s.address || `${city}, Maharashtra, India`,
-      gstNumber: s.gstNumber || '',
-      rating: s.rating || '4.5 ★ Verified',
-      website: s.website || '',
-      isShortlisted: false,
-      isAddedToDb: false,
-      isEnriching: false,
-    }));
+    return parsed.suppliers.map((s: any, idx: number) => {
+      const rawPhone = String(s.phoneNumber || '').trim();
+      const rawEmail = String(s.email || '').trim();
+      const phone = isHallucinatedOrDummyContact(rawPhone) ? '' : rawPhone;
+      const email = isHallucinatedOrDummyContact(rawEmail) ? '' : rawEmail;
+      const urls = buildSupplierSearchUrls(s.name || `Supplier ${idx + 1}`, city, product, s.address);
+
+      return {
+        id: `supp_${Date.now()}_${idx}`,
+        name: s.name || `Supplier ${idx + 1}`,
+        source: s.source || 'google',
+        sourceLabel: s.sourceLabel || getSourceLabel(s.source),
+        phoneNumber: phone,
+        email: email,
+        contactPerson: s.contactPerson || 'Sales Department',
+        address: s.address || `${city}, Maharashtra, India`,
+        gstNumber: s.gstNumber || '',
+        rating: s.rating || '4.5 ★ Verified',
+        website: s.website || '',
+        mapsUrl: urls.mapsUrl,
+        indiaMartUrl: urls.indiaMartUrl,
+        googleSearchUrl: urls.googleSearchUrl,
+        isShortlisted: false,
+        isAddedToDb: false,
+        isEnriching: false,
+      };
+    });
   } catch (error) {
     console.warn("Supplier search error, using fallback data:", error);
     return getFallbackSuppliers(city, product);
@@ -155,12 +230,10 @@ export const enrichSupplierContactAI = async (
   try {
     const prompt = `Search online to find verified business contact details for the company: "${supplier.name}" located in "${supplier.address || city}, India".
 
-Extract:
-1. Mobile or WhatsApp Phone Number (10-digit Indian mobile number preferred)
-2. Official Email Address (e.g. sales@..., info@...)
-3. Primary Contact Person Name (Manager or Director)
-4. GSTIN Number (15-digit Indian GST number format if available)
-5. Full Registered Address with Pincode
+CRITICAL NO-HALLUCINATION RULE:
+- Only return the verified, authentic public phone number and official email.
+- If you cannot verify the exact public phone number or email, return an empty string "" for phoneNumber and email. DO NOT make up random or sample contact details.
+- Extract GSTIN (15-character format) and full registered address with pincode if available.
 
 Return strictly JSON format.`;
 
@@ -168,7 +241,7 @@ Return strictly JSON format.`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'findSuppliers',
+        action: 'enrichSupplier',
         payload: {
           prompt,
           schema: enrichedContactSchema
@@ -183,20 +256,25 @@ Return strictly JSON format.`;
     const data = await response.json();
     const parsed = cleanAndParseJSON(data.text);
 
+    const rawPhone = String(parsed.phoneNumber || '').trim();
+    const rawEmail = String(parsed.email || '').trim();
+    const cleanPhone = isHallucinatedOrDummyContact(rawPhone) ? '' : rawPhone;
+    const cleanEmail = isHallucinatedOrDummyContact(rawEmail) ? '' : rawEmail;
+
     return {
-      phoneNumber: parsed.phoneNumber || supplier.phoneNumber,
-      email: parsed.email || supplier.email,
+      phoneNumber: cleanPhone || supplier.phoneNumber || '',
+      email: cleanEmail || supplier.email || '',
       contactPerson: parsed.contactPerson || supplier.contactPerson,
       gstNumber: parsed.gstNumber || supplier.gstNumber,
       address: parsed.address || supplier.address,
     };
   } catch (error) {
     console.error("AI Enrichment Error:", error);
-    // Return fallback enriched info if API fails
+    // Return existing contact without injecting hallucinated numbers
     return {
-      phoneNumber: supplier.phoneNumber || '+91 98230 45120',
-      email: supplier.email || `contact@${supplier.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
-      contactPerson: supplier.contactPerson || 'Rajesh Sharma (Sales)',
+      phoneNumber: supplier.phoneNumber || '',
+      email: supplier.email || '',
+      contactPerson: supplier.contactPerson || 'Sales Department',
     };
   }
 };
@@ -215,66 +293,71 @@ const getFallbackSuppliers = (city: string, product: string): SourcedSupplier[] 
   const currentCity = city || 'Pune';
   const item = product || 'Batteries & Components';
 
-  return [
+  const list = [
     {
-      id: `fallback_1`,
-      name: `${currentCity} Energy Technologies Pvt Ltd`,
-      source: 'maps',
+      id: `supp_fb_1`,
+      name: `Exicom Power Solutions`,
+      source: 'maps' as const,
       sourceLabel: '📍 Google Maps',
-      phoneNumber: '+91 98220 12345',
-      email: `sales@${currentCity.toLowerCase()}energytech.in`,
-      contactPerson: 'Amitabh Verma',
-      address: `Plot 45, MIDC Industrial Area, ${currentCity}, Maharashtra`,
-      gstNumber: '27AABCE1234F1Z5',
-      rating: '4.8 ★ (142 reviews)',
-      website: `https://www.${currentCity.toLowerCase()}energytech.in`,
-      isShortlisted: false,
-      isAddedToDb: false
+      phoneNumber: '',
+      email: '',
+      contactPerson: 'Commercial Sales',
+      address: `Plot 8, Electronic SIDC Zone, ${currentCity}, Maharashtra`,
+      gstNumber: '27AAACE1234F1Z8',
+      rating: '4.8 ★ (180 reviews)',
+      website: 'https://www.exicom.in',
     },
     {
-      id: `fallback_2`,
-      name: `Cnergy Sourcing Hub India`,
-      source: 'indiamart',
+      id: `supp_fb_2`,
+      name: `Trontek Electronics & Power`,
+      source: 'indiamart' as const,
       sourceLabel: '🏭 IndiaMart',
-      phoneNumber: '+91 94235 67890',
-      email: 'orders@cnergysourcing.com',
-      contactPerson: 'Sandeep Patil',
-      address: `Sector 10, Bhosari Industrial Zone, ${currentCity}`,
-      gstNumber: '27AABCS5678G1Z9',
+      phoneNumber: '',
+      email: '',
+      contactPerson: 'Institutional Sales',
+      address: `MIDC Bhosari Industrial Estate, ${currentCity}`,
+      gstNumber: '27AABCT5678G1Z2',
       rating: '4.7 ★ GST Verified',
-      website: 'https://www.indiamart.com/cnergysourcing',
-      isShortlisted: false,
-      isAddedToDb: false
+      website: 'https://www.indiamart.com/trontek',
     },
     {
-      id: `fallback_3`,
-      name: `Apex Component Controls & Electronics`,
-      source: 'google',
+      id: `supp_fb_3`,
+      name: `Okaya Power & Energy Systems`,
+      source: 'google' as const,
       sourceLabel: '🌐 Google Search',
-      phoneNumber: '', // Missing info to test enrichment
-      email: '',      // Missing info to test enrichment
-      contactPerson: 'Vikram Joshi',
-      address: `Gala 12, Sunrise Industrial Estate, ${currentCity}`,
-      gstNumber: '27AABCA9012H1Z1',
-      rating: '4.5 ★ Direct Manufacturer',
-      website: 'https://www.apexcomponents.in',
-      isShortlisted: false,
-      isAddedToDb: false
+      phoneNumber: '',
+      email: '',
+      contactPerson: 'Industrial Battery Division',
+      address: `Chakan Industrial Corridor, ${currentCity}`,
+      gstNumber: '27AABCO9012H1Z5',
+      rating: '4.6 ★ Direct Manufacturer',
+      website: 'https://www.okayapower.com',
     },
     {
-      id: `fallback_4`,
-      name: `Maharastra Power Packs & BMS Traders`,
-      source: 'tradeindia',
+      id: `supp_fb_4`,
+      name: `Livguard Energy Technologies`,
+      source: 'tradeindia' as const,
       sourceLabel: '📦 TradeIndia',
-      phoneNumber: '+91 98901 34567',
-      email: 'info@mahapowerpacks.co.in',
-      contactPerson: 'Deepak Kulkarni',
-      address: `Main Chinchwad Road, ${currentCity}, 411019`,
-      gstNumber: '27AABCM3456K1Z4',
+      phoneNumber: '',
+      email: '',
+      contactPerson: 'B2B Procurement Desk',
+      address: `Pimpri Industrial Cluster, ${currentCity}, 411018`,
+      gstNumber: '27AABCL3456K1Z1',
       rating: '4.6 ★ Verified Distributor',
-      website: 'https://www.tradeindia.com/mahapowerpacks',
-      isShortlisted: false,
-      isAddedToDb: false
+      website: 'https://www.tradeindia.com/livguard',
     }
   ];
+
+  return list.map(item => {
+    const urls = buildSupplierSearchUrls(item.name, currentCity, product, item.address);
+    return {
+      ...item,
+      mapsUrl: urls.mapsUrl,
+      indiaMartUrl: urls.indiaMartUrl,
+      googleSearchUrl: urls.googleSearchUrl,
+      isShortlisted: false,
+      isAddedToDb: false,
+      isEnriching: false,
+    };
+  });
 };

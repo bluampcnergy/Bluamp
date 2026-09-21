@@ -369,6 +369,22 @@ export interface SupplyRecord {
   created_by?: string;
 }
 
+export interface InboundOrderTracking {
+  id: string;
+  order_date: string;              // Date of order (YYYY-MM-DD)
+  item_name: string;               // Item ordered
+  supplier_name: string;           // Supplier company
+  transport_number: string;        // Transport number (LR number / tracking number)
+  is_ordered: boolean;             // Ordered status
+  is_received: boolean;            // Received status (has reached factory or not)
+  is_invoice_recorded: boolean;    // Invoice added to internal records (inventory & finance)
+  quantity?: number;
+  uom?: string;
+  notes?: string;
+  timestamp: number;
+  created_by?: string;
+}
+
 export interface InvoiceEditHistoryEntry {
   edited_at: string;
   edited_by: string;

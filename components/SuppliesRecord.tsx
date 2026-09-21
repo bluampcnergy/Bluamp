@@ -4,6 +4,7 @@ import { Plus, Trash2, Search, RefreshCw } from './invoices/Icons';
 import { generateRFQTextOpenRouter } from '../services/openrouterService';
 import { getItemStockAlertInfo } from '../utils/stockAlerts';
 import { FindSupplierTab } from './FindSupplierTab';
+import { InboundTrackingTab } from './InboundTrackingTab';
 
 interface SuppliesRecordProps {
   suppliesRecords: SupplyRecord[];
@@ -226,7 +227,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   currentUser,
   setView
 }) => {
-  const [mainTab, setMainTab] = useState<'procurement' | 'find_suppliers'>('procurement');
+  const [mainTab, setMainTab] = useState<'procurement' | 'tracking' | 'find_suppliers'>('procurement');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
@@ -1183,7 +1184,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       />
 
       {/* MODULE NAVIGATION SUB-TABS */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
         <button
           onClick={() => setMainTab('procurement')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
@@ -1193,6 +1194,17 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           }`}
         >
           <span>📦 Procurement & Requisitions</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('tracking')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+            mainTab === 'tracking'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
+          }`}
+        >
+          <span>🚚 Factory Inbound Tracking</span>
         </button>
 
         <button
@@ -1213,6 +1225,13 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           setCompanyProfiles={setCompanyProfiles || (() => {})}
           addLogEntry={addLogEntry}
           onOpenWebmail={(to, subject, body) => handleOpenWebmailIframe(to, subject, body)}
+        />
+      ) : mainTab === 'tracking' ? (
+        <InboundTrackingTab
+          companyProfiles={companyProfiles}
+          receivedGoods={receivedGoods}
+          addLogEntry={addLogEntry}
+          currentUser={currentUser}
         />
       ) : (
         <>
