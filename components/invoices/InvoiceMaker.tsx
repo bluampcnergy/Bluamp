@@ -48,7 +48,60 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     printMode?: 'single' | 'dual';
 };
 
+export const getDocPrefix = (
+    currentDocType: string,
+    date: Date = new Date(),
+    overrideOtherParty?: string,
+    receiverName?: string,
+    issuerName?: string
+) => {
+    const month = date.getMonth() + 1;
+    const year = date.getFullYear();
+
+    // Indian FY Logic: April to March
+    let fyStart, fyEnd;
+    if (month >= 4) {
+        fyStart = year;
+        fyEnd = year + 1;
+    } else {
+        fyStart = year - 1;
+        fyEnd = year;
+    }
+
+    const fyStr = `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
+
+    // --- NEW LOGIC (From April 2026 onwards) ---
+    const NEW_SYSTEM_START = new Date(2026, 3, 1); // April 1, 2026
+    if (date >= NEW_SYSTEM_START) {
+        let typeTag = 'INV';
+        if (currentDocType === 'po') typeTag = 'PO';
+        else if (currentDocType === 'quotation') typeTag = 'QUO';
+        else if (currentDocType === 'proforma') typeTag = 'PRO';
+        else if (currentDocType === 'debit_note') typeTag = 'DN';
+        else if (currentDocType === 'credit_note') typeTag = 'CN';
+        else if (currentDocType === 'delivery_challan') typeTag = 'DCh';
+
+        return { prefix: `${typeTag}/DC/${fyStr}/`, isNewSystem: true, fyStr, mm: '' };
+    }
+
+    // --- OLD LOGIC (Pre-April 2026) ---
+    const mm = String(month).padStart(2, '0');
+    const otherPartyName = overrideOtherParty || (currentDocType === 'invoice' || currentDocType === 'proforma' ? receiverName : issuerName);
+    let code = 'XX';
+    if (otherPartyName) {
+        code = otherPartyName.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
+    }
+
+    const prefixBase = currentDocType === 'quotation' ? 'Q' : currentDocType === 'proforma' ? 'P' : currentDocType === 'delivery_challan' ? 'DCh' : currentDocType === 'debit_note' ? 'DN' : currentDocType === 'credit_note' ? 'CN' : 'DC';
+    return { prefix: `${prefixBase}.${code}.${fyStr}.${mm}.`, isNewSystem: false, fyStr, mm };
+};
+
 const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry, setInvoiceDraft }) => {
+    // Refs for instant, race-condition-free document number generation
+    const currentDocTypeRef = useRef<'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note'>('invoice');
+    const latestGenRequestId = useRef(0);
+    const sequenceCache = useRef<Record<string, number>>({});
+
     // Load draft from local storage if not editing an existing record
     const draft = useMemo(() => {
         if (initialData?.id) return null;
@@ -75,6 +128,56 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         if (draft?.docType) return draft.docType;
         return 'invoice';
     });
+
+    useEffect(() => {
+        currentDocTypeRef.current = docType;
+    }, [docType]);
+
+    // Fast pre-fetch of all sequence numbers for the current financial year to enable instant docType switching
+    useEffect(() => {
+        const prefetchSequences = async () => {
+            const date = new Date();
+            const month = date.getMonth() + 1;
+            const year = date.getFullYear();
+            const fyStart = month >= 4 ? year : year - 1;
+            const fyEnd = fyStart + 1;
+            const fyStr = `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
+
+            try {
+                const { data } = await supabase
+                    .from('invoices')
+                    .select('invoice_metadata')
+                    .ilike('invoice_metadata->>invoice_number', `%/DC/${fyStr}/%`);
+
+                if (data && data.length > 0) {
+                    const tags = ['INV', 'PO', 'QUO', 'PRO', 'DN', 'CN', 'DCh'];
+                    const counts: Record<string, number> = {};
+                    tags.forEach(t => { counts[`${t}/DC/${fyStr}/`] = 0; });
+
+                    data.forEach(row => {
+                        const invNum = row.invoice_metadata?.invoice_number;
+                        if (invNum) {
+                            for (const tag of tags) {
+                                const prefix = `${tag}/DC/${fyStr}/`;
+                                if (invNum.startsWith(prefix)) {
+                                    const seq = parseInt(invNum.substring(prefix.length), 10);
+                                    if (!isNaN(seq) && seq > (counts[prefix] || 0)) {
+                                        counts[prefix] = seq;
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    Object.assign(sequenceCache.current, counts);
+                }
+            } catch (err) {
+                console.warn('Pre-fetch sequences error:', err);
+            }
+        };
+
+        prefetchSequences();
+    }, []);
 
     const [customTitle, setCustomTitle] = useState(() => {
         if (initialData?.invoice_metadata?.ui_config?.customTitle) return initialData.invoice_metadata.ui_config.customTitle;
@@ -880,6 +983,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     const handleDocTypeChange = (type: 'invoice' | 'delivery_challan' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note') => {
         setDocType(type);
+        currentDocTypeRef.current = type;
         const titleMap: Record<string, string> = { 
             invoice: 'INVOICE', 
             delivery_challan: 'DELIVERY CHALLAN', 
@@ -890,13 +994,26 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             credit_note: 'CREDIT NOTE' 
         };
         setCustomTitle(titleMap[type] || 'INVOICE');
-        generateInvoiceNumber(type);
+
+        // Optimistically calculate next document number immediately (0ms latency)
+        const { prefix } = getDocPrefix(type, new Date(), undefined, doc.receiver_details?.name, doc.issuer_details?.name);
+        const cachedSeq = sequenceCache.current[prefix] ?? 0;
+        const optimisticNum = `${prefix}${String(cachedSeq + 1).padStart(3, '0')}`;
+
         setDoc(prev => ({
             ...prev,
             source_type: type === 'po' ? 'purchase' : 'sales',
             document_type: type === 'delivery_challan' ? 'generated_delivery_challan' : type === 'invoice' ? 'generated_invoice' : type === 'po' ? 'generated_po' : type === 'quotation' ? 'generated_quotation' : type === 'debit_note' ? 'generated_debit_note' : type === 'credit_note' ? 'generated_credit_note' : 'generated_proforma_invoice',
-            invoice_metadata: { ...prev.invoice_metadata, note_type: (type === 'debit_note' ? 'debit' : type === 'credit_note' ? 'credit' : undefined) as any }
+            invoice_metadata: { 
+                ...prev.invoice_metadata, 
+                invoice_number: optimisticNum,
+                note_type: (type === 'debit_note' ? 'debit' : type === 'credit_note' ? 'credit' : undefined) as any 
+            }
         }));
+
+        // Verify with database in background without blocking or race conditions
+        generateInvoiceNumber(type);
+
         if (type === 'quotation' || type === 'proforma') {
             setShowBatteryComparisonTable(true);
             setConfig(prev => ({ ...prev, showBatteryComparisonTable: true, showTaxTable: false }));
@@ -1414,124 +1531,72 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     };
 
     const generateInvoiceNumber = async (overrideDocType?: string, overrideOtherParty?: string, _retryCount = 0) => {
-        const currentDocType = overrideDocType || docType;
+        // Guard: if overrideDocType is an event object (e.g. from onClick), ignore it and use docType
+        const targetDocType = typeof overrideDocType === 'string' ? overrideDocType : docType;
+        const reqId = ++latestGenRequestId.current;
+
         const date = new Date();
-        const month = date.getMonth() + 1;
-        const year = date.getFullYear();
+        const { prefix, isNewSystem } = getDocPrefix(targetDocType, date, overrideOtherParty, doc.receiver_details?.name, doc.issuer_details?.name);
 
-        // Indian FY Logic: April to March
-        let fyStart, fyEnd;
-        if (month >= 4) {
-            fyStart = year;
-            fyEnd = year + 1;
-        } else {
-            fyStart = year - 1;
-            fyEnd = year;
+        // Optimistically apply cached sequence immediately if available
+        if (sequenceCache.current[prefix] !== undefined) {
+            const cachedNext = `${prefix}${String(sequenceCache.current[prefix] + 1).padStart(3, '0')}`;
+            setDoc(prev => {
+                if (prev.invoice_metadata?.invoice_number === cachedNext) return prev;
+                return {
+                    ...prev,
+                    invoice_metadata: { ...prev.invoice_metadata, invoice_number: cachedNext }
+                };
+            });
         }
 
-        const fyStr = `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
-
-        // --- NEW LOGIC (From April 2026 onwards) ---
-        // User requested this system from April 2026.
-        const NEW_SYSTEM_START = new Date(2026, 3, 1); // April 1, 2026
-        if (date >= NEW_SYSTEM_START) {
-            let typeTag = 'INV';
-            if (currentDocType === 'po') typeTag = 'PO';
-            else if (currentDocType === 'quotation') typeTag = 'QUO';
-            else if (currentDocType === 'proforma') typeTag = 'PRO';
-            else if (currentDocType === 'debit_note') typeTag = 'DN';
-            else if (currentDocType === 'credit_note') typeTag = 'CN';
-            else if (currentDocType === 'delivery_challan') typeTag = 'DCh';
-
-            const newPrefix = `${typeTag}/DC/${fyStr}/`;
-            
-            // Query for all invoices in this series to find the maximum sequence number
-            const { data, error: queryError } = await supabase
-                .from('invoices')
-                .select('invoice_metadata')
-                .ilike('invoice_metadata->>invoice_number', `${newPrefix}%`);
-
-            // Retry up to 3 times if query fails or returns empty during cold auth initialization
-            if ((queryError || (!data || data.length === 0)) && _retryCount < 3) {
-                const backoff = (_retryCount + 1) * 400;
-                await new Promise(r => setTimeout(r, backoff));
-                return generateInvoiceNumber(overrideDocType, overrideOtherParty, _retryCount + 1);
-            }
-
-            let maxSeq = 0;
-            if (data && data.length > 0) {
-                data.forEach(row => {
-                    const invNum = row.invoice_metadata?.invoice_number;
-                    if (invNum && invNum.startsWith(newPrefix)) {
-                        const seqStr = invNum.substring(newPrefix.length);
-                        const seq = parseInt(seqStr, 10);
-                        if (!isNaN(seq) && seq > maxSeq) {
-                            maxSeq = seq;
-                        }
-                    }
-                });
-            }
-
-            const nextSeq = String(maxSeq + 1).padStart(3, '0');
-            const newNumber = `${newPrefix}${nextSeq}`;
-
-            setDoc(prev => ({
-                ...prev,
-                invoice_metadata: { ...prev.invoice_metadata, invoice_number: newNumber }
-            }));
-            return;
-        }
-
-        // --- OLD LOGIC (Pre-April 2026) ---
-        const mm = String(month).padStart(2, '0');
-
-        // Determine "Other Party" based on context for code
-        const otherPartyName = overrideOtherParty || (currentDocType === 'invoice' || currentDocType === 'proforma' ? doc.receiver_details.name : doc.issuer_details.name);
-        let code = 'XX';
-        if (otherPartyName) {
-            code = otherPartyName.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
-        }
-
-        // Handle Prefix (DC for Invoice/PO, Q for Quotation, P for Proforma, DCh for Challan)
-        const prefixBase = currentDocType === 'quotation' ? 'Q' : currentDocType === 'proforma' ? 'P' : currentDocType === 'delivery_challan' ? 'DCh' : 'DC';
-        const fyPrefix = `${prefixBase}.${code}.${fyStr}.`;
-
-        // Fetch all invoices for THIS financial year to find the maximum sequence
-        const { data, error: queryErrorOld } = await supabase
+        // Query database for all invoices in this series to find the true maximum sequence number
+        const { data, error: queryError } = await supabase
             .from('invoices')
             .select('invoice_metadata')
-            .ilike('invoice_metadata->>invoice_number', `${fyPrefix}%`);
+            .ilike('invoice_metadata->>invoice_number', `${prefix}%`);
 
-        // Retry up to 3 times if query fails or returns empty during cold auth initialization
-        if ((queryErrorOld || (!data || data.length === 0)) && _retryCount < 3) {
-            const backoff = (_retryCount + 1) * 400;
+        // Only retry on actual network/query error (NOT when data is empty - empty means seq starts at 1)
+        if (queryError && _retryCount < 2) {
+            const backoff = (_retryCount + 1) * 200;
             await new Promise(r => setTimeout(r, backoff));
-            return generateInvoiceNumber(overrideDocType, overrideOtherParty, _retryCount + 1);
+            return generateInvoiceNumber(targetDocType, overrideOtherParty, _retryCount + 1);
         }
 
-        let maxSeqOld = 0;
+        let maxSeq = 0;
         if (data && data.length > 0) {
             data.forEach(row => {
                 const invNum = row.invoice_metadata?.invoice_number;
-                if (invNum && invNum.startsWith(`${fyPrefix}${mm}.`)) {
-                    const seqStr = invNum.split('.').pop();
+                if (invNum && invNum.startsWith(prefix)) {
+                    const seqStr = isNewSystem ? invNum.substring(prefix.length) : invNum.split('.').pop();
                     if (seqStr) {
                         const seq = parseInt(seqStr, 10);
-                        if (!isNaN(seq) && seq > maxSeqOld) {
-                            maxSeqOld = seq;
+                        if (!isNaN(seq) && seq > maxSeq) {
+                            maxSeq = seq;
                         }
                     }
                 }
             });
         }
 
-        const sequence = String(maxSeqOld + 1).padStart(3, '0');
-        const newNumber = `${fyPrefix}${mm}.${sequence}`;
+        // Cache the latest verified sequence
+        sequenceCache.current[prefix] = maxSeq;
 
-        setDoc(prev => ({
-            ...prev,
-            invoice_metadata: { ...prev.invoice_metadata, invoice_number: newNumber }
-        }));
+        // Race condition guard: ignore if a newer request was dispatched or user switched docType
+        if (reqId !== latestGenRequestId.current || currentDocTypeRef.current !== targetDocType) {
+            return;
+        }
+
+        const nextSeq = String(maxSeq + 1).padStart(3, '0');
+        const newNumber = `${prefix}${nextSeq}`;
+
+        setDoc(prev => {
+            if (prev.invoice_metadata?.invoice_number === newNumber) return prev;
+            return {
+                ...prev,
+                invoice_metadata: { ...prev.invoice_metadata, invoice_number: newNumber }
+            };
+        });
     };
 
     // --- Multi-Page Print Pagination ---
@@ -2199,7 +2264,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                         <span className="font-semibold text-sm">No:</span>
                                         <div className="relative group">
                                             <input className="text-right border-b border-transparent hover:border-slate-300 focus:border-[#8EBF45] outline-none w-36 bg-transparent text-sm font-mono" value={doc.invoice_metadata.invoice_number} onChange={(e) => setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, invoice_number: e.target.value } }))} />
-                                            <button onClick={generateInvoiceNumber} className="absolute -right-6 top-0 opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 p-0.5" title="Auto-Generate FY Number"><RefreshCw size={12} /></button>
+                                            <button onClick={() => generateInvoiceNumber()} className="absolute -right-6 top-0 opacity-0 group-hover:opacity-100 text-blue-500 hover:text-blue-700 p-0.5" title="Auto-Generate FY Number"><RefreshCw size={12} /></button>
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-end gap-0.5">
