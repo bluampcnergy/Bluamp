@@ -113,19 +113,33 @@ const getCurrentFyStr = (date: Date = new Date()): string => {
     return `${String(fyStart).slice(-2)}-${String(fyEnd).slice(-2)}`;
 };
 
+const BASELINE_SEQUENCES: Record<string, number> = {
+    'INV/DC/26-27/': 28,
+    'QUO/DC/26-27/': 56,
+    'PO/DC/26-27/': 21,
+    'DCh/DC/26-27/': 16,
+    'PRO/DC/26-27/': 6,
+    'DN/DC/26-27/': 2,
+    'CN/DC/26-27/': 0,
+};
+
 const getStoredSequenceCache = (currentFy: string): Record<string, number> => {
+    let result: Record<string, number> = {};
+    if (currentFy === '26-27') {
+        result = { ...BASELINE_SEQUENCES };
+    }
     try {
         const raw = localStorage.getItem(SEQUENCE_CACHE_KEY);
         if (raw) {
             const data: SequenceCacheStorage = JSON.parse(raw);
             if (data.fy === currentFy && data.counts && typeof data.counts === 'object') {
-                return data.counts;
+                result = { ...result, ...data.counts };
             }
         }
     } catch (e) {
         console.warn('Failed to parse sequence cache from localStorage:', e);
     }
-    return {};
+    return result;
 };
 
 const saveSequenceCacheToStorage = (currentFy: string, counts: Record<string, number>) => {
@@ -197,7 +211,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         if (!initialInvNum && !initialData?.id) {
             const { prefix } = getDocPrefix(docType, new Date(), undefined, base.receiver_details?.name, base.issuer_details?.name);
             const cachedSeq = sequenceCache.current[prefix];
-            if (cachedSeq !== undefined && cachedSeq > 0) {
+            if (cachedSeq !== undefined && cachedSeq >= 0) {
                 initialInvNum = `${prefix}${String(cachedSeq + 1).padStart(3, '0')}`;
             }
         }
@@ -231,8 +245,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             try {
                 const { data } = await supabase
                     .from('invoices')
-                    .select('invoice_metadata')
-                    .ilike('invoice_metadata->>invoice_number', `%/DC/${fyStr}/%`);
+                    .select('filename, invoice_metadata->>invoice_number')
+                    .or(`filename.ilike.%/DC/${fyStr}/%,invoice_metadata->>invoice_number.ilike.%/DC/${fyStr}/%`);
 
                 if (data && data.length > 0) {
                     const tags = ['INV', 'PO', 'QUO', 'PRO', 'DN', 'CN', 'DCh'];
@@ -242,8 +256,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         if (counts[prefix] === undefined) counts[prefix] = 0;
                     });
 
-                    data.forEach(row => {
-                        const invNum = row.invoice_metadata?.invoice_number;
+                    data.forEach((row: any) => {
+                        const invNum = row.invoice_number || row.filename;
                         if (invNum) {
                             for (const tag of tags) {
                                 const prefix = `${tag}/DC/${fyStr}/`;
@@ -1545,7 +1559,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             const { data: existing, error: checkError } = await supabase
                 .from('invoices')
                 .select('id')
-                .eq('invoice_metadata->>invoice_number', invNum)
+                .or(`filename.eq.${invNum},invoice_metadata->>invoice_number.eq.${invNum}`)
                 .maybeSingle();
 
             if (checkError) {
@@ -1647,8 +1661,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         // Query database for all invoices in this series to find the true maximum sequence number
         const { data, error: queryError } = await supabase
             .from('invoices')
-            .select('invoice_metadata')
-            .ilike('invoice_metadata->>invoice_number', `${prefix}%`);
+            .select('filename, invoice_metadata->>invoice_number')
+            .or(`filename.ilike.${prefix}%,invoice_metadata->>invoice_number.ilike.${prefix}%`);
 
         // Only retry on actual network/query error (NOT when data is empty - empty means seq starts at 1)
         if (queryError && _retryCount < 2) {
@@ -1659,8 +1673,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
         let maxSeq = 0;
         if (data && data.length > 0) {
-            data.forEach(row => {
-                const invNum = row.invoice_metadata?.invoice_number;
+            data.forEach((row: any) => {
+                const invNum = row.invoice_number || row.filename;
                 if (invNum && invNum.startsWith(prefix)) {
                     const seqStr = isNewSystem ? invNum.substring(prefix.length) : invNum.split('.').pop();
                     if (seqStr) {
