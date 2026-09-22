@@ -312,6 +312,24 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                             <div className="flex items-center justify-end gap-1"><span className="font-semibold">Date:</span> <span>{formatPrintDate(doc.invoice_metadata?.invoice_date || '')}</span></div>
                                             {paginatedPages.length > 1 && <div className="text-xs text-slate-400">Page {pageIdx + 1} of {paginatedPages.length}</div>}
                                         </div>
+                                        {/* Debit/Credit Note Reference */}
+                                        {(doc.invoice_metadata?.note_type || docType.includes('debit') || docType.includes('credit') || doc.invoice_metadata?.related_invoice_number) && (
+                                            <div className="mt-1.5 pt-1.5 border-t border-dashed border-slate-200 text-[10px] text-slate-500 space-y-0.5">
+                                                <div className="font-bold uppercase" style={{ color: config.color }}>
+                                                    {(doc.invoice_metadata?.note_type || (docType.includes('debit') ? 'debit' : 'credit')) === 'debit' ? 'Debit Note' : 'Credit Note'}
+                                                </div>
+                                                {doc.invoice_metadata?.related_invoice_number && (
+                                                    <div>Against Inv. No: <strong>{doc.invoice_metadata.related_invoice_number}</strong>
+                                                        {doc.invoice_metadata?.related_invoice_date && (
+                                                            <span> dt. {formatPrintDate(doc.invoice_metadata.related_invoice_date)}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {doc.invoice_metadata?.note_reason && (
+                                                    <div>Reason: {doc.invoice_metadata.note_reason}</div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

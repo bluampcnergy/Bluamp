@@ -232,7 +232,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             invoice_metadata: {
                 ...EMPTY_INVOICE.invoice_metadata,
                 ...(base.invoice_metadata || {}),
-                invoice_number: initialInvNum
+                invoice_number: initialInvNum,
+                note_type: (base.invoice_metadata?.note_type || (docType === 'debit_note' ? 'debit' : docType === 'credit_note' ? 'credit' : undefined)) as any
             }
         };
     });
@@ -405,7 +406,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
 
     // Visibility States
     const currencySymbol = getCurrencySymbol(doc.totals?.currency);
-    const [showNoteSection, setShowNoteSection] = useState(false);
+    const [showNoteSection, setShowNoteSection] = useState(() => docType === 'debit_note' || docType === 'credit_note');
 
     // Editable labels for Billed To / Shipped To
     const [billedToLabel, setBilledToLabel] = useState(initialData?.invoice_metadata?.ui_config?.billedToLabel || draft?.billedToLabel || 'Billed To');
@@ -625,6 +626,16 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
     const loadDocumentIntoEditor = (loadedData: ExtractedInvoice) => {
         if (!loadedData) return;
 
+        // Determine Document Type
+        const dt = String(loadedData.document_type || 'invoice');
+        let targetType: 'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note' = 'invoice';
+        if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') targetType = 'po';
+        else if (dt === 'generated_quotation' || dt === 'quotation') targetType = 'quotation';
+        else if (dt === 'generated_proforma_invoice' || dt === 'proforma_invoice' || dt === 'proforma') targetType = 'proforma';
+        else if (dt === 'generated_debit_note' || dt === 'debit_note') targetType = 'debit_note';
+        else if (dt === 'generated_credit_note' || dt === 'credit_note') targetType = 'credit_note';
+        setDocType(targetType);
+
         const dataToLoad: ExtractedInvoice = {
             ...EMPTY_INVOICE,
             ...loadedData,
@@ -636,19 +647,13 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             },
             shipped_to_details: loadedData.shipped_to_details || (loadedData.invoice_metadata as any)?.shipped_to_details || EMPTY_INVOICE.shipped_to_details,
             supplier_details: loadedData.supplier_details || (loadedData.invoice_metadata as any)?.supplier_details || EMPTY_INVOICE.supplier_details,
-            invoice_metadata: loadedData.invoice_metadata || EMPTY_INVOICE.invoice_metadata
+            invoice_metadata: {
+                ...EMPTY_INVOICE.invoice_metadata,
+                ...(loadedData.invoice_metadata || {}),
+                note_type: (loadedData.invoice_metadata?.note_type || (targetType === 'debit_note' ? 'debit' : targetType === 'credit_note' ? 'credit' : undefined)) as any
+            }
         };
         setDoc(dataToLoad);
-
-        // Determine Document Type
-        const dt = String(loadedData.document_type || 'invoice');
-        let targetType: 'invoice' | 'po' | 'quotation' | 'proforma' | 'debit_note' | 'credit_note' = 'invoice';
-        if (dt === 'generated_po' || dt === 'po' || dt === 'purchase_order') targetType = 'po';
-        else if (dt === 'generated_quotation' || dt === 'quotation') targetType = 'quotation';
-        else if (dt === 'generated_proforma_invoice' || dt === 'proforma_invoice' || dt === 'proforma') targetType = 'proforma';
-        else if (dt === 'generated_debit_note' || dt === 'debit_note') targetType = 'debit_note';
-        else if (dt === 'generated_credit_note' || dt === 'credit_note') targetType = 'credit_note';
-        setDocType(targetType);
 
         const defaultTitleMap: Record<string, string> = {
             invoice: 'INVOICE',
@@ -1862,7 +1867,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 <label className="text-[10px] text-slate-400 uppercase font-bold">Type</label>
                                 <select
                                     className="w-full text-sm p-1.5 border rounded bg-white outline-none focus:border-[#8EBF45]"
-                                    value={doc.invoice_metadata.note_type || ''}
+                                    value={doc.invoice_metadata.note_type || (docType === 'debit_note' ? 'debit' : docType === 'credit_note' ? 'credit' : '')}
                                     onChange={e => setDoc(prev => ({ ...prev, invoice_metadata: { ...prev.invoice_metadata, note_type: e.target.value as any } }))}
                                 >
                                     <option value="">None</option>
@@ -2408,10 +2413,10 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                     </div>
                                 </div>
                                 {/* Debit/Credit Note Reference */}
-                                {doc.invoice_metadata.note_type && (
+                                {(doc.invoice_metadata.note_type || docType === 'debit_note' || docType === 'credit_note' || doc.invoice_metadata.related_invoice_number) && (
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-slate-200 text-[10px] text-slate-500 space-y-0.5">
                                         <div className="font-bold uppercase" style={{ color: config.color }}>
-                                            {doc.invoice_metadata.note_type === 'debit' ? 'Debit Note' : 'Credit Note'}
+                                            {(doc.invoice_metadata.note_type || (docType === 'debit_note' ? 'debit' : 'credit')) === 'debit' ? 'Debit Note' : 'Credit Note'}
                                         </div>
                                         {doc.invoice_metadata.related_invoice_number && (
                                             <div>Against Inv. No: <strong>{doc.invoice_metadata.related_invoice_number}</strong>
@@ -2951,6 +2956,24 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                                 <div className="flex items-center justify-end gap-1"><span className="font-semibold">Date:</span> <span>{formatPrintDate(doc.invoice_metadata.invoice_date)}</span></div>
                                                 {paginatedPages.length > 1 && <div className="text-xs text-slate-400">Page {pageIdx + 1} of {paginatedPages.length}</div>}
                                             </div>
+                                            {/* Debit/Credit Note Reference */}
+                                            {(doc.invoice_metadata.note_type || docType === 'debit_note' || docType === 'credit_note' || doc.invoice_metadata.related_invoice_number) && (
+                                                <div className="mt-1.5 pt-1.5 border-t border-dashed border-slate-200 text-[10px] text-slate-500 space-y-0.5">
+                                                    <div className="font-bold uppercase" style={{ color: config.color }}>
+                                                        {(doc.invoice_metadata.note_type || (docType === 'debit_note' ? 'debit' : 'credit')) === 'debit' ? 'Debit Note' : 'Credit Note'}
+                                                    </div>
+                                                    {doc.invoice_metadata.related_invoice_number && (
+                                                        <div>Against Inv. No: <strong>{doc.invoice_metadata.related_invoice_number}</strong>
+                                                            {doc.invoice_metadata.related_invoice_date && (
+                                                                <span> dt. {formatPrintDate(doc.invoice_metadata.related_invoice_date)}</span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {doc.invoice_metadata.note_reason && (
+                                                        <div>Reason: {doc.invoice_metadata.note_reason}</div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
