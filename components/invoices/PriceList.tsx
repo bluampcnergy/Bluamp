@@ -1,13 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
-import type { PriceListItem } from '../../types';
+import type { PriceListItem, Recipe, ReceivedGood, User } from '../../types';
 
 interface PriceListProps {
+    currentUser?: User | null;
     priceList: PriceListItem[];
     setPriceList: React.Dispatch<React.SetStateAction<PriceListItem[]>>;
+    recipes?: Recipe[];
+    setRecipes?: React.Dispatch<React.SetStateAction<Recipe[]>>;
+    receivedGoods?: ReceivedGood[];
+    addLogEntry?: (action: string, details: string) => void;
+    onSwitchToCosting?: () => void;
 }
 
-const PriceList: React.FC<PriceListProps> = ({ priceList, setPriceList }) => {
+const PriceList: React.FC<PriceListProps> = ({ 
+    currentUser,
+    priceList, 
+    setPriceList,
+    recipes = [],
+    setRecipes,
+    receivedGoods = [],
+    addLogEntry,
+    onSwitchToCosting
+}) => {
     const [isUploading, setIsUploading] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
@@ -136,6 +151,16 @@ const PriceList: React.FC<PriceListProps> = ({ priceList, setPriceList }) => {
                     <p className="text-slate-500 text-sm">Manage item pricelist and master rates for invoice creation.</p>
                 </div>
                 <div className="flex gap-2 items-center">
+                    {onSwitchToCosting && currentUser?.role === 'admin' && (
+                        <button
+                            onClick={onSwitchToCosting}
+                            className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-[#8EBF45] hover:from-emerald-700 hover:to-[#7cb037] text-slate-950 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition active:scale-95"
+                            title="Open BOM & SKU Cost Calculator (Admin only)"
+                        >
+                            <span>🧮</span>
+                            <span>BOM Cost Calculator</span>
+                        </button>
+                    )}
                     <span className="text-xs text-slate-400 font-bold">{priceList.length} items</span>
                 </div>
             </div>

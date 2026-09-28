@@ -6,7 +6,7 @@ import InventoryPanel from './InventoryPanel';
 import { extractInvoiceData } from '../../services/geminiService';
 import { extractInvoiceDataLocal, testOllamaConnection } from '../../services/ollamaService';
 import { extractInvoiceDataOpenRouter, testOpenRouterConnection } from '../../services/openrouterService';
-import { ExtractedInvoice, EMPTY_INVOICE, User, CompanyProfile, PriceListItem, FinishedGood, Recipe } from '../../types';
+import { ExtractedInvoice, EMPTY_INVOICE, User, CompanyProfile, PriceListItem, FinishedGood, Recipe, ReceivedGood } from '../../types';
 import { Loader2, Save, RotateCcw, AlertCircle, CheckCircle, SettingsIcon, CloudLightning, AlertTriangle, FileText, Cpu, Trash2, Plus, RefreshCw } from './Icons';
 import { supabase } from '../../supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -16,6 +16,7 @@ const ExpenseForm = lazy(() => import('./ExpenseForm'));
 const GSTReturnPanel = lazy(() => import('./GSTReturnPanel'));
 const InvoiceMaker = lazy(() => import('./InvoiceMaker'));
 const PriceList = lazy(() => import('./PriceList'));
+const BomCostCalculator = lazy(() => import('./BomCostCalculator'));
 const LedgerPanel = lazy(() => import('./LedgerPanel'));
 
 // Handle ESM import where the actual library might be under 'default'
@@ -26,7 +27,7 @@ if (pdfjs.GlobalWorkerOptions) {
     pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 }
 
-type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices' | 'ledger';
+type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices' | 'costing' | 'ledger';
 type AIProvider = 'gemini' | 'ollama' | 'openrouter';
 
 // Batch Job Interface
@@ -87,10 +88,12 @@ interface InvoiceModuleProps {
     activeTab: ActiveTab;
     finishedGoods?: FinishedGood[];
     recipes?: Recipe[];
+    setRecipes?: React.Dispatch<React.SetStateAction<Recipe[]>>;
+    receivedGoods?: ReceivedGood[];
     addLogEntry?: (action: string, details: string) => void;
 }
 
-const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, setInvoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], addLogEntry }) => {
+const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, setInvoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], setRecipes, receivedGoods = [], addLogEntry }) => {
     // Batch Queue State
     const [batchQueue, setBatchQueue] = useState<BatchJob[]>([]);
     const [activeJobId, setActiveJobId] = useState<string | null>(null); // Job currently being reviewed
@@ -1147,7 +1150,34 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 )}
 
                 {activeTab === 'prices' && (
-                    <PriceList priceList={priceList} setPriceList={setPriceList} />
+                    <PriceList 
+                        currentUser={currentUser}
+                        priceList={priceList} 
+                        setPriceList={setPriceList}
+                        recipes={recipes}
+                        setRecipes={setRecipes}
+                        receivedGoods={receivedGoods}
+                        addLogEntry={addLogEntry}
+                        onSwitchToCosting={() => setView?.('finance_costing')}
+                    />
+                )}
+
+                {activeTab === 'costing' && (
+                    currentUser?.role !== 'admin' ? (
+                        <div className="text-center p-8 bg-white rounded-xl shadow-xs border border-rose-200 text-rose-600 font-bold m-4">
+                            🔒 Access Denied: Director Admins Only (Internal BOM Costing is restricted)
+                        </div>
+                    ) : (
+                        <BomCostCalculator 
+                            recipes={recipes}
+                            setRecipes={setRecipes}
+                            priceList={priceList}
+                            setPriceList={setPriceList}
+                            receivedGoods={receivedGoods}
+                            addLogEntry={addLogEntry}
+                            onSwitchToPriceList={() => setView?.('finance_prices')}
+                        />
+                    )
                 )}
 
                 {activeTab === 'ledger' && (

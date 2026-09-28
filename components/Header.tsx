@@ -53,7 +53,7 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
     home: ['home', 'help', 'webmail', 'mobile'] as View[],
     supplies: ['supplies'] as View[],
     operations: ['received', 'testing', 'wip', 'dtf', 'finished', 'storage'] as View[],
-    finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_maker', 'finance_ledger'] as View[],
+    finance: ['finance_upload', 'finance_dashboard', 'finance_gst', 'finance_expenses', 'finance_prices', 'finance_costing', 'finance_maker', 'finance_ledger'] as View[],
     admin: ['companies', 'users', 'employee_tasks', 'ai_assistant', 'reports', 'master', 'log', 'mobile'] as View[],
   }), []);
 
@@ -258,6 +258,9 @@ const Header: React.FC<HeaderProps> = ({ currentView, setView, username, userRol
                     <SubNavButton isActive={currentView === 'finance_gst'} onClick={() => setView('finance_gst')}>GST Returns</SubNavButton>
                     <SubNavButton isActive={currentView === 'finance_prices'} onClick={() => setView('finance_prices')}>Prices</SubNavButton>
                   </>
+                )}
+                {userRole === 'admin' && (
+                  <SubNavButton isActive={currentView === 'finance_costing'} onClick={() => setView('finance_costing')} icon={<span className="text-xs">🧮</span>}>BOM Costing</SubNavButton>
                 )}
                 <SubNavButton isActive={currentView === 'finance_expenses'} onClick={() => setView('finance_expenses')}>Expenses</SubNavButton>
               </>

@@ -19,6 +19,7 @@ export type View =
   | 'finance_gst'
   | 'finance_expenses'
   | 'finance_prices'
+  | 'finance_costing'
   | 'finance_maker'
   | 'finance_ledger'
   | 'supplies'
@@ -154,12 +155,20 @@ export interface RecipeComponent {
   receivedGoodId?: string;
   quantityPerUnit: number;
   uom?: string;
+  unitCost?: number; // Cost per unit excluding GST
 }
 
 export interface Recipe {
   id: string;
   name: string;
   components: RecipeComponent[];
+  overheadCost?: number; // Labor / assembly overhead cost (excl GST)
+  packagingCost?: number; // Packaging / freight / consumables overhead cost (excl GST)
+  customMarginPercent?: number; // e.g. 20%
+  dealerMarginPercent?: number; // e.g. 30% (1.3x)
+  retailMarginPercent?: number; // e.g. 50% (1.5x)
+  gstRate?: number; // e.g. 18%
+  notes?: string;
 }
 
 export interface WIPItem {

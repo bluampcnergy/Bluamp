@@ -493,7 +493,11 @@ const App: React.FC = () => {
     // Handle Finance Sub-routes
     if (view.startsWith('finance_')) {
         const tab = view.replace('finance_', '') as any;
-        if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses') {
+        if (tab === 'costing') {
+            if (currentUser?.role !== 'admin') {
+                return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins Only (BOM Costing is restricted)</div>;
+            }
+        } else if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses') {
             return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins and Billing Users Only</div>;
         }
         return <InvoiceModule 
@@ -505,6 +509,8 @@ const App: React.FC = () => {
             activeTab={tab}
             finishedGoods={finishedGoods}
             recipes={recipes}
+            setRecipes={setRecipes}
+            receivedGoods={receivedGoods}
             addLogEntry={addLogEntry}
         />;
     }
