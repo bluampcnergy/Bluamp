@@ -209,6 +209,18 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             const fixedInitialQty = editingGood.initialQuantity ?? localInitialMap[editingGood.id] ?? editingGood.quantity;
             const dateStr = new Date(editingGood.timestamp).toISOString().split('T')[0];
 
+            let manualCost = editingGood.unitCost ?? 0;
+            if (!manualCost || manualCost === 0) {
+                if (typeof editingGood.serialIndexMap?.__unitCost === 'number' && editingGood.serialIndexMap.__unitCost > 0) {
+                    manualCost = editingGood.serialIndexMap.__unitCost;
+                } else {
+                    try {
+                        const costMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
+                        manualCost = costMap[editingGood.id] || costMap['name:' + editingGood.name.trim().toLowerCase()] || 0;
+                    } catch (e) {}
+                }
+            }
+
             setFormData({
                 name: editingGood.name,
                 category: editingGood.category,
@@ -217,7 +229,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 quantity: editingGood.quantity,
                 initialQuantity: fixedInitialQty,
                 uom: editingGood.uom || 'qty',
-                unitCost: editingGood.unitCost ?? 0,
+                unitCost: manualCost,
                 lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
                 isIgnoredForAlerts: Boolean(editingGood.isIgnoredForAlerts),
                 status: editingGood.status as ReceivedGoodStatus,
@@ -1335,7 +1347,11 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                                     {/* Director Admin Unit Cost & Inventory Valuation Box */}
                                     {isDirectorAdmin && (
-                                        <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center justify-between my-2 text-xs">
+                                        <div
+                                            onClick={() => handleEditMaster(master)}
+                                            className="p-3 bg-emerald-50/80 hover:bg-emerald-100/90 rounded-xl border border-emerald-200/90 flex items-center justify-between my-2 text-xs cursor-pointer transition-all group/cost shadow-2xs"
+                                            title="Click to enter card and edit unit cost"
+                                        >
                                             <div>
                                                 <div className="flex items-center gap-1.5 text-emerald-900 font-bold">
                                                     <span>🏷️</span>
@@ -1345,30 +1361,15 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                                     Stock Value: <span className="font-mono font-bold text-slate-800">₹{((master.unitCost || 0) * master.totalQuantity).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                                                 </p>
                                             </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-slate-400 font-bold font-mono">₹</span>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    defaultValue={master.unitCost || 0}
-                                                    key={`${master.masterKey}-${master.unitCost || 0}`}
-                                                    onBlur={(e) => {
-                                                        const val = parseFloat(e.target.value);
-                                                        if (!isNaN(val) && val !== (master.unitCost || 0)) {
-                                                            handleUpdateMasterUnitCost(master, val);
-                                                        }
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            (e.target as HTMLInputElement).blur();
-                                                        }
-                                                    }}
-                                                    className="w-24 px-2 py-1 bg-white border border-emerald-300 rounded-lg text-right font-mono font-black text-slate-900 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden shadow-2xs"
-                                                    placeholder="0.00"
-                                                    title="Edit Unit Cost (Excl. GST). Automatically flows into BOM Cost Calculator."
-                                                />
-                                                <span className="text-[10px] text-slate-600 font-mono font-semibold">/{master.uom}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono font-black text-sm text-emerald-950 bg-white px-2.5 py-1 rounded-lg border border-emerald-300 shadow-2xs">
+                                                    ₹{(master.unitCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    <span className="text-[10px] text-slate-500 font-normal ml-1">/{master.uom}</span>
+                                                </span>
+                                                <span className="px-2 py-1 bg-white group-hover/cost:bg-emerald-700 group-hover/cost:text-white text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1">
+                                                    <PencilIcon />
+                                                    <span>Edit</span>
+                                                </span>
                                             </div>
                                         </div>
                                     )}
@@ -1793,7 +1794,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                         {isDirectorAdmin && (
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Unit Cost (₹ Excl. GST) • Director Admin</label>
+                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Purchase Unit Cost (₹ Excl. GST) • Director Admin</label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm font-mono">₹</span>
                                     <input
@@ -1806,6 +1807,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                         placeholder="0.00"
                                     />
                                 </div>
+                                <p className="text-[11px] text-emerald-700 mt-1">
+                                    Editable only by Director Admins. Automatically updates all batches for this item and flows into the BOM Cost Calculator in Finance.
+                                </p>
                             </div>
                         )}
 

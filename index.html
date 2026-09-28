@@ -58,7 +58,19 @@
     font-size: 0.75rem;
     font-weight: 700;
   }
+
+  /* Disable spin buttons and appearance quirks on all numeric inputs */
+  input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 </style>
+
 </head>
   <body>
     <div id="root"></div>
