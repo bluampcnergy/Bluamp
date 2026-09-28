@@ -1223,8 +1223,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 )}
             </div>
 
-            {/* Consolidated Master Item Cards Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Consolidated Master Item Cards Grid (Compact, high-density layout) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5">
                 {filteredMasterGoods.length === 0 ? (
                     <div className="col-span-full bg-white p-12 rounded-2xl border border-slate-100 text-center text-slate-400 text-sm italic">
                         No raw materials match the current filters. Click "Register Master Item" or adjust your search query.
@@ -1237,7 +1237,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         return (
                             <div
                                 key={master.masterKey}
-                                className={`bg-white rounded-2xl shadow-sm hover:shadow-md border p-6 flex flex-col justify-between transition-all duration-200 ${
+                                className={`bg-white rounded-xl shadow-xs hover:shadow-md border p-3.5 flex flex-col justify-between transition-all duration-200 ${
                                     master.isOutOfStock
                                         ? 'border-rose-300 bg-rose-50/10'
                                         : master.isLowStock
@@ -1247,99 +1247,95 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             >
                                 {/* Master Card Top Header */}
                                 <div>
-                                    <div className="flex justify-between items-start gap-2 mb-3">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                            <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md bg-[#8EBF45]/20 text-[#658C3E] border border-[#8EBF45]/40">
+                                    <div className="flex justify-between items-start gap-1.5 mb-2">
+                                        <div className="flex flex-wrap items-center gap-1 min-w-0">
+                                            <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-[#8EBF45]/20 text-[#658C3E] border border-[#8EBF45]/30">
                                                 {master.category}
                                             </span>
-                                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                                                Unit: {master.uom}
+                                            <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-slate-100 text-slate-600 border border-slate-200 font-mono">
+                                                {master.uom}
                                             </span>
-                                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-blue-50 text-blue-800 border border-blue-200">
-                                                📦 {master.batches.length} Inward {master.batches.length === 1 ? 'Batch' : 'Batches'}
+                                            <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded bg-blue-50 text-blue-800 border border-blue-200">
+                                                📦 {master.batches.length} {master.batches.length === 1 ? 'batch' : 'batches'}
                                             </span>
-                                        </div>
-
-                                        {/* Status / Alert Indicator & Card Action Buttons */}
-                                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                             {master.isIgnoredForAlerts ? (
-                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md border border-slate-300 bg-slate-100 text-slate-600">
-                                                    🚫 DO NOT REPLENISH
+                                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-slate-100 text-slate-600 border border-slate-300">
+                                                    NO ALERTS
                                                 </span>
                                             ) : master.isOutOfStock ? (
-                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-rose-100 text-rose-800 border border-rose-200">
-                                                    🚫 OUT OF STOCK
+                                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-rose-100 text-rose-800 border border-rose-200">
+                                                    OUT OF STOCK
                                                 </span>
                                             ) : master.isLowStock ? (
-                                                <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-md bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                                                    ⚠️ LOW STOCK ({master.lowStockThresholdPercent}%)
+                                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                                    LOW ({master.lowStockThresholdPercent}%)
                                                 </span>
                                             ) : null}
+                                        </div>
 
+                                        {/* Action Toolbar on Right */}
+                                        <div className="flex items-center gap-0.5 shrink-0">
                                             <button
                                                 onClick={() => handleToggleIgnoreReplenish(master.masterKey, master.isIgnoredForAlerts)}
-                                                className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition-colors ${
-                                                    master.isIgnoredForAlerts ? 'bg-slate-800 text-amber-300 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                                className={`p-1 rounded text-xs transition-colors ${
+                                                    master.isIgnoredForAlerts ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:text-slate-600'
                                                 }`}
-                                                title={master.isIgnoredForAlerts ? "Click to re-enable alerts" : "Click to silence stock alerts"}
+                                                title={master.isIgnoredForAlerts ? "Stock alerts silenced (click to re-enable)" : "Stock alerts active (click to silence)"}
                                             >
-                                                {master.isIgnoredForAlerts ? '🔕 Silenced' : '🔔 Alert On'}
+                                                {master.isIgnoredForAlerts ? '🔕' : '🔔'}
                                             </button>
 
-                                            {/* DIRECT MASTER EDIT BUTTON */}
                                             <button
                                                 onClick={() => handleEditMaster(master)}
-                                                className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-[#8EBF45] hover:text-[#0D0D0D] text-slate-700 text-xs font-bold rounded-lg border border-slate-200 transition-colors shadow-2xs"
-                                                title="Edit Master Item Details & Quantities"
+                                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                                                title="Edit Master Item Details & Batches"
                                             >
                                                 <PencilIcon />
-                                                <span>Edit</span>
                                             </button>
 
-                                            {/* DIRECT MASTER DELETE BUTTON */}
                                             <button
                                                 onClick={() => handleDeleteMaster(master)}
-                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200"
-                                                title={`Delete ${master.name} (all ${master.batches.length} batch(es))`}
+                                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                title={`Delete ${master.name} (all batches)`}
                                             >
-                                                <Trash2 size={14} />
+                                                <Trash2 size={13} />
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* Master Item Title & Specs */}
-                                    <div className="mb-4">
-                                        <h3 className="font-bold text-lg text-slate-900 leading-tight">
+                                    <div className="mb-2">
+                                        <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-1" title={master.name}>
                                             {master.name}
                                         </h3>
 
-                                        {master.makeModels.length > 0 && (
-                                            <p className="text-xs text-[#658C3E] font-black uppercase tracking-wider mt-1">
-                                                {master.makeModels.join(' • ')}
-                                            </p>
-                                        )}
-
-                                        {master.suppliers.length > 0 && (
-                                            <p className="text-[11px] text-slate-500 mt-1">
-                                                <span className="font-bold text-slate-600">Suppliers: </span>
-                                                <span>{master.suppliers.join(', ')}</span>
-                                            </p>
-                                        )}
+                                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5 truncate">
+                                            {master.makeModels.length > 0 && (
+                                                <span className="font-bold text-[#658C3E] uppercase shrink-0 truncate max-w-[120px]" title={master.makeModels.join(' • ')}>
+                                                    {master.makeModels.join(' • ')}
+                                                </span>
+                                            )}
+                                            {master.makeModels.length > 0 && master.suppliers.length > 0 && <span className="text-slate-300">•</span>}
+                                            {master.suppliers.length > 0 && (
+                                                <span className="truncate" title={master.suppliers.join(', ')}>
+                                                    🏢 {master.suppliers.join(', ')}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Total Stock on Hand Counter */}
-                                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between my-3">
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Plant Stock on Hand</p>
-                                            <p className="text-[11px] text-slate-500 mt-0.5">Across {master.batches.length} inward shipments</p>
-                                        </div>
+                                    <div className="py-1.5 px-2.5 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between my-1.5">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                            Stock on Hand
+                                        </span>
                                         <div className="text-right">
-                                            <span className={`text-2xl font-black font-mono ${
+                                            <span className={`text-base font-black font-mono ${
                                                 master.totalQuantity === 0 ? 'text-red-500' : 'text-[#658C3E]'
                                             }`}>
                                                 {master.totalQuantity.toLocaleString('en-IN')}
                                             </span>
-                                            <span className="text-xs font-bold text-slate-600 uppercase font-mono ml-1">
+                                            <span className="text-[10px] font-bold text-slate-600 uppercase font-mono ml-1">
                                                 {master.uom}
                                             </span>
                                         </div>
@@ -1349,35 +1345,28 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     {isDirectorAdmin && (
                                         <div
                                             onClick={() => handleEditMaster(master)}
-                                            className="p-3 bg-emerald-50/80 hover:bg-emerald-100/90 rounded-xl border border-emerald-200/90 flex items-center justify-between my-2 text-xs cursor-pointer transition-all group/cost shadow-2xs"
+                                            className="px-2.5 py-1.5 bg-emerald-50/80 hover:bg-emerald-100/90 rounded-lg border border-emerald-200/90 flex items-center justify-between text-xs cursor-pointer transition-all group/cost shadow-2xs my-1.5"
                                             title="Click to enter card and edit unit cost"
                                         >
-                                            <div>
-                                                <div className="flex items-center gap-1.5 text-emerald-900 font-bold">
-                                                    <span>🏷️</span>
-                                                    <span className="uppercase tracking-wider text-[10px]">Purchase Unit Cost (Excl. GST) • Director Admin</span>
-                                                </div>
-                                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                                    Stock Value: <span className="font-mono font-bold text-slate-800">₹{((master.unitCost || 0) * master.totalQuantity).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-mono font-black text-sm text-emerald-950 bg-white px-2.5 py-1 rounded-lg border border-emerald-300 shadow-2xs">
-                                                    ₹{(master.unitCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                    <span className="text-[10px] text-slate-500 font-normal ml-1">/{master.uom}</span>
+                                            <div className="min-w-0 pr-1">
+                                                <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider block truncate">
+                                                    🏷️ Cost: <span className="font-mono font-black text-emerald-950">₹{(master.unitCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>/{master.uom}
                                                 </span>
-                                                <span className="px-2 py-1 bg-white group-hover/cost:bg-emerald-700 group-hover/cost:text-white text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1">
-                                                    <PencilIcon />
-                                                    <span>Edit</span>
+                                                <span className="text-[10px] text-slate-500 block truncate">
+                                                    Stock Val: <span className="font-mono font-bold text-slate-800">₹{((master.unitCost || 0) * master.totalQuantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                                 </span>
                                             </div>
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-white text-emerald-800 group-hover/cost:bg-emerald-700 group-hover/cost:text-white rounded border border-emerald-300 transition-colors shrink-0 flex items-center gap-0.5 shadow-2xs">
+                                                <PencilIcon />
+                                                <span>Edit</span>
+                                            </span>
                                         </div>
                                     )}
 
                                     {/* Tracked serials progress if Cell */}
                                     {isTracked && (
-                                        <div className="my-3 text-xs flex justify-between items-center text-slate-600">
-                                            <span className="font-bold text-slate-500">Tracked Cell Serials:</span>
+                                        <div className="py-1 text-[10px] flex justify-between items-center text-slate-600">
+                                            <span className="font-bold text-slate-500">Tracked Cells:</span>
                                             <span className="font-mono font-bold text-[#658C3E]">
                                                 {master.totalSerials} / {master.totalQuantity} {master.uom}
                                             </span>
@@ -1385,68 +1374,67 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                     )}
 
                                     {/* Expandable Inward Batch History Section */}
-                                    <div className="mt-4 border-t border-slate-100 pt-3">
+                                    <div className="mt-2 border-t border-slate-100 pt-1.5">
                                         <button
                                             onClick={() => toggleExpandMaster(master.masterKey)}
-                                            className="w-full flex items-center justify-between text-xs font-black text-slate-700 hover:text-slate-900 py-1"
+                                            className="w-full flex items-center justify-between text-[11px] font-bold text-slate-600 hover:text-slate-900 py-0.5"
                                         >
-                                            <span className="flex items-center gap-1.5">
+                                            <span className="flex items-center gap-1">
                                                 <span>📋</span>
-                                                <span>Inward Batches & Invoices ({master.batches.length})</span>
+                                                <span>Batches ({master.batches.length})</span>
                                             </span>
-                                            <span className="text-slate-400 font-mono text-[11px]">
-                                                {isExpanded ? '▲ Hide History' : '▼ View History'}
+                                            <span className="text-slate-400 font-mono text-[10px]">
+                                                {isExpanded ? '▲ Hide' : '▼ View'}
                                             </span>
                                         </button>
 
                                         {isExpanded && (
-                                            <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                                            <div className="mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
                                                 {master.batches.map((batch, bIdx) => (
                                                     <div
                                                         key={batch.id || bIdx}
-                                                        className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-400 transition-all text-xs"
+                                                        className="p-2 bg-slate-50/70 rounded-lg border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all text-xs"
                                                     >
-                                                        <div className="flex justify-between items-start gap-2">
+                                                        <div className="flex justify-between items-start gap-1.5">
                                                             <div className="space-y-0.5 flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-mono font-black text-slate-900">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-mono font-bold text-slate-700 text-[10px]">
                                                                         #{bIdx + 1}
                                                                     </span>
-                                                                    <span className="font-bold text-slate-800 truncate">
-                                                                        {batch.invoiceNumber ? `Invoice: ${batch.invoiceNumber}` : 'Manual Entry'}
+                                                                    <span className="font-semibold text-slate-800 text-[11px] truncate">
+                                                                        {batch.invoiceNumber ? `Inv: ${batch.invoiceNumber}` : 'Manual'}
                                                                     </span>
-                                                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                                                                    <span className={`px-1 py-0.2 rounded text-[8px] font-black ${
                                                                         statusInfo[batch.status]?.color || 'bg-slate-100 text-slate-700'
                                                                     }`}>
                                                                         {statusInfo[batch.status]?.text || batch.status}
                                                                     </span>
                                                                 </div>
 
-                                                                <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                                <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                                                     <span>📅 {new Date(batch.timestamp).toLocaleDateString()}</span>
-                                                                    {batch.supplier && <span>🏢 {batch.supplier}</span>}
-                                                                    {batch.makeModel && <span>🏷️ {batch.makeModel}</span>}
+                                                                    {batch.supplier && <span className="truncate max-w-[100px]">🏢 {batch.supplier}</span>}
                                                                     {isAdmin && batch.unitCost !== undefined && batch.unitCost > 0 && (
-                                                                        <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                                                            @ ₹{batch.unitCost.toLocaleString('en-IN')} / {batch.uom || master.uom}
+                                                                        <span className="text-emerald-700 font-mono font-bold">
+                                                                            @ ₹{batch.unitCost.toLocaleString('en-IN')}
                                                                         </span>
                                                                     )}
                                                                 </div>
                                                             </div>
 
                                                             <div className="flex items-center gap-1 shrink-0">
-                                                                <div className="text-right font-mono mr-1">
-                                                                    <span className="font-black text-slate-900 text-sm">
+                                                                <div className="text-right font-mono mr-0.5">
+                                                                    <span className="font-bold text-slate-900 text-xs">
                                                                         {batch.quantity}
                                                                     </span>
-                                                                    <span className="text-[10px] text-slate-500 ml-0.5">
+                                                                    <span className="text-[9px] text-slate-500 ml-0.5">
                                                                         {batch.uom || master.uom}
                                                                     </span>
                                                                 </div>
 
                                                                 <button
                                                                     onClick={() => handleEditBatch(batch)}
-                                                                    className="p-1.5 text-slate-400 hover:text-[#658C3E] hover:bg-slate-100 rounded-lg transition-colors"
+                                                                    className="p-1 text-slate-400 hover:text-[#658C3E] hover:bg-white rounded transition-colors"
                                                                     title="Edit this batch entry"
                                                                 >
                                                                     <PencilIcon />
@@ -1454,10 +1442,10 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
                                                                 <button
                                                                     onClick={() => handleDeleteBatchDirect(batch)}
-                                                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                                                                     title="Delete this inward batch"
                                                                 >
-                                                                    <Trash2 size={13} />
+                                                                    <Trash2 size={12} />
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -1469,34 +1457,32 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                 </div>
 
                                 {/* Card Bottom Actions Bar */}
-                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <button
-                                            onClick={() => handleAddBatchToMaster(master)}
-                                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs"
-                                            title="Add new inward shipment / invoice batch to this master item"
-                                        >
-                                            <PlusIcon className="w-3.5 h-3.5" />
-                                            <span>Add Inward Batch</span>
-                                        </button>
+                                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                                    <button
+                                        onClick={() => handleAddBatchToMaster(master)}
+                                        className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1 shadow-2xs"
+                                        title="Add new inward shipment / invoice batch to this master item"
+                                    >
+                                        <PlusIcon className="w-3 h-3" />
+                                        <span>+ Inward</span>
+                                    </button>
 
-                                        <button
-                                            onClick={() => handleEditMaster(master)}
-                                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200"
-                                            title="Edit Master Item Details & Batches"
-                                        >
-                                            <PencilIcon />
-                                            <span>Edit Item</span>
-                                        </button>
-                                    </div>
+                                    <button
+                                        onClick={() => handleEditMaster(master)}
+                                        className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 border border-slate-200"
+                                        title="Edit Master Item Details & Batches"
+                                    >
+                                        <PencilIcon />
+                                        <span>Edit</span>
+                                    </button>
 
                                     {isTracked && setView && (
                                         <button
                                             onClick={() => setView('testing')}
-                                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                                            className="py-1.5 px-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
                                             title="Open Cell Testing for this master item"
                                         >
-                                            <span>🧪 Test Cells</span>
+                                            <span>🧪 Tests</span>
                                         </button>
                                     )}
                                 </div>
@@ -1504,6 +1490,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         );
                     })
                 )}
+
             </div>
 
             {/* Modal for Registering Master Item / Inward Batch */}
