@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
-import type { Recipe, RecipeComponent, PriceListItem, ReceivedGood } from '../../types';
+import type { Recipe, RecipeComponent, PriceListItem, ReceivedGood, User } from '../../types';
 
 interface BomCostCalculatorProps {
+  currentUser?: User | null;
   recipes: Recipe[];
   setRecipes?: React.Dispatch<React.SetStateAction<Recipe[]>>;
   priceList: PriceListItem[];
@@ -22,6 +23,7 @@ interface ComponentRow {
 }
 
 export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
+  currentUser,
   recipes = [],
   setRecipes,
   priceList = [],
@@ -30,22 +32,26 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
   addLogEntry,
   onSwitchToPriceList,
 }) => {
+  if (currentUser && currentUser.role !== 'admin') {
+    return (
+      <div className="text-center p-8 bg-white rounded-xl shadow-xs border border-rose-200 text-rose-600 font-bold m-4">
+        🔒 Access Denied: Director Admins Only (BOM Cost Calculator is restricted).
+      </div>
+    );
+  }
+
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>('');
   const [skuName, setSkuName] = useState<string>('Custom Battery Pack');
   const [hsnCode, setHsnCode] = useState<string>('85076000');
   
-  // Component rows in spreadsheet
+  // Component rows in spreadsheet - initialized fresh with 0 cost
   const [rows, setRows] = useState<ComponentRow[]>([
-    { id: 'row-1', name: '3.2V 6000mAh LFP Cylindrical Cell', qty: 8, uom: 'pcs', unitCost: 185 },
-    { id: 'row-2', name: '4S 20A Smart BMS with Balance', qty: 1, uom: 'pcs', unitCost: 450 },
-    { id: 'row-3', name: 'Pure Nickel Strip 0.15mm', qty: 2, uom: 'm', unitCost: 25 },
-    { id: 'row-4', name: 'ABS Plastic Casing & Brackets', qty: 1, uom: 'set', unitCost: 160 },
-    { id: 'row-5', name: 'Wiring Harness & XT60 Connector', qty: 1, uom: 'set', unitCost: 55 },
+    { id: 'row-1', name: '', qty: 1, uom: 'pcs', unitCost: 0 },
   ]);
 
-  // Overheads
-  const [laborCost, setLaborCost] = useState<number>(120);
-  const [packagingCost, setPackagingCost] = useState<number>(65);
+  // Overheads - start fresh at 0
+  const [laborCost, setLaborCost] = useState<number>(0);
+  const [packagingCost, setPackagingCost] = useState<number>(0);
 
   // Margins
   const [customMarginPercent, setCustomMarginPercent] = useState<number>(20);
@@ -68,14 +74,14 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
     }, 4000);
   };
 
-  // Helper to find latest purchase cost for a component name from receivedGoods or purchase invoices
+  // Helper to find latest purchase cost for a component name from receivedGoods manual unit costs
   const findSuggestedCost = (name: string, receivedGoodId?: string): number | undefined => {
     if (!name?.trim() && !receivedGoodId) return undefined;
     const cleanName = (name || '').toLowerCase().trim();
 
-    // 1. Check local storage cache map
+    // 1. Check local manual storage cache map
     try {
-      const localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+      const localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
       if (receivedGoodId && typeof localCostMap[receivedGoodId] === 'number' && localCostMap[receivedGoodId] > 0) {
         return localCostMap[receivedGoodId];
       }
@@ -672,7 +678,7 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
                             <button
                               onClick={() => updateRow(row.id, 'unitCost', row.suggestedCost)}
                               className="text-[9px] bg-amber-100 hover:bg-amber-200 text-amber-800 px-1 py-0.5 rounded font-bold whitespace-nowrap"
-                              title="Click to apply recent invoice purchase cost"
+                              title="Click to apply raw material manual unit cost"
                             >
                               ₹{row.suggestedCost}
                             </button>

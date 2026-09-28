@@ -96,7 +96,8 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     wipItems, setWipItems, finishedGoods, setFinishedGoods, companyProfiles,
     testResults, setTestResults, currentUser, setView, setInvoiceDraft
 }) => {
-    const isAdmin = currentUser?.role === 'admin';
+    const isDirectorAdmin = currentUser?.role === 'admin';
+    const isAdmin = isDirectorAdmin;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingGood, setEditingGood] = useState<ReceivedGood | null>(null);
     const [inwardBatchMasterTarget, setInwardBatchMasterTarget] = useState<MasterGroupedGood | null>(null);
@@ -363,7 +364,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         const map = new Map<string, MasterGroupedGood>();
         let localCostMap: Record<string, number> = {};
         try {
-            localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+            localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
         } catch (e) {}
 
         receivedGoods.forEach(good => {
@@ -551,16 +552,20 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     };
 
     const handleUpdateMasterUnitCost = (master: MasterGroupedGood, newCost: number) => {
+        if (!isDirectorAdmin) {
+            alert('Access Denied: Only Director Admins can update raw material unit purchase costs.');
+            return;
+        }
         const cost = Math.max(0, Number(newCost) || 0);
 
         // 1. Update localStorage cache map for instant access & offline persistence
         try {
-            const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+            const costMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
             costMap['name:' + master.masterKey] = cost;
             master.batches.forEach(b => {
                 if (b.id) costMap[b.id] = cost;
             });
-            localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
+            localStorage.setItem('dc_raw_material_manual_unit_costs_map', JSON.stringify(costMap));
         } catch (e) {}
 
         // 2. Update state & serialIndexMap metadata for persistence to Supabase
@@ -579,7 +584,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             return item;
         }));
 
-        addLogEntry('Updated Raw Material Cost', `Updated purchase unit cost for "${master.name}" to ₹${cost.toFixed(2)} / ${master.uom}`);
+        addLogEntry('Updated Raw Material Cost', `[Director Admin] Updated unit purchase cost for "${master.name}" to ₹${cost.toFixed(2)} / ${master.uom}`);
     };
 
     const handleDeleteMaster = (master: MasterGroupedGood) => {
@@ -759,17 +764,21 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
         // Prepare Received Good (cleanly omitting invoiceDate from the persistent object)
         const { invoiceDate, ...cleanFormData } = formData;
-        const finalUnitCost = Number(formData.unitCost) || 0;
+        const finalUnitCost = isDirectorAdmin 
+            ? (Number(formData.unitCost) || 0) 
+            : (editingGood?.unitCost || 0);
 
-        // Persist unit cost to local map for immediate caching
-        try {
-            const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
-            costMap[goodId] = finalUnitCost;
-            if (formData.name) {
-                costMap['name:' + formData.name.trim().toLowerCase()] = finalUnitCost;
-            }
-            localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
-        } catch (e) {}
+        // Persist unit cost to local map for immediate caching (only if Director Admin)
+        if (isDirectorAdmin) {
+            try {
+                const costMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
+                costMap[goodId] = finalUnitCost;
+                if (formData.name) {
+                    costMap['name:' + formData.name.trim().toLowerCase()] = finalUnitCost;
+                }
+                localStorage.setItem('dc_raw_material_manual_unit_costs_map', JSON.stringify(costMap));
+            } catch (e) {}
+        }
 
         const newGood: ReceivedGood = {
             ...cleanFormData,
@@ -1324,13 +1333,13 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Admin Unit Cost & Inventory Valuation Box */}
-                                    {isAdmin && (
+                                    {/* Director Admin Unit Cost & Inventory Valuation Box */}
+                                    {isDirectorAdmin && (
                                         <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center justify-between my-2 text-xs">
                                             <div>
                                                 <div className="flex items-center gap-1.5 text-emerald-900 font-bold">
                                                     <span>🏷️</span>
-                                                    <span className="uppercase tracking-wider text-[10px]">Purchase Unit Cost (Excl. GST)</span>
+                                                    <span className="uppercase tracking-wider text-[10px]">Purchase Unit Cost (Excl. GST) • Director Admin</span>
                                                 </div>
                                                 <p className="text-[11px] text-slate-500 mt-0.5">
                                                     Stock Value: <span className="font-mono font-bold text-slate-800">₹{((master.unitCost || 0) * master.totalQuantity).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
@@ -1782,9 +1791,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                             </select>
                         </div>
 
-                        {isAdmin && (
+                        {isDirectorAdmin && (
                             <div>
-                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Unit Cost (₹ Excl. GST)</label>
+                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Unit Cost (₹ Excl. GST) • Director Admin</label>
                                 <div className="relative">
                                     <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm font-mono">₹</span>
                                     <input

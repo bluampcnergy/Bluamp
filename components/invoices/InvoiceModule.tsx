@@ -1169,6 +1169,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                         </div>
                     ) : (
                         <BomCostCalculator 
+                            currentUser={currentUser}
                             recipes={recipes}
                             setRecipes={setRecipes}
                             priceList={priceList}

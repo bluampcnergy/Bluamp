@@ -41,12 +41,12 @@ const sanitizeForUpload = (tableName: string, item: any): any => {
         __unitCost: item.unitCost,
       };
       try {
-        const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+        const costMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
         costMap[item.id] = item.unitCost;
         if (item.name) {
           costMap['name:' + item.name.trim().toLowerCase()] = item.unitCost;
         }
-        localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
+        localStorage.setItem('dc_raw_material_manual_unit_costs_map', JSON.stringify(costMap));
       } catch (e) {}
     }
 
@@ -84,7 +84,7 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
     try {
       localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
       localInitialQtyMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
-      localUnitCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+      localUnitCostMap = JSON.parse(localStorage.getItem('dc_raw_material_manual_unit_costs_map') || '{}');
     } catch (e) {
       localIgnoredMap = {};
       localInitialQtyMap = {};
@@ -121,9 +121,11 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
       const isIgnoredForAlerts = dbIgnoredVal !== undefined ? dbIgnoredVal : Boolean(localIgnoredMap[item.id]);
       const uom = item.uom || item.unit || 'qty';
 
-      // Rehydrate unit cost from DB serialIndexMap.__unitCost or local map
-      let unitCost = typeof item.unitCost === 'number' && item.unitCost > 0 ? item.unitCost : undefined;
-      if (unitCost === undefined && item.serialIndexMap && typeof item.serialIndexMap.__unitCost === 'number') {
+      // Rehydrate unit cost from DB column (if migration run), serialIndexMap.__unitCost, or manual local map
+      let unitCost = typeof item.unit_cost === 'number' && item.unit_cost > 0
+        ? item.unit_cost
+        : (typeof item.unitCost === 'number' && item.unitCost > 0 ? item.unitCost : undefined);
+      if (unitCost === undefined && item.serialIndexMap && typeof item.serialIndexMap.__unitCost === 'number' && item.serialIndexMap.__unitCost > 0) {
         unitCost = item.serialIndexMap.__unitCost;
       }
       if (unitCost === undefined && item.id && localUnitCostMap[item.id] !== undefined) {
