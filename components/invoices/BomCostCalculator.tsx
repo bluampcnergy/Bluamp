@@ -69,20 +69,75 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
   };
 
   // Helper to find latest purchase cost for a component name from receivedGoods or purchase invoices
-  const findSuggestedCost = (name: string): number | undefined => {
-    if (!name.trim()) return undefined;
-    const cleanName = name.toLowerCase().trim();
-    // 1. Check receivedGoods matching name or makeModel
-    const matchedGood = (receivedGoods || []).find(g => 
-      g.name.toLowerCase().includes(cleanName) || 
-      cleanName.includes(g.name.toLowerCase()) ||
-      (g.makeModel && cleanName.includes(g.makeModel.toLowerCase()))
-    );
-    if (matchedGood) {
-      // In some inventory systems unitPrice is recorded in custom field or we check invoice details
-      return undefined;
+  const findSuggestedCost = (name: string, receivedGoodId?: string): number | undefined => {
+    if (!name?.trim() && !receivedGoodId) return undefined;
+    const cleanName = (name || '').toLowerCase().trim();
+
+    // 1. Check local storage cache map
+    try {
+      const localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+      if (receivedGoodId && typeof localCostMap[receivedGoodId] === 'number' && localCostMap[receivedGoodId] > 0) {
+        return localCostMap[receivedGoodId];
+      }
+      if (cleanName && typeof localCostMap['name:' + cleanName] === 'number' && localCostMap['name:' + cleanName] > 0) {
+        return localCostMap['name:' + cleanName];
+      }
+    } catch (e) {}
+
+    // 2. Check receivedGoods matching id, exact name, or partial name
+    const goods = receivedGoods || [];
+    if (receivedGoodId) {
+      const g = goods.find(item => item.id === receivedGoodId);
+      if (g && typeof g.unitCost === 'number' && g.unitCost > 0) return g.unitCost;
+      if (g && g.serialIndexMap && typeof g.serialIndexMap.__unitCost === 'number' && g.serialIndexMap.__unitCost > 0) {
+        return g.serialIndexMap.__unitCost;
+      }
     }
+
+    // Exact name match
+    const exactMatch = goods.find(g => (g.name || '').trim().toLowerCase() === cleanName && typeof g.unitCost === 'number' && g.unitCost > 0);
+    if (exactMatch) return exactMatch.unitCost;
+
+    // Check serialIndexMap.__unitCost on exact match
+    const exactSerialCost = goods.find(g => (g.name || '').trim().toLowerCase() === cleanName && g.serialIndexMap && typeof g.serialIndexMap.__unitCost === 'number' && g.serialIndexMap.__unitCost > 0);
+    if (exactSerialCost) return exactSerialCost.serialIndexMap!.__unitCost;
+
+    // Fuzzy / substring match
+    const partialMatch = goods.find(g => {
+      const gName = (g.name || '').toLowerCase();
+      const hasCost = (typeof g.unitCost === 'number' && g.unitCost > 0) || (g.serialIndexMap && typeof g.serialIndexMap.__unitCost === 'number' && g.serialIndexMap.__unitCost > 0);
+      return hasCost && (gName.includes(cleanName) || cleanName.includes(gName) || (g.makeModel && cleanName.includes(g.makeModel.toLowerCase())));
+    });
+    if (partialMatch) {
+      return (typeof partialMatch.unitCost === 'number' && partialMatch.unitCost > 0) 
+        ? partialMatch.unitCost 
+        : partialMatch.serialIndexMap?.__unitCost;
+    }
+
     return undefined;
+  };
+
+  // Sync all BOM component costs with current raw materials inventory
+  const handleSyncAllFromRawMaterials = () => {
+    let updatedCount = 0;
+    setRows(prev => prev.map(r => {
+      const suggested = findSuggestedCost(r.name);
+      if (suggested !== undefined && suggested > 0) {
+        updatedCount++;
+        return {
+          ...r,
+          unitCost: suggested,
+          suggestedCost: suggested
+        };
+      }
+      return r;
+    }));
+
+    if (updatedCount > 0) {
+      showToast(`🔄 Synced ${updatedCount} component cost(s) from Raw Materials!`, 'success');
+    } else {
+      showToast('No matching raw material unit costs found in inventory.', 'info');
+    }
   };
 
   // When a Recipe is selected from dropdown, load its components into the spreadsheet
@@ -114,13 +169,17 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
           const g = (receivedGoods || []).find(item => item.id === comp.receivedGoodId);
           name = g ? g.name : `Component ${idx + 1}`;
         }
+        const suggested = findSuggestedCost(name, comp.receivedGoodId);
+        // If comp.unitCost is 0 or undefined, automatically default to raw material purchase cost
+        const initialCost = (comp.unitCost !== undefined && comp.unitCost > 0) ? comp.unitCost : (suggested || 0);
+
         return {
           id: `comp-${idx}-${Date.now()}`,
           name: name || `Component ${idx + 1}`,
           qty: comp.quantityPerUnit || 1,
           uom: comp.uom || 'pcs',
-          unitCost: comp.unitCost || 0,
-          suggestedCost: findSuggestedCost(name),
+          unitCost: initialCost,
+          suggestedCost: suggested,
         };
       });
       setRows(newRows);
@@ -553,6 +612,14 @@ export const BomCostCalculator: React.FC<BomCostCalculatorProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-3 font-sans">
+              <button
+                type="button"
+                onClick={handleSyncAllFromRawMaterials}
+                className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-bold text-[10px] rounded transition flex items-center gap-1 shadow-2xs"
+                title="Auto-fetch and sync latest unit purchase costs from Raw Material Inventory"
+              >
+                <span>🔄</span> Sync from Raw Materials
+              </button>
               <span className="text-slate-500">Raw Subtotal:</span>
               <span className="font-mono font-bold text-slate-900 text-xs">
                 ₹{rawMaterialTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

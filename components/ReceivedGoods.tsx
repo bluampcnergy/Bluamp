@@ -38,6 +38,7 @@ export interface MasterGroupedGood {
     totalQuantity: number;
     totalInitialQuantity: number;
     uom: string;
+    unitCost?: number; // Internal unit cost excluding GST (₹)
     lowStockThresholdPercent: number;
     isIgnoredForAlerts: boolean;
     status: ReceivedGoodStatus | string;
@@ -67,6 +68,7 @@ const initialFormState: Omit<ReceivedGood, 'id' | 'timestamp' | 'serials'> & { s
     quantity: 0,
     initialQuantity: 0,
     uom: 'qty',
+    unitCost: 0,
     lowStockThresholdPercent: 20,
     isIgnoredForAlerts: false,
     status: ReceivedGoodStatus.ND,
@@ -94,6 +96,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     wipItems, setWipItems, finishedGoods, setFinishedGoods, companyProfiles,
     testResults, setTestResults, currentUser, setView, setInvoiceDraft
 }) => {
+    const isAdmin = currentUser?.role === 'admin';
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingGood, setEditingGood] = useState<ReceivedGood | null>(null);
     const [inwardBatchMasterTarget, setInwardBatchMasterTarget] = useState<MasterGroupedGood | null>(null);
@@ -213,6 +216,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 quantity: editingGood.quantity,
                 initialQuantity: fixedInitialQty,
                 uom: editingGood.uom || 'qty',
+                unitCost: editingGood.unitCost ?? 0,
                 lowStockThresholdPercent: editingGood.lowStockThresholdPercent ?? 20,
                 isIgnoredForAlerts: Boolean(editingGood.isIgnoredForAlerts),
                 status: editingGood.status as ReceivedGoodStatus,
@@ -252,6 +256,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 name: inwardBatchMasterTarget.name,
                 category: inwardBatchMasterTarget.category,
                 uom: inwardBatchMasterTarget.uom || 'qty',
+                unitCost: inwardBatchMasterTarget.unitCost ?? 0,
                 lowStockThresholdPercent: inwardBatchMasterTarget.lowStockThresholdPercent ?? 20,
                 supplier: inwardBatchMasterTarget.suppliers[0] || '',
                 makeModel: inwardBatchMasterTarget.makeModels[0] || '',
@@ -356,6 +361,10 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
     // Group Raw Materials into Master Item Cards
     const masterGroupedGoods: MasterGroupedGood[] = useMemo(() => {
         const map = new Map<string, MasterGroupedGood>();
+        let localCostMap: Record<string, number> = {};
+        try {
+            localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+        } catch (e) {}
 
         receivedGoods.forEach(good => {
             const rawName = (good.name || '').trim();
@@ -369,6 +378,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 const threshold = good.lowStockThresholdPercent ?? 20;
                 const isOutOfStock = qty <= 0;
                 const isLowStock = !good.isIgnoredForAlerts && (qty <= (initQty * (threshold / 100)));
+                const uCost = (typeof good.unitCost === 'number' && good.unitCost > 0)
+                    ? good.unitCost
+                    : (localCostMap[good.id] ?? localCostMap['name:' + key] ?? 0);
 
                 map.set(key, {
                     masterKey: key,
@@ -377,6 +389,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                     totalQuantity: qty,
                     totalInitialQuantity: initQty,
                     uom: good.uom || 'qty',
+                    unitCost: uCost,
                     lowStockThresholdPercent: threshold,
                     isIgnoredForAlerts: Boolean(good.isIgnoredForAlerts),
                     status: good.status,
@@ -399,6 +412,9 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 if (good.makeModel && !existing.makeModels.includes(good.makeModel)) {
                     existing.makeModels.push(good.makeModel);
                 }
+                if (typeof good.unitCost === 'number' && good.unitCost > 0 && (!existing.unitCost || existing.unitCost === 0)) {
+                    existing.unitCost = good.unitCost;
+                }
                 existing.batches.push(good);
                 existing.latestTimestamp = Math.max(existing.latestTimestamp, good.timestamp);
                 existing.earliestTimestamp = Math.min(existing.earliestTimestamp, good.timestamp);
@@ -414,6 +430,14 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
             group.batches.sort((a, b) => b.timestamp - a.timestamp);
             group.isOutOfStock = group.totalQuantity <= 0;
             group.isLowStock = !group.isIgnoredForAlerts && (group.totalQuantity <= (group.totalInitialQuantity * (group.lowStockThresholdPercent / 100)));
+            
+            // Pick unit cost from newest batch with cost > 0 or local cost map fallback
+            const batchWithCost = group.batches.find(b => typeof b.unitCost === 'number' && b.unitCost > 0);
+            if (batchWithCost && typeof batchWithCost.unitCost === 'number') {
+                group.unitCost = batchWithCost.unitCost;
+            } else if (!group.unitCost || group.unitCost === 0) {
+                group.unitCost = localCostMap['name:' + group.masterKey] || 0;
+            }
         });
 
         return Array.from(map.values()).sort((a, b) => b.latestTimestamp - a.latestTimestamp);
@@ -524,6 +548,38 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
         setEditingGood(batch);
         setInwardBatchMasterTarget(null);
         setIsModalOpen(true);
+    };
+
+    const handleUpdateMasterUnitCost = (master: MasterGroupedGood, newCost: number) => {
+        const cost = Math.max(0, Number(newCost) || 0);
+
+        // 1. Update localStorage cache map for instant access & offline persistence
+        try {
+            const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+            costMap['name:' + master.masterKey] = cost;
+            master.batches.forEach(b => {
+                if (b.id) costMap[b.id] = cost;
+            });
+            localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
+        } catch (e) {}
+
+        // 2. Update state & serialIndexMap metadata for persistence to Supabase
+        const targetIds = new Set(master.batches.map(b => b.id));
+        setReceivedGoods(prev => prev.map(item => {
+            if (targetIds.has(item.id) || (item.name && item.name.trim().toLowerCase() === master.masterKey)) {
+                return {
+                    ...item,
+                    unitCost: cost,
+                    serialIndexMap: {
+                        ...(item.serialIndexMap || {}),
+                        __unitCost: cost
+                    }
+                };
+            }
+            return item;
+        }));
+
+        addLogEntry('Updated Raw Material Cost', `Updated purchase unit cost for "${master.name}" to ₹${cost.toFixed(2)} / ${master.uom}`);
     };
 
     const handleDeleteMaster = (master: MasterGroupedGood) => {
@@ -703,15 +759,31 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
 
         // Prepare Received Good (cleanly omitting invoiceDate from the persistent object)
         const { invoiceDate, ...cleanFormData } = formData;
+        const finalUnitCost = Number(formData.unitCost) || 0;
+
+        // Persist unit cost to local map for immediate caching
+        try {
+            const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+            costMap[goodId] = finalUnitCost;
+            if (formData.name) {
+                costMap['name:' + formData.name.trim().toLowerCase()] = finalUnitCost;
+            }
+            localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
+        } catch (e) {}
+
         const newGood: ReceivedGood = {
             ...cleanFormData,
             id: goodId,
             initialQuantity: initialQty,
+            unitCost: finalUnitCost,
             lowStockThresholdPercent: formData.lowStockThresholdPercent ?? 20,
             isIgnoredForAlerts: Boolean(formData.isIgnoredForAlerts),
             timestamp: batchTimestamp,
             serials: validSerials,
-            serialIndexMap: isCell ? serialIndexMap : undefined
+            serialIndexMap: {
+                ...(isCell && serialIndexMap ? serialIndexMap : {}),
+                __unitCost: finalUnitCost
+            }
         };
 
         // Prepare Test Results (Only for Cells)
@@ -759,6 +831,7 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                 (editingGood.name.trim() !== newGood.name.trim()) || 
                 (editingGood.category !== newGood.category) ||
                 (editingGood.uom !== newGood.uom) ||
+                (editingGood.unitCost !== newGood.unitCost) ||
                 (editingGood.lowStockThresholdPercent !== newGood.lowStockThresholdPercent) ||
                 (Boolean(editingGood.isIgnoredForAlerts) !== Boolean(newGood.isIgnoredForAlerts));
 
@@ -770,6 +843,11 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                         name: newGood.name,
                         category: newGood.category,
                         uom: newGood.uom,
+                        unitCost: newGood.unitCost,
+                        serialIndexMap: {
+                            ...(g.serialIndexMap || {}),
+                            __unitCost: newGood.unitCost
+                        },
                         lowStockThresholdPercent: newGood.lowStockThresholdPercent,
                         isIgnoredForAlerts: newGood.isIgnoredForAlerts
                     };
@@ -1246,6 +1324,46 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                         </div>
                                     </div>
 
+                                    {/* Admin Unit Cost & Inventory Valuation Box */}
+                                    {isAdmin && (
+                                        <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 flex items-center justify-between my-2 text-xs">
+                                            <div>
+                                                <div className="flex items-center gap-1.5 text-emerald-900 font-bold">
+                                                    <span>🏷️</span>
+                                                    <span className="uppercase tracking-wider text-[10px]">Purchase Unit Cost (Excl. GST)</span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                                    Stock Value: <span className="font-mono font-bold text-slate-800">₹{((master.unitCost || 0) * master.totalQuantity).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-slate-400 font-bold font-mono">₹</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    defaultValue={master.unitCost || 0}
+                                                    key={`${master.masterKey}-${master.unitCost || 0}`}
+                                                    onBlur={(e) => {
+                                                        const val = parseFloat(e.target.value);
+                                                        if (!isNaN(val) && val !== (master.unitCost || 0)) {
+                                                            handleUpdateMasterUnitCost(master, val);
+                                                        }
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            (e.target as HTMLInputElement).blur();
+                                                        }
+                                                    }}
+                                                    className="w-24 px-2 py-1 bg-white border border-emerald-300 rounded-lg text-right font-mono font-black text-slate-900 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden shadow-2xs"
+                                                    placeholder="0.00"
+                                                    title="Edit Unit Cost (Excl. GST). Automatically flows into BOM Cost Calculator."
+                                                />
+                                                <span className="text-[10px] text-slate-600 font-mono font-semibold">/{master.uom}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Tracked serials progress if Cell */}
                                     {isTracked && (
                                         <div className="my-3 text-xs flex justify-between items-center text-slate-600">
@@ -1294,10 +1412,15 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                                                     </span>
                                                                 </div>
 
-                                                                <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3">
+                                                                <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
                                                                     <span>📅 {new Date(batch.timestamp).toLocaleDateString()}</span>
                                                                     {batch.supplier && <span>🏢 {batch.supplier}</span>}
                                                                     {batch.makeModel && <span>🏷️ {batch.makeModel}</span>}
+                                                                    {isAdmin && batch.unitCost !== undefined && batch.unitCost > 0 && (
+                                                                        <span className="text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                                                            @ ₹{batch.unitCost.toLocaleString('en-IN')} / {batch.uom || master.uom}
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </div>
 
@@ -1658,6 +1781,24 @@ const ReceivedGoods: React.FC<ReceivedGoodsProps> = ({
                                 <option value="cm">cm (Centimeters)</option>
                             </select>
                         </div>
+
+                        {isAdmin && (
+                            <div>
+                                <label className="block text-xs font-bold text-emerald-800 uppercase tracking-wider mb-2">Unit Cost (₹ Excl. GST)</label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm font-mono">₹</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={formData.unitCost === 0 ? '' : formData.unitCost}
+                                        onChange={e => setFormData({ ...formData, unitCost: parseFloat(e.target.value) || 0 })}
+                                        className="w-full border border-emerald-300 rounded-lg p-2.5 pl-7 focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold bg-white text-slate-800 font-mono"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-xs font-bold text-[#404040] uppercase tracking-wider mb-2">QC Status</label>

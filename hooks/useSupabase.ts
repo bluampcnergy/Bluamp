@@ -35,6 +35,20 @@ const sanitizeForUpload = (tableName: string, item: any): any => {
     if (typeof item.isIgnoredForAlerts === 'boolean') {
       cleaned.is_ignored_for_alerts = item.isIgnoredForAlerts;
     }
+    if (typeof item.unitCost === 'number') {
+      cleaned.serialIndexMap = {
+        ...(typeof item.serialIndexMap === 'object' && item.serialIndexMap !== null ? item.serialIndexMap : {}),
+        __unitCost: item.unitCost,
+      };
+      try {
+        const costMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
+        costMap[item.id] = item.unitCost;
+        if (item.name) {
+          costMap['name:' + item.name.trim().toLowerCase()] = item.unitCost;
+        }
+        localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(costMap));
+      } catch (e) {}
+    }
 
     // Retain only valid database columns to guarantee no PGRST204 errors
     const sanitized: Record<string, any> = {};
@@ -66,12 +80,15 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
   if (tableName === 'received_goods') {
     let localIgnoredMap: Record<string, boolean> = {};
     let localInitialQtyMap: Record<string, number> = {};
+    let localUnitCostMap: Record<string, number> = {};
     try {
       localIgnoredMap = JSON.parse(localStorage.getItem('dc_ignored_stock_alerts_map') || '{}');
       localInitialQtyMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+      localUnitCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
     } catch (e) {
       localIgnoredMap = {};
       localInitialQtyMap = {};
+      localUnitCostMap = {};
     }
 
     return items.map(item => {
@@ -104,6 +121,18 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
       const isIgnoredForAlerts = dbIgnoredVal !== undefined ? dbIgnoredVal : Boolean(localIgnoredMap[item.id]);
       const uom = item.uom || item.unit || 'qty';
 
+      // Rehydrate unit cost from DB serialIndexMap.__unitCost or local map
+      let unitCost = typeof item.unitCost === 'number' && item.unitCost > 0 ? item.unitCost : undefined;
+      if (unitCost === undefined && item.serialIndexMap && typeof item.serialIndexMap.__unitCost === 'number') {
+        unitCost = item.serialIndexMap.__unitCost;
+      }
+      if (unitCost === undefined && item.id && localUnitCostMap[item.id] !== undefined) {
+        unitCost = localUnitCostMap[item.id];
+      }
+      if (unitCost === undefined && item.name && localUnitCostMap['name:' + item.name.trim().toLowerCase()] !== undefined) {
+        unitCost = localUnitCostMap['name:' + item.name.trim().toLowerCase()];
+      }
+
       return {
         ...item,
         quantity: currentQty,
@@ -111,6 +140,7 @@ const rehydrateFromDb = (tableName: string, items: any[]): any[] => {
         lowStockThresholdPercent,
         isIgnoredForAlerts,
         uom,
+        unitCost: unitCost ?? 0,
       };
     });
   }

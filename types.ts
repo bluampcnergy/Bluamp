@@ -117,13 +117,14 @@ export interface ReceivedGood {
   quantity: number;
   initialQuantity?: number; // Initial batch size / entry quantity
   uom?: 'qty' | 'grams' | 'cm' | string; // Unit of Measurement (default: 'qty')
+  unitCost?: number; // Purchase / unit cost excluding GST (₹)
   lowStockThresholdPercent?: number; // Configured safety limit percentage (0 - 100%, default: 20%)
   isIgnoredForAlerts?: boolean; // Set true if item should not be replenished and low stock alerts are disabled
   status: ReceivedGoodStatus | string;
   damagedCount: number;
   invoiceNumber: string;
   serials: string[];
-  serialIndexMap?: Record<string, number>; // Persistent # for each serial — survives production consumption
+  serialIndexMap?: Record<string, any>; // Persistent # for each serial and metadata (__unitCost)
   timestamp: number;
   testReportLink?: string;
   notes?: string; // Stock verification notes, default: "actual physical qty = "

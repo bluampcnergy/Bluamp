@@ -240,6 +240,7 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
       const payload = itemsToSync.map((it, idx) => {
         const itemId = `rg-${now}-${idx}-${Math.random().toString(36).substr(2, 5)}`;
         const qty = Number(it.quantity) || 0;
+        const unitCost = Number(it.unit_price) || 0;
         return {
           id: itemId,
           name: it.name.trim(),
@@ -249,22 +250,30 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({ data, onUpdate, setView
           quantity: qty,
           initial_quantity: qty,
           uom: it.uom || 'qty',
+          unitCost: unitCost,
           status: it.status || 'ND',
           damagedCount: 0,
           invoiceNumber: invoiceNum,
           serials: [],
+          serialIndexMap: { __unitCost: unitCost },
           timestamp: now,
-          notes: `Imported via Scan & Import (Invoice #${invoiceNum})`
+          notes: `Imported via Scan & Import (Invoice #${invoiceNum}) | cost: ₹${unitCost}`
         };
       });
 
-      // Save initial quantity to localStorage map for client-side rehydration
+      // Save initial quantity & unit costs to localStorage map for client-side rehydration
       try {
         const localInitialMap = JSON.parse(localStorage.getItem('dc_initial_quantity_map') || '{}');
+        const localCostMap = JSON.parse(localStorage.getItem('dc_raw_material_unit_costs_map') || '{}');
         payload.forEach(p => {
           localInitialMap[p.id] = p.quantity;
+          if (p.unitCost > 0) {
+            localCostMap[p.id] = p.unitCost;
+            localCostMap['name:' + p.name.trim().toLowerCase()] = p.unitCost;
+          }
         });
         localStorage.setItem('dc_initial_quantity_map', JSON.stringify(localInitialMap));
+        localStorage.setItem('dc_raw_material_unit_costs_map', JSON.stringify(localCostMap));
       } catch (e) {
         console.warn('Failed to save to local initial quantity map:', e);
       }
