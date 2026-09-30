@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700;800&display=swap');
+
+:root {
+  /* BlueAmp Design Tokens */
+  --brand-dark: #205f64;       /* Deep Teal */
+  --brand-primary: #498e72;    /* Sage Green */
+  --brand-secondary: #75c081;  /* Vibrant Light Green */
+  --brand-focus: #1a639c;      /* Vibrant Deep Blue */
+  --brand-accent: #2ca4c2;     /* Ocean Cyan */
+  --brand-canvas: #F8FAFC;     /* Soft Off-White */
+  --brand-text: #1E293B;       /* Slate text */
+  --brand-text-muted: #64748B;
+  --font-brand: 'Lexend', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--brand-text);
+  background-color: var(--brand-canvas);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, .font-brand {
+  font-family: var(--font-brand);
+  color: var(--brand-dark);
+}
+
+/* Bluamp Gradient Logo */
+.bluamp-logo-text {
+  background: linear-gradient(to right, #75c081, #2ca4c2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Utility class definitions */
+.bg-brand-primary { background-color: #498e72; }
+.bg-brand-secondary { background-color: #75c081; }
+.bg-brand-dark { background-color: #205f64; }
+.bg-brand-focus { background-color: #1a639c; }
+.bg-brand-accent { background-color: #2ca4c2; }
+.bg-brand-canvas { background-color: #F8FAFC; }
+
+.text-brand-primary { color: #498e72; }
+.text-brand-secondary { color: #75c081; }
+.text-brand-dark { color: #205f64; }
+.text-brand-focus { color: #1a639c; }
+.text-brand-accent { color: #2ca4c2; }
+.text-brand-text { color: #1E293B; }
+
+.border-brand-primary { border-color: #498e72; }
+.border-brand-secondary { border-color: #75c081; }
+.border-brand-dark { border-color: #205f64; }
+.border-brand-accent { border-color: rgba(44, 164, 194, 0.3); }
+
+/* Shared Industrial Table Styling */
+.plant-table th {
+  font-family: 'Lexend', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #205f64;
+  background-color: #F1F5F9;
+}
+.plant-table td {
+  font-family: 'Inter', sans-serif;
+  color: #1E293B;
+}
+
+/* Numeric input spin button normalization */
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

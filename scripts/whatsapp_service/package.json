@@ -1,0 +1,14 @@
+{
+  "name": "cnergy-whatsapp-invoice-service",
+  "version": "1.0.0",
+  "description": "Standalone WhatsApp Inbound Invoice Ingestion Service for Datlion Cnergy VPS",
+  "main": "server.cjs",
+  "scripts": {
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "@google/genai": "^1.31.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "express": "^4.21.2"
+  }
+}

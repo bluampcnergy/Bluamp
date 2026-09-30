@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#205f64" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Bluamp Plant OS" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Bluamp Plant OS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                dark: '#205f64',       /* Deep Teal */
+                primary: '#498e72',    /* Sage Green */
+                secondary: '#75c081',  /* Vibrant Light Green */
+                focus: '#1a639c',      /* Vibrant Deep Blue */
+                accent: '#2ca4c2',     /* Ocean Cyan */
+                canvas: '#F8FAFC',     /* Soft Off-White */
+                text: '#1E293B',       /* Slate text */
+              }
+            },
+            fontFamily: {
+              brand: ['Lexend', 'sans-serif'],
+              body: ['Inter', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <link rel="stylesheet" href="/index.css" />
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
+    "react/": "https://aistudiocdn.com/react@^18.2.0/",
+    "react": "https://aistudiocdn.com/react@^18.2.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "qrcode.react": "https://esm.sh/qrcode.react@3.1.0",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "vite": "https://aistudiocdn.com/vite@^7.2.6",
+    "@google/generative-ai": "https://aistudiocdn.com/@google/generative-ai@^0.24.1",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@3.11.174",
+    "path": "https://esm.sh/path@^0.12.7"
+  }
+}
+</script>
+<style>
+  :root {
+    --brand-dark: #205f64;
+    --brand-primary: #498e72;
+    --brand-secondary: #75c081;
+    --brand-focus: #1a639c;
+    --brand-accent: #2ca4c2;
+    --brand-canvas: #F8FAFC;
+    --brand-text: #1E293B;
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    color: #1E293B;
+    background-color: #F8FAFC;
+  }
+  h1, h2, h3, h4, .font-brand {
+    font-family: 'Lexend', sans-serif;
+    color: #205f64;
+  }
+
+  /* Bluamp Gradient Logo */
+  .bluamp-logo-text {
+    background: linear-gradient(to right, #75c081, #2ca4c2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .bg-brand-primary { background-color: #498e72; }
+  .bg-brand-secondary { background-color: #75c081; }
+  .bg-brand-dark { background-color: #205f64; }
+  .text-brand-primary { color: #498e72; }
+  .text-brand-secondary { color: #75c081; }
+  .text-brand-dark { color: #205f64; }
+  .text-brand-accent { color: #2ca4c2; }
+  .border-brand-accent { border-color: rgba(44, 164, 194, 0.3); }
+  
+  /* Shared Industrial Table Styling */
+  .plant-table th {
+    font-family: 'Lexend', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #205f64;
+    background-color: #F1F5F9;
+  }
+  .plant-table td {
+    font-family: 'Inter', sans-serif;
+    color: #1E293B;
+  }
+
+  /* Disable spin buttons and appearance quirks on all numeric inputs */
+  input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+</style>
+
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
+          }).catch(function(err) {
+            console.warn('[PWA] ServiceWorker registration failed:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

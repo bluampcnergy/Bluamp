@@ -1,0 +1,66 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependency directories
+node_modules/
+video/node_modules/
+
+# Build artifacts & caches
+dist/
+dist-ssr/
+build/
+.next/
+.vite/
+.turbo/
+.cache/
+out/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and sensitive credential files
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.pfx
+serviceAccountKey.json
+credentials.json
+
+# Local storage, test artifacts & recordings
+coverage/
+playwright-report/
+recordings/
+cypress/videos/
+cypress/screenshots/
+*.sqlite
+*.sqlite3
+*.db
+
+# Supabase local / deployment metadata
+supabase/.temp/
+supabase/.branches/
+.vercel
+
+# Local machine shims
+node.cmd
+git.cmd

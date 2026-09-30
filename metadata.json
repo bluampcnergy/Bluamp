@@ -1,0 +1,5 @@
+{
+  "name": "Plant Inventory Deploy Current",
+  "description": "A comprehensive inventory management system for a battery assembly plant. Track received goods with QR codes, manage work-in-progress by consuming raw materials, and monitor finished goods. Includes reporting for inventory levels and purchase order generation.",
+  "requestFramePermissions": []
+}

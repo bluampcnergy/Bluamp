@@ -1,0 +1,103 @@
+{
+  "totalDuration": 101.385,
+  "cues": [
+    {
+      "id": "raw_materials",
+      "stepNum": "01",
+      "stepTotal": "06",
+      "category": "RAW INVENTORY",
+      "icon": "🏷️",
+      "title": "Smart Raw Material Inwarding",
+      "subtitle": "Real-time purchase unit costs & plant stock valuation",
+      "startSec": 4.086,
+      "endSec": 19,
+      "focusX": 560,
+      "focusY": 380,
+      "zoom": 1.24
+    },
+    {
+      "id": "cell_testing",
+      "stepNum": "02",
+      "stepTotal": "06",
+      "category": "QUALITY CONTROL",
+      "icon": "🧪",
+      "title": "Automated Cell Grading & QC",
+      "subtitle": "Precision IR (mΩ), voltage & capacity sorting before pack assembly",
+      "startSec": 19,
+      "endSec": 28.498,
+      "focusX": 780,
+      "focusY": 440,
+      "zoom": 1.22
+    },
+    {
+      "id": "wip_assembly",
+      "stepNum": "03",
+      "stepTotal": "06",
+      "category": "PRODUCTION LINE",
+      "icon": "⚙️",
+      "title": "WIP Assembly & Production Runs",
+      "subtitle": "Automated BOM inventory deduction per battery pack in real-time",
+      "startSec": 28.498,
+      "endSec": 37.263,
+      "focusX": 620,
+      "focusY": 380,
+      "zoom": 1.25
+    },
+    {
+      "id": "bom_costing",
+      "stepNum": "04",
+      "stepTotal": "06",
+      "category": "FINANCIAL ENGINE",
+      "icon": "🧮",
+      "title": "Live BOM Costing & Margin Engine",
+      "subtitle": "Instant raw material cost roll-up, dealer & retail margin tiers with GST",
+      "startSec": 37.263,
+      "endSec": 50.163,
+      "focusX": 960,
+      "focusY": 460,
+      "zoom": 1.26
+    },
+    {
+      "id": "finished_goods",
+      "stepNum": "05",
+      "stepTotal": "06",
+      "category": "FINISHED GOODS",
+      "icon": "📦",
+      "title": "Finished Goods & Serial Traceability",
+      "subtitle": "End-to-end genealogy search from raw cell serial to finished pack",
+      "startSec": 50.163,
+      "endSec": 65.898,
+      "focusX": 680,
+      "focusY": 420,
+      "zoom": 1.22
+    },
+    {
+      "id": "commercial_erp",
+      "stepNum": "06",
+      "stepTotal": "06",
+      "category": "PLANT ERP",
+      "icon": "💼",
+      "title": "Complete Plant ERP Operations",
+      "subtitle": "GST Invoice Maker, Supplier Directory, Tasks & Expenses",
+      "startSec": 65.898,
+      "endSec": 96.533,
+      "focusX": 960,
+      "focusY": 520,
+      "zoom": 1.2
+    },
+    {
+      "id": "outro",
+      "stepNum": "",
+      "stepTotal": "",
+      "category": "OUTRO",
+      "icon": "⚡",
+      "title": "Datlion Cnergy Plant OS",
+      "subtitle": "The Operating System for Battery Manufacturers",
+      "startSec": 96.533,
+      "endSec": 101.385,
+      "focusX": 960,
+      "focusY": 540,
+      "zoom": 1
+    }
+  ]
+}
