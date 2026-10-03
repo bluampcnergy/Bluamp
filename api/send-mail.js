@@ -35,13 +35,13 @@ export default async function handler(req, res) {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.GMAIL_USER || 'datlioncnergy@gmail.com',
+        user: process.env.GMAIL_USER || 'bluampcnergy@gmail.com',
         pass: process.env.GMAIL_PASS, // Configured in Vercel env
       },
     });
 
     const mailOptions = {
-      from: `"Datlion Cnergy" <${process.env.GMAIL_USER || 'datlioncnergy@gmail.com'}>`,
+      from: `"Bluamp" <${process.env.GMAIL_USER || 'bluampcnergy@gmail.com'}>`,
       to,
       subject,
       html,

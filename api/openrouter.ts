@@ -15,8 +15,8 @@ export default async function handler(req: any, res: any) {
         const headers = {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "HTTP-Referer": "https://datlioncnergy.vercel.app", // Ensure valid referer for OpenRouter
-            "X-Title": "Datlion Cnergy Plant OS"
+            "HTTP-Referer": "https://bluamp.vercel.app", // Ensure valid referer for OpenRouter
+            "X-Title": "Bluamp Plant OS"
         };
 
         if (action === 'testConnection') {

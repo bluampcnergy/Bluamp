@@ -41,7 +41,7 @@ INSERT INTO employee_tasks (id, assigned_to, title, description, completed, due_
 VALUES 
     ('task-seed-1', 'chitale', 'Inspect Incoming Prismatic Cells', 'Check voltage, physical casing, and terminal resistance on 100Ah cell batch.', false, '2026-07-25', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, 'admin'),
     ('task-seed-2', 'chitale', 'Battery Pack Discharge Capacity Audit', 'Conduct 1C rate discharge cycle test on assembled 48V 100Ah packs.', false, '2026-07-26', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, 'admin'),
-    ('task-seed-3', 'datlioncnergy@gmail.com', 'BOM Printing & Serial Signature Audit', 'Verify digital signatures and printed serial numbers for outgoing dealer orders.', false, '2026-07-27', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, 'admin'),
+    ('task-seed-3', 'bluampcnergy@gmail.com', 'BOM Printing & Serial Signature Audit', 'Verify digital signatures and printed serial numbers for outgoing dealer orders.', false, '2026-07-27', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, 'admin'),
     ('task-seed-4', 'general', 'Warehouse Bin Location Mapping', 'Update storage unit bin tags for new BMS module arrivals.', false, '2026-07-28', (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, 'admin')
 ON CONFLICT (id) DO NOTHING;
 

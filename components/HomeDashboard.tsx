@@ -177,7 +177,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
             {/* Header greeting */}
             <div>
                 <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-                    {greeting}, <span className="text-[#658C3E]">{currentUser?.username?.split('@')[0] || 'User'}</span>
+                    {greeting}, <span className="text-brand-primary">{currentUser?.username?.split('@')[0] || 'User'}</span>
                 </h1>
                 <p className="text-sm text-slate-500 mt-1 font-medium">{todayStr}</p>
             </div>
@@ -201,7 +201,7 @@ const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3 mb-4">
                     <div>
                         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            <span className="w-2 h-2 bg-[#8EBF45] rounded-full"></span>
+                            <span className="w-2 h-2 bg-brand-secondary rounded-full"></span>
                             {currentUser?.role === 'admin' ? 'All Employee To-Do Tasks' : 'My Assigned To-Do List'}
                         </h3>
                         <p className="text-xs text-slate-500 font-medium mt-0.5">

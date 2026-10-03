@@ -98,7 +98,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   };
 
   const handleDelete = (usernameToDelete: string) => {
-    if (usernameToDelete === 'datlioncnergy@gmail.com') {
+    if (usernameToDelete === 'bluampcnergy@gmail.com') {
       alert('The default admin account cannot be deleted.');
       return;
     }
@@ -234,12 +234,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
                       <div className="flex items-center justify-end space-x-1">
                         <button
                           onClick={() => handleOpenEdit(user)}
-                          className="p-1.5 text-slate-400 hover:text-[#658C3E] hover:bg-[#8EBF45]/10 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-brand-primary hover:bg-brand-primary/10 rounded-lg transition-colors"
                           title="Edit User & WhatsApp Details"
                         >
                           <PencilIcon />
                         </button>
-                        {!isCurrent && user.username !== 'datlioncnergy@gmail.com' && (
+                        {!isCurrent && user.username !== 'bluampcnergy@gmail.com' && (
                           <button
                             onClick={() => handleDelete(user.username)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

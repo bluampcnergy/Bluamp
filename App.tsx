@@ -73,7 +73,7 @@ const DUMMY_EMPLOYEE_TASKS: EmployeeTask[] = [
   },
   {
     id: 'task-5',
-    assigned_to: 'datlioncnergy@gmail.com',
+    assigned_to: 'bluampcnergy@gmail.com',
     title: 'Audit daily rack storage map & update bin tags',
     description: 'Ensure finished goods in Rack A2 match physical serial tags.',
     completed: false,
@@ -190,7 +190,7 @@ const App: React.FC = () => {
 
     // Ensure admin role is preserved — password is managed in the database only
     setUsers(prevUsers => {
-        const ADMIN_USERNAME = 'datlioncnergy@gmail.com';
+        const ADMIN_USERNAME = 'bluampcnergy@gmail.com';
         const existingUsers = [...prevUsers];
         const adminIndex = existingUsers.findIndex(u => u.username === ADMIN_USERNAME);
 
@@ -305,7 +305,7 @@ const App: React.FC = () => {
             console.warn('Direct app_users role fetch failed:', e);
           }
         }
-        if (!role && username.toLowerCase() === 'datlioncnergy@gmail.com') {
+        if (!role && username.toLowerCase() === 'bluampcnergy@gmail.com') {
           role = 'admin';
         }
         const finalRole = role || 'user';
@@ -345,13 +345,13 @@ const App: React.FC = () => {
 
         if (signInError) {
             // Even if Supabase auth fails, allow legacy login with app_users table password
-            const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+            const finalRole = legacyUser.role || (username.toLowerCase() === 'bluampcnergy@gmail.com' ? 'admin' : 'user');
             setCurrentUser({ username, role: finalRole, password });
             addLogEntry('User Logged In', `User '${username}' (${finalRole}) logged in via app_users table.`);
             return null;
         }
 
-        const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+        const finalRole = legacyUser.role || (username.toLowerCase() === 'bluampcnergy@gmail.com' ? 'admin' : 'user');
         setCurrentUser({ username, role: finalRole, password });
         addLogEntry('User Migrated', `Legacy user '${username}' (${finalRole}) seamlessly logged in.`);
         return null;
@@ -426,7 +426,7 @@ const App: React.FC = () => {
     if (currentUser?.role !== 'admin') {
       return 'Permission denied.';
     }
-    if (usernameToDelete === 'datlioncnergy@gmail.com') {
+    if (usernameToDelete === 'bluampcnergy@gmail.com') {
       return 'The default admin account cannot be deleted.';
     }
     if (usernameToDelete === currentUser.username) {
@@ -526,8 +526,8 @@ const App: React.FC = () => {
                 Your account role (Dashboard Data Employee) has direct database access for tools (Invoice Maker, Operations, Supplies) but is restricted from viewing the Summary Dashboard UI.
               </p>
               <div className="flex gap-3">
-                <button onClick={() => setView('wip')} className="px-4 py-2 bg-[#8EBF45] text-[#0D0D0D] font-bold rounded-lg text-xs uppercase hover:bg-[#7cb037]">Go to Operations (WIP)</button>
-                <button onClick={() => setView('finance_maker')} className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg text-xs uppercase hover:bg-slate-700">Go to Invoice Maker</button>
+                <button onClick={() => setView('wip')} className="px-4 py-2 bg-brand-primary text-white font-bold rounded-lg text-xs uppercase hover:bg-brand-dark transition-colors">Go to Operations (WIP)</button>
+                <button onClick={() => setView('finance_maker')} className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg text-xs uppercase hover:bg-slate-700 transition-colors">Go to Invoice Maker</button>
               </div>
             </div>
           );
