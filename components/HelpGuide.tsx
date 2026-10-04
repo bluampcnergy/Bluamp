@@ -28,13 +28,13 @@ const GUIDE_SECTIONS: GuideSection[] = [
     id: 'overview',
     category: 'getting_started',
     title: 'Application Overview & Navigation',
-    subtitle: 'Learn the fundamentals of Datlion Cnergy Plant OS',
+    subtitle: 'Learn the fundamentals of Bluamp Plant OS',
     icon: '⚡',
     accessRole: 'All Roles',
     targetView: 'home',
-    overview: 'Datlion Cnergy Plant OS is an end-to-end Battery & Energy Storage Assembly Plant Management System. It coordinates raw cell intake, capacity testing, module/pack assembly (WIP), storage layout, sales invoicing, GST returns, and full barcode traceability.',
+    overview: 'Bluamp Plant OS is an end-to-end Battery & Energy Storage Assembly Plant Management System. It coordinates raw cell intake, capacity testing, module/pack assembly (WIP), storage layout, supplies procurement, sales invoicing, GST returns, and full barcode traceability.',
     keyFeatures: [
-      'Top Navigation Bar organized into Home, Operations, Finance, Admin, and Other Links',
+      'Top Navigation Bar organized into Home, Supplies, Operations, Finance, Admin, and Other Links',
       'Real-time Operational & Financial KPI Dashboard',
       'Role-based permissions (Director Admin, Billing & Ops, General Employee)',
       'Local Storage auto-save cache to prevent data loss during page reloads'
@@ -47,10 +47,10 @@ const GUIDE_SECTIONS: GuideSection[] = [
     functionsDetail: [
       { name: 'Top Bar Navigation', description: 'Main navigation header containing workspace branding, module tabs, role badge, and user dropdown.', usage: 'Click tabs to switch modules. Hover "Other Links" for secondary utilities.' },
       { name: 'Role Badge Indicator', description: 'Displays your current logged-in role (Director Admin, Billing & Ops, General Employee).', usage: 'Use to verify permission levels when attempting administrative operations.' },
-      { name: 'Logo Quick Home', description: 'Clicking the Datlion Cnergy logo resets current view back to the Home Dashboard.', usage: 'Click logo in top-left anytime for immediate dashboard return.' }
+      { name: 'Logo Quick Home', description: 'Clicking the Bluamp logo resets current view back to the Home Dashboard.', usage: 'Click logo in top-left anytime for immediate dashboard return.' }
     ],
     proTips: [
-      'Click the Datlion Cnergy logo anytime in the top-left to quickly return to your Home Dashboard.',
+      'Click the Bluamp logo anytime in the top-left to quickly return to your Home Dashboard.',
       'Your active workspace is preserved in local cache, so refreshing the browser will not erase active drafts.'
     ]
   },

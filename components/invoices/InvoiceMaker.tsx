@@ -811,22 +811,22 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 }
             }
             
-            // Default Customer (Receiver) and Shipped To to Datlion
-            const datlionProfile = companyProfiles.find(c => c.name?.toUpperCase()?.includes('DATLION CNERGY'));
-            if (datlionProfile) {
-                loadCompanyProfile('receiver', datlionProfile.name);
+            // Default Customer (Receiver) and Shipped To to Bluamp
+            const bluampProfile = companyProfiles.find(c => c.name?.toUpperCase()?.includes('BLUAMP') || c.name?.toUpperCase()?.includes('DATLION CNERGY'));
+            if (bluampProfile) {
+                loadCompanyProfile('receiver', bluampProfile.name);
             } else {
-                updateParty('receiver', 'name', 'DATLION CNERGY PRIVATE LIMITED');
+                updateParty('receiver', 'name', 'BLUAMP ENERGY PRIVATE LIMITED');
             }
             
             setDoc(prev => ({
                 ...prev,
                 shipped_to_details: {
-                    name: datlionProfile?.name || 'DATLION CNERGY PRIVATE LIMITED',
-                    address: datlionProfile?.shippingAddress || '',
-                    gstin: datlionProfile?.gstNumber || '',
-                    phone: datlionProfile?.phoneNumber || '',
-                    email: datlionProfile?.email || ''
+                    name: bluampProfile?.name || 'BLUAMP ENERGY PRIVATE LIMITED',
+                    address: bluampProfile?.shippingAddress || '',
+                    gstin: bluampProfile?.gstNumber || '',
+                    phone: bluampProfile?.phoneNumber || '',
+                    email: bluampProfile?.email || ''
                 }
             }));
         } else {

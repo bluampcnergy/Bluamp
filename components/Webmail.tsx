@@ -21,7 +21,7 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
     {
         id: 'acc-sales',
         email: 'sales@cnergy.co.in',
-        senderName: 'Datlion Cnergy Sales',
+        senderName: 'Bluamp Sales',
         imapHost: 'mail.cnergy.co.in',
         imapPort: 993,
         smtpHost: 'mail.cnergy.co.in',
@@ -33,7 +33,7 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
     {
         id: 'acc-support',
         email: 'support@cnergy.co.in',
-        senderName: 'Datlion Cnergy Support',
+        senderName: 'Bluamp Support',
         imapHost: 'mail.cnergy.co.in',
         imapPort: 993,
         smtpHost: 'mail.cnergy.co.in',
@@ -44,7 +44,7 @@ const DEFAULT_ACCOUNTS: WebmailAccount[] = [
     {
         id: 'acc-info',
         email: 'info@cnergy.co.in',
-        senderName: 'Datlion Cnergy Info',
+        senderName: 'Bluamp Info',
         imapHost: 'mail.cnergy.co.in',
         imapPort: 993,
         smtpHost: 'mail.cnergy.co.in',
@@ -64,7 +64,7 @@ const INITIAL_EMAILS: EmailMessage[] = [
         subject: 'RFQ: 48V 100Ah LFP Battery Packs Inquiry (Batch 50 Units)',
         date: new Date(Date.now() - 3600000 * 2).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
         timestamp: Date.now() - 3600000 * 2,
-        snippet: 'Greetings Datlion Cnergy Sales Team, We are looking to procure 50 units of 48V 100Ah LFP battery packs for EV test trials. Please share official quotation...',
+        snippet: 'Greetings Bluamp Sales Team, We are looking to procure 50 units of 48V 100Ah LFP battery packs for EV test trials. Please share official quotation...',
         bodyHtml: `
             <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
                 <p>Dear Sales Team,</p>
@@ -141,25 +141,25 @@ const INITIAL_EMAILS: EmailMessage[] = [
         folder: 'sent',
         from: 'sales@cnergy.co.in',
         to: 'procurement@reliancesolar.com',
-        subject: 'Quotation: 72V 150Ah High Capacity Battery Pack - Datlion Cnergy',
+        subject: 'Quotation: 72V 150Ah High Capacity Battery Pack - Bluamp',
         date: new Date(Date.now() - 3600000 * 36).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }),
         timestamp: Date.now() - 3600000 * 36,
         snippet: 'Dear Reliance Solar Procurement, Please find attached our formal commercial proposal and technical specification sheet...',
         bodyHtml: `
             <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
                 <p>Dear Reliance Solar Procurement Team,</p>
-                <p>Thank you for reaching out to Datlion Cnergy.</p>
+                <p>Thank you for reaching out to Bluamp.</p>
                 <p>Please find attached our official quotation <strong>#DC-QT-2026-089</strong> for the 72V 150Ah LFP Energy Storage Pack with Smart Bluetooth BMS.</p>
                 <p>We offer a 3-Year Comprehensive Warranty and complete pro-rata backup support.</p>
                 <br/>
-                <p>Best regards,<br/><strong>Datlion Cnergy Sales Team</strong><br/>Email: sales@cnergy.co.in</p>
+                <p>Best regards,<br/><strong>Bluamp Sales Team</strong><br/>Email: sales@cnergy.co.in</p>
             </div>
         `,
         isUnread: false,
         isStarred: true,
         hasAttachments: true,
         attachments: [
-            { filename: 'Datlion_Cnergy_Quotation_QT089.pdf', size: '840 KB', type: 'application/pdf' }
+            { filename: 'Bluamp_Quotation_QT089.pdf', size: '840 KB', type: 'application/pdf' }
         ]
     }
 ];
@@ -704,18 +704,18 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
             {/* TOP BAR & ACCOUNT SWITCHER */}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#8EBF45] to-[#658C3E] flex items-center justify-center text-white text-xl font-black shadow-md">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center text-white text-xl font-black shadow-md">
                         📧
                     </div>
                     <div>
                         <div className="flex items-center gap-2">
-                            <h1 className="text-xl font-black text-slate-900 tracking-tight">Cnergy Webmail</h1>
+                            <h1 className="text-xl font-black text-slate-900 tracking-tight">Bluamp Webmail</h1>
                             <span className="bg-slate-100 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-slate-200">
                                 @cnergy.co.in
                             </span>
                         </div>
                         <p className="text-xs text-slate-500 font-medium mt-0.5">
-                            Official team mailbox portal for Datlion Cnergy communications.
+                            Official team mailbox portal for Bluamp communications.
                         </p>
                     </div>
                 </div>
@@ -730,7 +730,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
                                 setSelectedAccountEmail(e.target.value);
                                 setSelectedEmailId(null);
                             }}
-                            className="bg-white text-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-[#8EBF45] cursor-pointer"
+                            className="bg-white text-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-300 outline-none focus:ring-2 focus:ring-brand-primary cursor-pointer"
                         >
                             {accounts.map(acc => (
                                 <option key={acc.id} value={acc.email}>

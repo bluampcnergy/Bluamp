@@ -33,6 +33,22 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   setView
 }) => {
   const [mainTab, setMainTab] = useState<'procurement' | 'tracking' | 'find_suppliers'>('procurement');
+
+  // Synchronize with Header Sub-Navigation
+  useEffect(() => {
+    const handleSwitch = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && ['procurement', 'tracking', 'find_suppliers'].includes(customEvent.detail)) {
+        setMainTab(customEvent.detail);
+      }
+    };
+    window.addEventListener('switch-supplies-tab', handleSwitch);
+    return () => window.removeEventListener('switch-supplies-tab', handleSwitch);
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('supplies-tab-changed', { detail: mainTab }));
+  }, [mainTab]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplierFilter, setSelectedSupplierFilter] = useState<string>('');
   const [activeStatusFilter, setActiveStatusFilter] = useState<'all' | 'to_be_ordered' | 'ordered' | 'delivered' | 'stock_alerts'>('to_be_ordered');
@@ -191,7 +207,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
     setWebmailIframeModal({
       isOpen: true,
       to: to || '',
-      subject: subject || 'RFQ Inquiry - Datlion Cnergy',
+      subject: subject || 'RFQ Inquiry - Bluamp',
       body: body || ''
     });
   };
@@ -239,7 +255,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       }
     } else if (action === 'whatsapp') {
       const phone = info.phone;
-      const text = record.rfq_text || `Hello ${info.contactName || record.from_company || ''}, inquiring about ${record.item_name} quotation from Datlion Cnergy.`;
+      const text = record.rfq_text || `Hello ${info.contactName || record.from_company || ''}, inquiring about ${record.item_name} quotation from Bluamp.`;
       if (phone) {
         window.open(`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
       } else {
@@ -250,8 +266,8 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       }
     } else if (action === 'webmail') {
       const toEmail = info.email;
-      const subject = `RFQ: ${record.item_name} - Datlion Cnergy`;
-      const body = record.rfq_text || `Dear ${info.contactName || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nDatlion Cnergy`;
+      const subject = `RFQ: ${record.item_name} - Bluamp`;
+      const body = record.rfq_text || `Dear ${info.contactName || 'Sales Team'},\n\nPlease share your best quotation for ${record.item_name}.\n\nBest regards,\nProcurement Team\nBluamp`;
       handleOpenWebmailIframe(toEmail, subject, body);
     } else if (action === 'ai_rfq') {
       handleGenerateAI_RFQ(record);
@@ -732,7 +748,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         item_name: formData.item_name || editingRecord.item_name,
         specification: formData.specification || '',
         from_company: formData.from_company || '',
-        to_company: formData.to_company || 'Datlion Cnergy Plant',
+        to_company: formData.to_company || 'Bluamp Plant',
         supplier_id: formData.supplier_id || '',
         website_url: formData.website_url || '',
         contact_name: formData.contact_name || '',
@@ -752,7 +768,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         item_name: formData.item_name,
         specification: formData.specification || '',
         from_company: formData.from_company || 'Vendor',
-        to_company: formData.to_company || 'Datlion Cnergy Plant',
+        to_company: formData.to_company || 'Bluamp Plant',
         supplier_id: formData.supplier_id || '',
         website_url: formData.website_url || '',
         contact_name: formData.contact_name || '',
@@ -965,14 +981,14 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
   const getWhatsAppLink = (phone?: string, text?: string) => {
     if (!phone) return '#';
     const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const encodedText = encodeURIComponent(text || 'Hello, inquiring about product availability and quotation from Datlion Cnergy.');
+    const encodedText = encodeURIComponent(text || 'Hello, inquiring about product availability and quotation from Bluamp.');
     return `https://wa.me/${cleanPhone}?text=${encodedText}`;
   };
 
   // Format Mailto Link
   const getMailtoLink = (email?: string, subject?: string, body?: string) => {
     if (!email) return '#';
-    const encSub = encodeURIComponent(subject || 'Request for Quotation - Datlion Cnergy');
+    const encSub = encodeURIComponent(subject || 'Request for Quotation - Bluamp');
     const encBody = encodeURIComponent(body || 'Dear Sales Team,\n\nPlease share your best quotation for the required materials.');
     return `mailto:${email}?subject=${encSub}&body=${encBody}`;
   };
@@ -1016,7 +1032,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
           onClick={() => setMainTab('find_suppliers')}
           className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
             mainTab === 'find_suppliers'
-              ? 'bg-gradient-to-r from-[#8EBF45] to-[#658C3E] text-slate-950 font-black shadow-md'
+              ? 'bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-bold shadow-md'
               : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
           }`}
         >

@@ -243,9 +243,9 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 customTitle.includes('challan');
 
             const issuerName = (extracted.issuer_details?.name || '').toLowerCase();
-            const isIssuedByUs = issuerName.includes('datlion') || issuerName.includes('cnergy');
+            const isIssuedByUs = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
-            // Default all imported/scanned files strictly to purchase unless explicitly issued by Datlion Cnergy
+            // Default all imported/scanned files strictly to purchase unless explicitly issued by Bluamp / Datlion Cnergy
             const finalSourceType = isIssuedByUs ? 'sales' : 'purchase';
             const finalDocType = isChallan
                 ? (isIssuedByUs ? 'generated_delivery_challan' : 'delivery_challan')

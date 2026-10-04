@@ -35,7 +35,7 @@ export const PlantAiAssistant: React.FC<PlantAiAssistantProps> = ({
     {
       id: 'welcome',
       sender: 'ai',
-      text: `Hello ${currentUser?.username || 'Team'}! 👋 I am your **Datlion Cnergy AI Plant Assistant**.
+      text: `Hello ${currentUser?.username || 'Team'}! 👋 I am your **Bluamp AI Plant Assistant**.
 
 I have real-time context on your plant operations, inventory stock, WIP assemblies, supplies, and employee task workloads. 
 

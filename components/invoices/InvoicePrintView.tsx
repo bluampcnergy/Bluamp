@@ -153,7 +153,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
             
             const htmlContent = `
                 <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px; padding: 20px;">
-                    <h2 style="color: #658C3E;">Datlion Cnergy</h2>
+                    <h2 style="color: #498e72;">Bluamp</h2>
                     <p>Hello,</p>
                     <p>Please find the details and attached PDF for your recent document below:</p>
                     <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -163,7 +163,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                         <p style="margin: 5px 0; font-size: 1.1em;"><strong>Total Amount:</strong> ₹${(invoice.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                     </div>
                     <p>If you have any questions, please reply to this email.</p>
-                    <p style="color: #666; font-size: 0.9em;">Best regards,<br/>Datlion Cnergy Team</p>
+                    <p style="color: #666; font-size: 0.9em;">Best regards,<br/>Bluamp Team</p>
                 </div>
             `;
 
@@ -172,7 +172,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     to: autoMailTarget,
-                    subject: `Document ${invoice.invoice_metadata?.invoice_number || ''} from Datlion Cnergy`,
+                    subject: `Document ${invoice.invoice_metadata?.invoice_number || ''} from Bluamp`,
                     html: htmlContent,
                     attachmentBase64: pdfBase64DataUri,
                     attachmentName: `${invoice.invoice_metadata?.invoice_number || 'document'}.pdf`
