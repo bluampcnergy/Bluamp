@@ -1981,6 +1981,37 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="text-xs w-full" />
                             {logo && <button onClick={removeLogo} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Remove Logo"><Trash2 size={14} /></button>}
                         </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            <span className="text-[10px] text-slate-400 font-semibold self-center">Quick Logo:</span>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-color.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-[#205f64] hover:text-white text-slate-700 transition"
+                            >
+                                🎨 Color
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-black.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-black hover:text-white text-slate-700 transition"
+                            >
+                                ⬛ B&W Black
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-grayscale.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-600 hover:text-white text-slate-700 transition"
+                            >
+                                🔘 Grayscale
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-symbol-color.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-[#205f64] hover:text-white text-slate-700 transition"
+                            >
+                                🌀 Icon
+                            </button>
+                        </div>
                     </div>
                     <div>
                         <label className="text-xs text-slate-500 mb-1 block">Logo Size ({config.logoSize || 64}px)</label>
