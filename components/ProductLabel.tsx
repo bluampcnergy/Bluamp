@@ -43,6 +43,7 @@ const ProductLabel: React.FC<ProductLabelProps> = ({ data, id }) => {
     // Using the high-quality template background
     const BACKGROUND_URL = "https://supabase.cnergy.co.in/storage/v1/object/public/Images/Template_label_new.png";
     const DTF_BACKGROUND_URL = "https://supabase.cnergy.co.in/storage/v1/object/public/Images/template_label_DTF.png";
+    const BLUAMP_LOGO_URL = "https://bluampenergy.com/wp-content/uploads/2018/07/logo-001.png";
     const labelRef = useRef<HTMLDivElement>(null);
 
     const handlePrint = () => {
@@ -54,6 +55,7 @@ const ProductLabel: React.FC<ProductLabelProps> = ({ data, id }) => {
             <html>
                 <head>
                     <title>Print Label - ${data.productId}</title>
+                    <base href="${window.location.origin}/" />
                     <style>
                         body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
                         @media print {
@@ -127,7 +129,7 @@ const ProductLabel: React.FC<ProductLabelProps> = ({ data, id }) => {
                             .txt-label { font-family: Arial, sans-serif; font-size: 1.7px; fill: #000000; font-weight: bold; }
                             .txt-value { font-family: Arial, sans-serif; font-size: 1.8px; fill: #000000; font-weight: bold; }
                             .txt-value-sm { font-family: Arial, sans-serif; font-size: 1.5px; fill: #000000; font-weight: bold; }
-                            .txt-header { font-family: Arial, sans-serif; font-size: 2.3px; fill: #4a7c26; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1px; }
+                            .txt-header { font-family: Arial, sans-serif; font-size: 2.3px; fill: #205f64; font-weight: bold; text-transform: uppercase; letter-spacing: 0.1px; }
                             .txt-small { font-family: Arial, sans-serif; font-size: 1.1px; fill: #444; }
                             .tbl-line { stroke: #000000; stroke-width: 0.15px; }
                         `}
@@ -142,6 +144,19 @@ const ProductLabel: React.FC<ProductLabelProps> = ({ data, id }) => {
                         width="50"
                         height="30"
                         preserveAspectRatio="none"
+                    />
+
+                    {/* Layer 1.1: Mask out old DC Energy logo from the background template */}
+                    <rect x="0" y="0" width="16.5" height="12.5" fill="#ffffff" />
+
+                    {/* Layer 1.2: Bluamp Logo above QR code */}
+                    <image
+                        href={BLUAMP_LOGO_URL}
+                        x="1.5"
+                        y="2.0"
+                        width="13"
+                        height="9.5"
+                        preserveAspectRatio="xMidYMid meet"
                     />
 
                     {/* Layer 1.5: Grid Lines */}
