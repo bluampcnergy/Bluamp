@@ -7,6 +7,7 @@ import { getTaxMode, safeRender, amountToWords, getCurrencySymbol } from '../../
 import { Printer, Download, X } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
 import { BatteryComparisonTable } from './BatteryComparisonTable';
+import { TechnicalBatterySizingPrintView, DEFAULT_BATTERY_SIZING, calculateBatterySizing } from './TechnicalBatterySizingSheet';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -78,6 +79,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                 showTotalsTable: ui.showTotalsTable ?? true,
                 showTaxTable: ui.showTaxTable !== undefined ? ui.showTaxTable : (isQuoteOrProforma ? false : hasTaxes),
                 showBatteryComparisonTable: ui.showBatteryComparisonTable !== undefined ? ui.showBatteryComparisonTable : isQuoteOrProforma,
+                showBatterySizingSheet: ui.showBatterySizingSheet !== undefined ? Boolean(ui.showBatterySizingSheet) : false,
+                batterySizingData: ui.batterySizingData ? calculateBatterySizing(ui.batterySizingData) : DEFAULT_BATTERY_SIZING,
                 billedToLabel: ui.billedToLabel || prev.billedToLabel,
                 shippedToLabel: ui.shippedToLabel || prev.shippedToLabel,
                 visibleColumns: ui.visibleColumns || {
@@ -540,6 +543,18 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                             </div>
                                             );
                                         })}
+
+                                        {/* Page 2: Technical Battery Sizing Sheet */}
+                                        {(config as any).showBatterySizingSheet && (
+                                            <div className="invoice-page relative" style={{ pageBreakBefore: 'always' }}>
+                                                <TechnicalBatterySizingPrintView
+                                                    data={(config as any).batterySizingData || DEFAULT_BATTERY_SIZING}
+                                                    invoiceNumber={doc.invoice_metadata?.invoice_number || ''}
+                                                    companyName={doc.issuer_details?.name || 'DATLION CNERGY'}
+                                                    logoUrl={logo || undefined}
+                                                />
+                                            </div>
+                                        )}
                                     </React.Fragment>
                                 ))}
                             </React.Fragment>
