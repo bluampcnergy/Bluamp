@@ -1005,10 +1005,13 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
       />
 
       {/* MODULE NAVIGATION SUB-TABS */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+      <div 
+        className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto scrollbar-hide touch-scroll"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
         <button
           onClick={() => setMainTab('procurement')}
-          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shrink-0 select-none active:scale-95 ${
             mainTab === 'procurement'
               ? 'bg-slate-900 text-white shadow-md'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -1019,7 +1022,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
         <button
           onClick={() => setMainTab('tracking')}
-          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shrink-0 select-none active:scale-95 ${
             mainTab === 'tracking'
               ? 'bg-blue-600 text-white shadow-md'
               : 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
@@ -1030,7 +1033,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
 
         <button
           onClick={() => setMainTab('find_suppliers')}
-          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shrink-0 select-none active:scale-95 ${
             mainTab === 'find_suppliers'
               ? 'bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-bold shadow-md'
               : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'

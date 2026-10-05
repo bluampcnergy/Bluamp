@@ -832,7 +832,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans pb-12">
+    <div className="min-h-screen bg-gray-100 font-sans pb-12 overflow-x-hidden">
       <Header 
         currentView={view} 
         setView={setView} 

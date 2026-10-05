@@ -108,6 +108,27 @@
     color: #1E293B;
   }
 
+  /* Universal Scrollbar Hide Utility across all browsers */
+  .scrollbar-hide,
+  .no-scrollbar {
+    -ms-overflow-style: none !important; /* IE and Edge */
+    scrollbar-width: none !important; /* Firefox */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar,
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
+
+  html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
   /* Disable spin buttons and appearance quirks on all numeric inputs */
   input[type=number] {
     -moz-appearance: textfield;
