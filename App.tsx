@@ -497,7 +497,7 @@ const App: React.FC = () => {
             if (currentUser?.role !== 'admin') {
                 return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins Only (BOM Costing is restricted)</div>;
             }
-        } else if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses') {
+        } else if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses' && tab !== 'crm') {
             return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins and Billing Users Only</div>;
         }
         return <InvoiceModule 
@@ -512,6 +512,9 @@ const App: React.FC = () => {
             setRecipes={setRecipes}
             receivedGoods={receivedGoods}
             addLogEntry={addLogEntry}
+            employeeTasks={employeeTasks}
+            setEmployeeTasks={setEmployeeTasks}
+            users={users}
         />;
     }
 
