@@ -69,7 +69,7 @@ const PublicStorageViewer: React.FC<PublicStorageViewerProps> = ({ unitId }) => 
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2 text-indigo-700 font-bold uppercase tracking-wider text-xs">
                         <CubeIcon className="w-4 h-4"/> 
-                        Datlion Storage
+                        Bluamp Storage
                     </div>
                     <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded-full">{unit.type.toUpperCase()}</span>
                 </div>
@@ -118,7 +118,7 @@ const PublicStorageViewer: React.FC<PublicStorageViewerProps> = ({ unitId }) => 
             </div>
 
             <div className="text-center pt-8 text-xs text-gray-400">
-                <p>Datlion Cnergy Inventory System</p>
+                <p>Bluamp Energy Inventory System</p>
             </div>
         </div>
     </div>

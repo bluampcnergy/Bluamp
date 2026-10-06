@@ -99,7 +99,7 @@ const INITIAL_EMAILS: EmailMessage[] = [
         snippet: 'Your consignment consisting of 240 units Grade-A 3.2V 100Ah Cells has been picked up and is in transit to Pune facility...',
         bodyHtml: `
             <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6;">
-                <p>Hello Datlion Cnergy Team,</p>
+                <p>Hello Bluamp Energy Team,</p>
                 <p>Your shipment under Waybill <strong>#BD98402104</strong> has been dispatched from Chennai terminal.</p>
                 <p><strong>Shipment Details:</strong></p>
                 <ul>
@@ -661,7 +661,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
                             <div className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-center">
                                 <img
                                     src={CNERGY_EMAIL_SIGNATURE_URL}
-                                    alt="Datlion Cnergy Email Signature"
+                                    alt="Bluamp Energy Email Signature"
                                     className="max-h-16 max-w-full object-contain rounded"
                                 />
                             </div>
@@ -1174,7 +1174,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
                                 <div className="bg-white p-2 rounded-lg border border-slate-200 flex items-center justify-center">
                                     <img
                                         src={CNERGY_EMAIL_SIGNATURE_URL}
-                                        alt="Datlion Cnergy Email Signature"
+                                        alt="Bluamp Energy Email Signature"
                                         className="max-h-24 max-w-full object-contain rounded"
                                     />
                                 </div>
@@ -1261,7 +1261,7 @@ export const Webmail: React.FC<WebmailProps> = ({ currentUser, addLogEntry, isIf
                                         type="text"
                                         value={editingAccount.senderName}
                                         onChange={(e) => setEditingAccount({ ...editingAccount, senderName: e.target.value })}
-                                        placeholder="Datlion Cnergy Sales"
+                                        placeholder="Bluamp Energy Sales"
                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-[#8EBF45]"
                                     />
                                 </div>

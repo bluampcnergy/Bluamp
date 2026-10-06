@@ -363,7 +363,7 @@ export const parseVoiceIntentWithAI = async (
 
   try {
     const todayStr = new Date().toISOString().split('T')[0];
-    const systemPrompt = `You are an AI Voice Controller for the Datlion Cnergy Mobile Plant OS.
+    const systemPrompt = `You are an AI Voice Controller for the Bluamp Energy Mobile Plant OS.
 Translate the user's spoken voice command into a structured database action JSON.
 
 TODAY'S DATE: ${todayStr}

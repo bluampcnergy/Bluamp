@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { User, Lead, LeadStage, LeadLostReason, EmployeeTask } from '../../types';
+import type { User, Lead, LeadStage, LeadLostReason, EmployeeTask, CompanyProfile } from '../../types';
 import { supabase } from '../../supabaseClient';
 import { 
   PlusCircle, 
@@ -22,6 +22,7 @@ const PhoneIcon = ({ size = 12, className = '' }: { size?: number; className?: s
 interface SalesCrmPanelProps {
   currentUser: User | null;
   users?: User[];
+  companyProfiles?: CompanyProfile[];
   employeeTasks?: EmployeeTask[];
   setEmployeeTasks?: React.Dispatch<React.SetStateAction<EmployeeTask[]>>;
   addLogEntry?: (action: string, details: string) => void;
@@ -60,7 +61,7 @@ const DEFAULT_LEADS: Lead[] = [
     estimatedValue: 350000,
     productInterest: '48V 100Ah LiFePO4 ESS Pack',
     stage: 'new_lead',
-    assignedTo: 'blueampcnergy@gmail.com',
+    assignedTo: 'admin',
     assignedBy: 'admin',
     nextFollowUpDate: new Date().toISOString().split('T')[0],
     nextFollowUpNote: 'Understand requirements & load profile',
@@ -82,12 +83,12 @@ const DEFAULT_LEADS: Lead[] = [
     estimatedValue: 820000,
     productInterest: '60V 120Ah EV 3-Wheeler Battery Packs',
     stage: 'follow_up',
-    assignedTo: 'blueampcnergy@gmail.com',
+    assignedTo: 'admin',
     assignedBy: 'admin',
     nextFollowUpDate: new Date().toISOString().split('T')[0],
     nextFollowUpNote: 'Technical parameters discussion call today',
     notes: [
-      { id: 'n2', text: 'Client requested battery dimensions and CAN bus BMS protocol details.', author: 'blueampcnergy@gmail.com', date: '2026-10-03' }
+      { id: 'n2', text: 'Client requested battery dimensions and CAN bus BMS protocol details.', author: 'sales', date: '2026-10-03' }
     ],
     createdAt: '2026-10-02',
     updatedAt: '2026-10-03'
@@ -104,12 +105,12 @@ const DEFAULT_LEADS: Lead[] = [
     estimatedValue: 540000,
     productInterest: '10kWh Residential Solar ESS',
     stage: 'quotation_sent',
-    assignedTo: 'blueampcnergy@gmail.com',
+    assignedTo: 'admin',
     assignedBy: 'admin',
     nextFollowUpDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
     nextFollowUpNote: 'Follow up on Quotation #QT-2627-014',
     notes: [
-      { id: 'n3', text: 'Formal quotation sent via Invoice Maker. Client reviewing with management.', author: 'blueampcnergy@gmail.com', date: '2026-10-04' }
+      { id: 'n3', text: 'Formal quotation sent via Invoice Maker. Client reviewing with management.', author: 'sales', date: '2026-10-04' }
     ],
     createdAt: '2026-10-01',
     updatedAt: '2026-10-04'
@@ -126,12 +127,12 @@ const DEFAULT_LEADS: Lead[] = [
     estimatedValue: 1400000,
     productInterest: '50kWh Industrial Rack Mount ESS',
     stage: 'negotiation',
-    assignedTo: 'blueampcnergy@gmail.com',
+    assignedTo: 'admin',
     assignedBy: 'admin',
     nextFollowUpDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     nextFollowUpNote: 'Discuss 5% advance payment discount',
     notes: [
-      { id: 'n4', text: 'Client requested revised pricing for order of 2 units.', author: 'blueampcnergy@gmail.com', date: '2026-10-03' }
+      { id: 'n4', text: 'Client requested revised pricing for order of 2 units.', author: 'sales', date: '2026-10-03' }
     ],
     createdAt: '2026-09-28',
     updatedAt: '2026-10-03'
@@ -148,7 +149,7 @@ const DEFAULT_LEADS: Lead[] = [
     estimatedValue: 1150000,
     productInterest: '48V 200Ah Telecom Tower Replacement Packs',
     stage: 'won',
-    assignedTo: 'blueampcnergy@gmail.com',
+    assignedTo: 'admin',
     assignedBy: 'admin',
     notes: [
       { id: 'n5', text: '100% advance payment confirmed. Order dispatched to production batch.', author: 'admin', date: '2026-10-04' }
@@ -161,17 +162,24 @@ const DEFAULT_LEADS: Lead[] = [
 export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
   currentUser,
   users = [],
+  companyProfiles = [],
   employeeTasks = [],
   setEmployeeTasks,
-  addLogEntry
+  addLogEntry,
+  onNavigateToInvoiceMaker
 }) => {
-  // Load leads from localStorage with fallback
+  // Load leads from localStorage with fallback & clean legacy emails
   const [leads, setLeads] = useState<Lead[]>(() => {
     try {
       const saved = localStorage.getItem('bluamp_crm_leads');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((l: any) => ({
+            ...l,
+            assignedTo: l.assignedTo?.includes('@') ? (currentUser?.username || 'admin') : (l.assignedTo || 'admin')
+          }));
+        }
       }
     } catch (e) {
       console.warn('Failed to parse saved leads, using defaults', e);
@@ -219,17 +227,35 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
     estimatedValue: '',
     productInterest: '',
     stage: 'new_lead' as LeadStage,
-    assignedTo: currentUser?.username || 'blueampcnergy@gmail.com',
+    assignedTo: currentUser?.username || 'admin',
     initialNote: ''
   });
+
+  const handleCompanyNameChange = (companyName: string) => {
+    setNewLeadForm(prev => {
+      const updated = { ...prev, companyName };
+      const matched = companyProfiles.find(
+        p => p.name?.trim().toLowerCase() === companyName.trim().toLowerCase()
+      );
+      if (matched) {
+        if (matched.contactPerson && !prev.contactPerson) updated.contactPerson = matched.contactPerson;
+        if (matched.phoneNumber && !prev.phone) updated.phone = matched.phoneNumber;
+        if (matched.email && !prev.email) updated.email = matched.email;
+        if ((matched.gstNumber || matched.gstin) && !prev.gstin) updated.gstin = matched.gstNumber || matched.gstin || '';
+        if (matched.shippingAddress && !prev.address) updated.address = matched.shippingAddress;
+      }
+      return updated;
+    });
+  };
 
   const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'billing';
 
   // Available sales reps
   const salesReps = useMemo(() => {
     const list = users.map(u => u.username).filter(Boolean);
-    if (!list.includes('blueampcnergy@gmail.com')) list.push('blueampcnergy@gmail.com');
     if (currentUser?.username && !list.includes(currentUser.username)) list.push(currentUser.username);
+    if (!list.includes('admin')) list.push('admin');
+    if (!list.includes('sales')) list.push('sales');
     return Array.from(new Set(list)).sort();
   }, [users, currentUser]);
 
@@ -437,7 +463,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
         id: `task-followup-${Date.now()}`,
         title: `Follow-up: ${selectedLead.companyName} (${selectedLead.contactPerson})`,
         description: `Deal ${selectedLead.dealNumber} [${STAGES.find(s => s.id === selectedLead.stage)?.title}] • ${followUpNote || 'Follow-up call'}`,
-        assigned_to: selectedLead.assignedTo || currentUser?.username || 'blueampcnergy@gmail.com',
+        assigned_to: selectedLead.assignedTo || currentUser?.username || 'admin',
         due_date: followUpDate,
         completed: false,
         created_at: Date.now(),
@@ -507,7 +533,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
       estimatedValue: '',
       productInterest: '',
       stage: 'new_lead',
-      assignedTo: currentUser?.username || 'blueampcnergy@gmail.com',
+      assignedTo: currentUser?.username || 'admin',
       initialNote: ''
     });
 
@@ -922,6 +948,21 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                     <span className="font-semibold text-slate-800">{selectedLead.productInterest}</span>
                   </div>
                 )}
+
+                {onNavigateToInvoiceMaker && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedLeadId(null);
+                        onNavigateToInvoiceMaker();
+                      }}
+                      className="w-full py-2.5 px-3 bg-[#205f64]/10 hover:bg-[#205f64]/20 border border-[#205f64]/30 text-[#205f64] font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition"
+                    >
+                      <FileText size={14} /> Open Invoice Maker (Create Quotation / PI)
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Follow-Up Scheduler (Syncs directly with Home tasks) */}
@@ -1122,10 +1163,18 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                   <input
                     type="text" required
                     placeholder="e.g. GreenVolt Energy"
+                    list="crm-companies-datalist"
                     value={newLeadForm.companyName}
-                    onChange={e => setNewLeadForm({ ...newLeadForm, companyName: e.target.value })}
+                    onChange={e => handleCompanyNameChange(e.target.value)}
                     className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#205f64]"
                   />
+                  <datalist id="crm-companies-datalist">
+                    {companyProfiles.map(p => (
+                      <option key={p.id} value={p.name}>
+                        {p.gstNumber || p.contactPerson ? `${p.contactPerson ? p.contactPerson + ' • ' : ''}${p.gstNumber || ''}` : ''}
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Contact Person *</label>
@@ -1188,6 +1237,17 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                   placeholder="e.g. 48V 100Ah ESS / EV 3-Wheeler Pack / Solar Inverter"
                   value={newLeadForm.productInterest}
                   onChange={e => setNewLeadForm({ ...newLeadForm, productInterest: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#205f64]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Company / Site Address</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Plot No 12, MIDC Bhosari, Pune, Maharashtra"
+                  value={newLeadForm.address}
+                  onChange={e => setNewLeadForm({ ...newLeadForm, address: e.target.value })}
                   className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#205f64]"
                 />
               </div>

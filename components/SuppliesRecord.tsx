@@ -353,7 +353,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         item_name: good.name,
         specification: good.makeModel || `${good.category || 'Raw Material'} Component`,
         from_company: good.supplier || matchedCompany?.name || 'Primary Supplier',
-        to_company: 'Datlion Cnergy Plant',
+        to_company: 'Bluamp Energy Plant',
         supplier_id: matchedCompany?.id,
         website_url: matchedCompany ? `https://www.google.com/search?q=${encodeURIComponent(matchedCompany.name)}` : '',
         contact_name: matchedCompany?.contactPerson || 'Sales Desk',
@@ -551,7 +551,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
         item_name: itemName,
         specification: spec,
         from_company: supplierName,
-        to_company: 'Datlion Cnergy Plant',
+        to_company: 'Bluamp Energy Plant',
         website_url: webUrl,
         contact_name: contactName,
         contact_number: contactPhone,
@@ -1100,7 +1100,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                 specification: '',
                 supplier_id: '',
                 from_company: '',
-                to_company: 'Datlion Cnergy Plant',
+                to_company: 'Bluamp Energy Plant',
                 website_url: '',
                 contact_name: '',
                 contact_number: '',
@@ -1311,7 +1311,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                           item_name: b.name,
                           specification: `Bottleneck component for ${calculatedResult.skuName}`,
                           from_company: 'Primary Supplier',
-                          to_company: 'Datlion Cnergy Plant',
+                          to_company: 'Bluamp Energy Plant',
                           status: 'to_be_ordered',
                           target_quantity: b.requiredPerUnit * 50,
                           uom: b.uom || 'qty',
@@ -1787,7 +1787,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                                 specification: record.specification || '',
                                 supplier_id: record.supplier_id || '',
                                 from_company: record.from_company || '',
-                                to_company: record.to_company || 'Datlion Cnergy Plant',
+                                to_company: record.to_company || 'Bluamp Energy Plant',
                                 website_url: record.website_url || '',
                                 contact_name: record.contact_name || '',
                                 contact_number: record.contact_number || '',
@@ -2054,7 +2054,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                   <button
                     onClick={() => {
                       const targetEmail = rfqModalItem.contact_email || '';
-                      const targetSubject = `RFQ: ${rfqModalItem.item_name} - Datlion Cnergy`;
+                      const targetSubject = `RFQ: ${rfqModalItem.item_name} - Bluamp Energy`;
                       const bodyText = generatedRfqText;
                       setRfqModalItem(null);
                       handleOpenWebmailIframe(targetEmail, targetSubject, bodyText);
@@ -2097,7 +2097,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                       </div>
                       {item.contact_email ? (
                         <button
-                          onClick={() => handleOpenWebmailIframe(item.contact_email || '', `RFQ: ${item.item_name} - Datlion Cnergy`, bulkRfqTexts[item.id] || item.rfq_text)}
+                          onClick={() => handleOpenWebmailIframe(item.contact_email || '', `RFQ: ${item.item_name} - Bluamp Energy`, bulkRfqTexts[item.id] || item.rfq_text)}
                           className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg shadow-xs flex items-center gap-1"
                         >
                           <span>✉️ Send via Webmail</span>
@@ -2133,7 +2133,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
                   if (firstSelectedWithEmail) {
                     handleOpenWebmailIframe(
                       firstSelectedWithEmail.contact_email || '',
-                      `RFQ: ${firstSelectedWithEmail.item_name} - Datlion Cnergy`,
+                      `RFQ: ${firstSelectedWithEmail.item_name} - Bluamp Energy`,
                       bulkRfqTexts[firstSelectedWithEmail.id] || firstSelectedWithEmail.rfq_text
                     );
                   }
@@ -2186,7 +2186,7 @@ export const SuppliesRecord: React.FC<SuppliesRecordProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-xl">📧</span>
                 <div>
-                  <h2 className="text-sm font-black text-slate-100">Datlion Cnergy Webmail Dispatcher</h2>
+                  <h2 className="text-sm font-black text-slate-100">Bluamp Energy Webmail Dispatcher</h2>
                   <p className="text-[11px] text-slate-400 font-medium">
                     Review & confirm RFQ email details before sending directly via configured webmail without leaving Supplies.
                   </p>

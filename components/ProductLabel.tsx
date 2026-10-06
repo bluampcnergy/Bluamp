@@ -146,7 +146,7 @@ const ProductLabel: React.FC<ProductLabelProps> = ({ data, id }) => {
                         preserveAspectRatio="none"
                     />
 
-                    {/* Layer 1.1: Mask out old DC Energy logo from the background template */}
+                    {/* Layer 1.1: White background container for brand logo */}
                     <rect x="0" y="0" width="16.5" height="12.5" fill="#ffffff" />
 
                     {/* Layer 1.2: Bluamp Logo above QR code */}

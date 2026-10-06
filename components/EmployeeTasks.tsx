@@ -201,7 +201,7 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
       year: 'numeric'
     });
 
-    let text = `📋 *DATLION CNERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n`;
+    let text = `📋 *BLUAMP ENERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n`;
 
     const targetEmps = employeeList.filter(e => waSelectedEmployees.includes(e.username));
     let totalIncludedTasks = 0;
@@ -243,7 +243,7 @@ export const EmployeeTasks: React.FC<EmployeeTasksProps> = ({
     });
 
     if (totalIncludedTasks === 0) {
-      return `📋 *DATLION CNERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n⚠️ No tasks selected for formatting. Please select employees and tasks on the left.`;
+      return `📋 *BLUAMP ENERGY — TASK ASSIGNMENTS*\n📅 *Date:* ${dateStr}\n\n⚠️ No tasks selected for formatting. Please select employees and tasks on the left.`;
     }
 
     text += `👉 _Please acknowledge and complete your assigned daily tasks._`;

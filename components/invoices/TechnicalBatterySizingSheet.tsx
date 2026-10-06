@@ -80,7 +80,7 @@ export const DEFAULT_BATTERY_SIZING: BatterySizingData = {
     'Integrated Smart Battery Management System (BMS) provides active cell balancing and multi-tier cut-off protection.',
     'Standard high-reliability battery sizing calculated for UPS backup application.'
   ],
-  preparedBy: 'DC Energy Application Engineering'
+  preparedBy: 'Bluamp Application Engineering'
 };
 
 export const BATTERY_SIZING_PRESETS: { name: string; data: Partial<BatterySizingData> }[] = [
@@ -282,38 +282,57 @@ export const BATTERY_SIZING_PRESETS: { name: string; data: Partial<BatterySizing
   }
 ];
 
-export function calculateBatterySizing(input: Partial<BatterySizingData>): BatterySizingData {
-  const upsKva = Number(input.upsKva) || 0;
-  const dcBusVoltage = Number(input.dcBusVoltage) || 360;
-  const floatVoltage = Number(input.floatVoltage) || 387;
-  const eodVoltage = Number(input.eodVoltage) || 319.2;
-  const pf = Number(input.pf) || 0.8;
-  const inverterEfficiency = Number(input.inverterEfficiency) || 89;
-  const reqUsableEnergy = Number(input.reqUsableEnergy) || 18;
+export function calculateBatterySizing(input: Partial<BatterySizingData>, manualField?: keyof BatterySizingData): BatterySizingData {
+  const upsKva = Math.max(0, Number(input.upsKva) || 0);
+  const dcBusVoltage = Math.max(0, Number(input.dcBusVoltage) || 360);
+  const floatVoltage = Math.max(0, Number(input.floatVoltage) || 387);
+  const eodVoltage = Math.max(0.1, Number(input.eodVoltage) || 319.2);
+  const pf = Math.max(0, Math.min(1, Number(input.pf) || 0.8));
+  const inverterEfficiency = Math.max(1, Math.min(100, Number(input.inverterEfficiency) || 89));
+  const reqUsableEnergy = Math.max(0, Number(input.reqUsableEnergy) || 18);
 
   const moduleType = input.moduleType || 'BE-LFP51100';
   const remarksSpec = input.remarksSpec || '51.2V/100Ah';
-  const moduleNomVoltage = Number(input.moduleNomVoltage) || 51.2;
-  const modulePeakCurrent = Number(input.modulePeakCurrent) || 100;
-  const ratedModuleEnergy = Number(input.ratedModuleEnergy) || 2.56;
-  const moduleChargeCutOff = Number(input.moduleChargeCutOff) || 56;
-  const seriesModules = Number(input.seriesModules) || 7;
-  const parallelRacks = Number(input.parallelRacks) || 1;
-  const chargeCutOffSoc = Number(input.chargeCutOffSoc) ?? 95;
-  const dischargeCutOffSoc = Number(input.dischargeCutOffSoc) ?? 10;
-  const agingFactor = Number(input.agingFactor) ?? 100;
+  const moduleNomVoltage = Math.max(0, Number(input.moduleNomVoltage) || 51.2);
+  const modulePeakCurrent = Math.max(0, Number(input.modulePeakCurrent) || 100);
+  const ratedModuleEnergy = Math.max(0, Number(input.ratedModuleEnergy) || 2.56);
+  const moduleChargeCutOff = Math.max(0, Number(input.moduleChargeCutOff) || 56);
+  const seriesModules = Math.max(1, Math.round(Number(input.seriesModules) || 7));
+  const parallelRacks = Math.max(1, Math.round(Number(input.parallelRacks) || 1));
+  const chargeCutOffSoc = Math.max(0, Math.min(100, Number(input.chargeCutOffSoc) ?? 95));
+  const dischargeCutOffSoc = Math.max(0, Math.min(100, Number(input.dischargeCutOffSoc) ?? 10));
+  const agingFactor = Math.max(1, Math.min(100, Number(input.agingFactor) ?? 100));
   const wiringType = input.wiringType || '2 Wire';
 
   // Calculations
   const loadKw = Math.round(upsKva * pf * 10) / 10;
   const inputKw = inverterEfficiency > 0 ? loadKw / (inverterEfficiency / 100) : loadKw;
-  const peakCurrent = eodVoltage > 0 ? Math.round((inputKw * 1000) / eodVoltage) : 0;
+
+  const calculatedPeakCurrent = eodVoltage > 0 ? Math.round((inputKw * 1000) / eodVoltage) : 0;
+  const peakCurrent = (manualField === 'peakCurrent' && typeof input.peakCurrent === 'number')
+    ? input.peakCurrent
+    : calculatedPeakCurrent;
 
   const totalModules = seriesModules * parallelRacks;
-  const physicalEnergy = Math.round(totalModules * ratedModuleEnergy * 100) / 100;
-  const dodRatio = Math.max(0, chargeCutOffSoc - dischargeCutOffSoc);
-  const usableEnergy = Math.round(physicalEnergy * (dodRatio / 100) * (agingFactor / 100) * 100) / 100;
-  const backupTimeMinutes = inputKw > 0 ? Math.round(((usableEnergy / inputKw) * 60) * 10) / 10 : 0;
+  const calculatedPhysicalEnergy = Math.round(totalModules * ratedModuleEnergy * 100) / 100;
+  const physicalEnergy = (manualField === 'physicalEnergy' && typeof input.physicalEnergy === 'number')
+    ? input.physicalEnergy
+    : calculatedPhysicalEnergy;
+
+  const dodRatio = (manualField === 'dodRatio' && typeof input.dodRatio === 'number')
+    ? input.dodRatio
+    : Math.max(0, chargeCutOffSoc - dischargeCutOffSoc);
+
+  const calculatedUsableEnergy = Math.round(physicalEnergy * (dodRatio / 100) * (agingFactor / 100) * 100) / 100;
+  const usableEnergy = (manualField === 'usableEnergy' && typeof input.usableEnergy === 'number')
+    ? input.usableEnergy
+    : calculatedUsableEnergy;
+
+  const calculatedBackupMinutes = inputKw > 0 ? Math.round(((usableEnergy / inputKw) * 60) * 10) / 10 : 0;
+  const backupTimeMinutes = (manualField === 'backupTimeMinutes' && typeof input.backupTimeMinutes === 'number')
+    ? input.backupTimeMinutes
+    : calculatedBackupMinutes;
+
   const rackPeakCurrent = parallelRacks > 0 ? Math.round(peakCurrent / parallelRacks) : peakCurrent;
   const stringConfig = `${seriesModules}S${parallelRacks}P`;
 
@@ -367,8 +386,8 @@ export const TechnicalBatterySizingSheet: React.FC<TechnicalBatterySizingSheetPr
   data,
   onChange,
   onRemove,
-  invoiceNumber = 'DN/DC/26-27/004',
-  companyName = 'DATLION CNERGY',
+  invoiceNumber = 'QUO/BA/26-27/001',
+  companyName = 'BLUAMP ENERGY',
   logoUrl,
   viewMode: controlledViewMode,
   onViewModeChange
@@ -383,11 +402,10 @@ export const TechnicalBatterySizingSheet: React.FC<TechnicalBatterySizingSheetPr
 
   const handleFieldChange = (field: keyof BatterySizingData, value: any) => {
     const updated = { ...data, [field]: value };
-    // If user edited a core numerical parameter, switch presetName to Custom unless preset matching
     if (field !== 'presetName') {
       updated.presetName = 'Custom Configuration';
     }
-    const recalculated = calculateBatterySizing(updated);
+    const recalculated = calculateBatterySizing(updated, field);
     onChange(recalculated);
   };
 
@@ -913,16 +931,23 @@ export const TechnicalBatterySizingPreviewBody: React.FC<BodyProps> = ({
       <div className="flex justify-between items-start pb-3 border-b-2 border-slate-800">
         <div className="flex items-center gap-3">
           {logoUrl ? (
-            <img src={logoUrl} alt="Company Logo" className="h-10 sm:h-12 w-auto object-contain" />
+            <img src={logoUrl} alt="Bluamp Logo" className="h-10 sm:h-12 w-auto object-contain" />
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-black text-[#205f64]">DC</span>
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/logos/bluamp-logo-color.png"
+                alt="Bluamp Logo"
+                className="h-9 sm:h-11 w-auto object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
               <div>
-                <span className="text-xs font-black tracking-widest text-slate-900 block leading-tight">
-                  DATLION CNERGY
+                <span className="text-xs sm:text-sm font-black tracking-wider text-[#205f64] block leading-tight">
+                  {companyName || 'BLUAMP ENERGY'}
                 </span>
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
-                  ENERGY SOLUTIONS
+                  ENERGY STORAGE SYSTEMS
                 </span>
               </div>
             </div>
@@ -937,7 +962,7 @@ export const TechnicalBatterySizingPreviewBody: React.FC<BodyProps> = ({
             BATTERY SIZING SHEET
           </h2>
           <span className="text-[10px] font-mono font-bold text-slate-600 block">
-            Ref No: {invoiceNumber || 'DN/DC/26-27/004'}
+            Ref No: {invoiceNumber || 'QUO/BA/26-27/001'}
           </span>
         </div>
       </div>
@@ -1165,7 +1190,7 @@ export const TechnicalBatterySizingPreviewBody: React.FC<BodyProps> = ({
           </span>
           <div className="h-6"></div>
           <span className="font-bold text-slate-800 border-t border-dashed border-slate-400 pt-0.5 inline-block min-w-[180px]">
-            {companyName || 'DC Energy'} Application Engineering
+            {companyName || 'Bluamp Energy'} Application Engineering
           </span>
         </div>
 

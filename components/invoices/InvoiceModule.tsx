@@ -1193,6 +1193,7 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                     <SalesCrmPanel 
                         currentUser={currentUser} 
                         users={users}
+                        companyProfiles={companyProfiles}
                         employeeTasks={employeeTasks}
                         setEmployeeTasks={setEmployeeTasks}
                         addLogEntry={addLogEntry}

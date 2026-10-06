@@ -582,10 +582,10 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ setView, userRole }) => {
                 📖 Enterprise User Manual & Knowledge Base
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-brand">
-                Datlion Cnergy <span className="text-[#8EBF45]">System User Manual</span>
+                Bluamp Energy <span className="text-[#8EBF45]">System User Manual</span>
               </h1>
               <p className="mt-2 text-slate-300 text-sm sm:text-base max-w-2xl">
-                Comprehensive step-by-step documentation, detailed function catalog, role permissions, and factory floor workflows for Datlion Cnergy Plant OS.
+                Comprehensive step-by-step documentation, detailed function catalog, role permissions, and factory floor workflows for Bluamp Energy Plant OS.
               </p>
             </div>
             
@@ -854,7 +854,7 @@ export const HelpGuide: React.FC<HelpGuideProps> = ({ setView, userRole }) => {
                   Official Technical Handbook
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-2">
-                  Datlion Cnergy Plant OS — Comprehensive User Manual
+                  Bluamp Energy Plant OS — Comprehensive User Manual
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1">
                   Complete end-to-end specification manual for all 18 plant management modules.

@@ -3088,7 +3088,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                     setConfig(prev => ({ ...prev, showBatterySizingSheet: false }));
                                 }}
                                 invoiceNumber={doc.invoice_metadata.invoice_number}
-                                companyName={doc.issuer_details.name || 'DATLION CNERGY'}
+                                companyName={doc.issuer_details.name || 'BLUAMP ENERGY'}
                                 logoUrl={logo || undefined}
                                 viewMode={batterySizingViewMode}
                                 onViewModeChange={setBatterySizingViewMode}
@@ -3370,7 +3370,7 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 <TechnicalBatterySizingPrintView
                                     data={batterySizingData}
                                     invoiceNumber={doc.invoice_metadata.invoice_number}
-                                    companyName={doc.issuer_details.name || 'DATLION CNERGY'}
+                                    companyName={doc.issuer_details.name || 'BLUAMP ENERGY'}
                                     logoUrl={logo || undefined}
                                 />
                             </div>

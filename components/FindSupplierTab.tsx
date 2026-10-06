@@ -820,7 +820,7 @@ export const FindSupplierTab: React.FC<FindSupplierTabProps> = ({
 
                       {onOpenWebmail && sup.email && (
                         <button
-                          onClick={() => onOpenWebmail(sup.email, `RFQ Inquiry for ${productQuery}`, `Dear ${sup.contactPerson || 'Sales Team'},\n\nWe are looking to source ${productQuery} in ${city}.\n\nBest regards,\nDatlion Cnergy`)}
+                          onClick={() => onOpenWebmail(sup.email, `RFQ Inquiry for ${productQuery}`, `Dear ${sup.contactPerson || 'Sales Team'},\n\nWe are looking to source ${productQuery} in ${city}.\n\nBest regards,\nBluamp Energy`)}
                           className="px-2.5 py-1 bg-sky-100 text-sky-800 rounded font-bold text-xs hover:bg-sky-200 transition-colors"
                         >
                           📧 Webmail RFQ

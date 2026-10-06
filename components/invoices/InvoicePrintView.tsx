@@ -550,7 +550,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                                                 <TechnicalBatterySizingPrintView
                                                     data={(config as any).batterySizingData || DEFAULT_BATTERY_SIZING}
                                                     invoiceNumber={doc.invoice_metadata?.invoice_number || ''}
-                                                    companyName={doc.issuer_details?.name || 'DATLION CNERGY'}
+                                                    companyName={doc.issuer_details?.name || 'BLUAMP ENERGY'}
                                                     logoUrl={logo || undefined}
                                                 />
                                             </div>

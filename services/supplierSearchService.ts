@@ -168,7 +168,7 @@ export const searchSuppliersAcrossWeb = async (
   radiusKm: number = 25
 ): Promise<SourcedSupplier[]> => {
   try {
-    const prompt = `You are an expert Indian industrial procurement sourcing AI for Datlion Cnergy (a manufacturer of lithium battery packs, solar power equipment, and electronic systems).
+    const prompt = `You are an expert Indian industrial procurement sourcing AI for Bluamp Energy (a manufacturer of lithium battery packs, solar power equipment, and electronic systems).
 
 Your task is to locate REAL, VERIFIED industrial suppliers, distributors, and manufacturers for "${product}" in or near "${city}, India".
 

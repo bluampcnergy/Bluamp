@@ -123,7 +123,7 @@ How can I help you optimize plant efficiency today?`,
         }
       } else {
         // Intelligent General Response
-        responseText = `Based on current Datlion Cnergy plant telemetry:\n\n` +
+        responseText = `Based on current Bluamp Energy plant telemetry:\n\n` +
           `- **Raw Materials in Stock:** ${receivedGoods.length} shipments logged\n` +
           `- **WIP Assemblies:** ${wipItems.length} active batches\n` +
           `- **Finished Goods:** ${finishedGoods.length} stock batches\n` +
@@ -175,7 +175,7 @@ How can I help you optimize plant efficiency today?`,
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white tracking-wide">Datlion Cnergy AI Operations Assistant</h2>
+              <h2 className="text-base font-bold text-white tracking-wide">Bluamp Energy AI Operations Assistant</h2>
               <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online
               </span>
@@ -214,7 +214,7 @@ How can I help you optimize plant efficiency today?`,
           >
             <div className="flex items-center gap-2 mb-1 px-1">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                {msg.sender === 'user' ? (currentUser?.username || 'You') : 'Datlion Cnergy AI'}
+                {msg.sender === 'user' ? (currentUser?.username || 'You') : 'Bluamp Energy AI'}
               </span>
               <span className="text-[10px] text-slate-500">{msg.timestamp}</span>
             </div>
@@ -234,7 +234,7 @@ How can I help you optimize plant efficiency today?`,
         {isLoading && (
           <div className="flex flex-col items-start max-w-xl mr-auto">
             <div className="flex items-center gap-2 mb-1 px-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Datlion Cnergy AI</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Bluamp Energy AI</span>
             </div>
             <div className="p-4 rounded-2xl bg-slate-800/90 border border-slate-700 text-slate-300 text-xs flex items-center gap-3">
               <div className="w-4 h-4 border-2 border-[#8EBF45] border-t-transparent rounded-full animate-spin"></div>
