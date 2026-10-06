@@ -9,8 +9,7 @@ import {
   Calendar, 
   Mail, 
   Building, 
-  X,
-  FileText
+  X
 } from './Icons';
 
 const PhoneIcon = ({ size = 12, className = '' }: { size?: number; className?: string }) => (
@@ -812,9 +811,9 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
       {/* 5. SLIDE-OUT CUSTOMER DETAIL DRAWER */}
       {selectedLead && (
         <div className="fixed inset-0 z-[150] flex justify-end bg-black/40 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
+          <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
             {/* Drawer Header */}
-            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-start justify-between">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-slate-400">{selectedLead.dealNumber}</span>
@@ -822,10 +821,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                     {STAGES.find(s => s.id === selectedLead.stage)?.title}
                   </span>
                 </div>
-                <h3 className="text-lg font-black text-slate-900 mt-1">{selectedLead.companyName}</h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5 font-bold text-emerald-700">
-                  Deal Value: {formatINR(selectedLead.estimatedValue)}
-                </p>
+                <h3 className="text-base font-black text-slate-900 mt-1">{selectedLead.companyName}</h3>
               </div>
               <button
                 type="button"
@@ -837,43 +833,45 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
             </div>
 
             {/* Drawer Body */}
-            <div className="p-5 overflow-y-auto space-y-6 flex-1 text-xs">
-              {/* Quick Stage Switcher */}
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Stage</label>
-                <select
-                  value={selectedLead.stage}
-                  onChange={e => handleUpdateStage(selectedLead.id, e.target.value as LeadStage)}
-                  className="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold bg-white text-slate-800 outline-none focus:border-[#205f64]"
-                >
-                  {STAGES.map(s => (
-                    <option key={s.id} value={s.id}>{s.title}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Lead Assignment (Admin or read-only) */}
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Assigned Sales Rep</label>
-                {isAdminOrManager ? (
+            <div className="p-4 overflow-y-auto space-y-4 flex-1 text-xs">
+              {/* Stage & Assigned Rep */}
+              <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Stage</label>
                   <select
-                    value={selectedLead.assignedTo}
-                    onChange={e => handleAssignRep(selectedLead.id, e.target.value)}
+                    value={selectedLead.stage}
+                    onChange={e => handleUpdateStage(selectedLead.id, e.target.value as LeadStage)}
                     className="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold bg-white text-slate-800 outline-none focus:border-[#205f64]"
                   >
-                    {salesReps.map(rep => (
-                      <option key={rep} value={rep}>{rep}</option>
+                    {STAGES.map(s => (
+                      <option key={s.id} value={s.id}>{s.title}</option>
                     ))}
                   </select>
-                ) : (
-                  <div className="font-bold text-slate-700 p-1">{selectedLead.assignedTo || 'Unassigned'}</div>
-                )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Assigned Rep</label>
+                  {isAdminOrManager ? (
+                    <select
+                      value={selectedLead.assignedTo}
+                      onChange={e => handleAssignRep(selectedLead.id, e.target.value)}
+                      className="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold bg-white text-slate-800 outline-none focus:border-[#205f64]"
+                    >
+                      {salesReps.map(rep => (
+                        <option key={rep} value={rep}>{rep}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="font-bold text-slate-700 p-2 bg-white border border-slate-200 rounded-lg text-xs">
+                      {selectedLead.assignedTo || 'Unassigned'}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Client Profile Details */}
-              <div className="space-y-3 border-t border-slate-100 pt-4">
-                <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">Client Profile</h4>
-                <div className="grid grid-cols-2 gap-3">
+              {/* Client Info */}
+              <div className="space-y-2 border-t border-slate-100 pt-3">
+                <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Client Info</h4>
+                <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-[10px] text-slate-400 block font-semibold">Contact Person</span>
                     <span className="font-bold text-slate-800">{selectedLead.contactPerson}</span>
@@ -884,113 +882,98 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                       <PhoneIcon size={11} /> {selectedLead.phone}
                     </a>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Email</span>
-                    <a href={`mailto:${selectedLead.email}`} className="font-bold text-blue-600 hover:underline flex items-center gap-1 truncate">
-                      <Mail size={11} /> {selectedLead.email}
-                    </a>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">GSTIN</span>
-                    <span className="font-mono font-bold text-slate-700">{selectedLead.gstin || '—'}</span>
-                  </div>
+                  {selectedLead.email && (
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Email</span>
+                      <a href={`mailto:${selectedLead.email}`} className="font-bold text-blue-600 hover:underline flex items-center gap-1 truncate">
+                        <Mail size={11} /> {selectedLead.email}
+                      </a>
+                    </div>
+                  )}
+                  {selectedLead.gstin && (
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">GSTIN</span>
+                      <span className="font-mono font-bold text-slate-700">{selectedLead.gstin}</span>
+                    </div>
+                  )}
                 </div>
+
                 {selectedLead.address && (
-                  <div>
+                  <div className="pt-0.5">
                     <span className="text-[10px] text-slate-400 block font-semibold">Address</span>
-                    <span className="text-slate-600">{selectedLead.address}</span>
-                  </div>
-                )}
-                {selectedLead.productInterest && (
-                  <div className="p-2.5 bg-blue-50/50 border border-blue-100 rounded-lg">
-                    <span className="text-[10px] text-blue-600 block font-bold uppercase">Product Requirement</span>
-                    <span className="font-semibold text-slate-800">{selectedLead.productInterest}</span>
+                    <span className="text-slate-600 text-xs">{selectedLead.address}</span>
                   </div>
                 )}
 
-                {onNavigateToInvoiceMaker && (
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedLeadId(null);
-                        onNavigateToInvoiceMaker();
-                      }}
-                      className="w-full py-2.5 px-3 bg-[#205f64]/10 hover:bg-[#205f64]/20 border border-[#205f64]/30 text-[#205f64] font-bold rounded-xl text-xs flex items-center justify-center gap-2 transition"
-                    >
-                      <FileText size={14} /> Open Invoice Maker (Create Quotation / PI)
-                    </button>
+                {selectedLead.productInterest && (
+                  <div className="p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-xs">
+                    <span className="text-[10px] text-blue-600 block font-bold uppercase">Requirement</span>
+                    <span className="font-semibold text-slate-800">{selectedLead.productInterest}</span>
                   </div>
                 )}
               </div>
 
-              {/* Follow-Up Scheduler (Syncs directly with Home tasks) */}
-              <div className="space-y-3 border-t border-slate-100 pt-4 bg-amber-50/50 p-4 rounded-xl border border-amber-200/60">
+              {/* Next Follow-Up */}
+              <div className="space-y-2 border-t border-slate-100 pt-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
-                    <Calendar size={13} /> Schedule Next Follow-Up
+                  <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                    <Calendar size={12} /> Next Follow-Up
                   </h4>
                   {selectedLead.nextFollowUpDate && (
-                    <span className="text-[10px] font-bold bg-amber-200/60 text-amber-900 px-2 py-0.5 rounded">
-                      Current: {selectedLead.nextFollowUpDate}
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded">
+                      {selectedLead.nextFollowUpDate}
                     </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 gap-2.5">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 block mb-1">Follow-Up Date</label>
-                    <input
-                      type="date"
-                      value={followUpDate}
-                      onChange={e => setFollowUpDate(e.target.value)}
-                      className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white outline-none focus:border-amber-500 font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 block mb-1">Follow-Up Agenda / Note</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Call to discuss pricing / send revised quote..."
-                      value={followUpNote}
-                      onChange={e => setFollowUpNote(e.target.value)}
-                      className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white outline-none focus:border-amber-500"
-                    />
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={followUpDate}
+                    onChange={e => setFollowUpDate(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#205f64] font-semibold"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Follow-up agenda/note..."
+                    value={followUpNote}
+                    onChange={e => setFollowUpNote(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs bg-white outline-none focus:border-[#205f64]"
+                  />
                 </div>
 
-                <label className="flex items-center gap-2 text-[11px] text-slate-700 font-semibold cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={syncToHomeTasks}
-                    onChange={e => setSyncToHomeTasks(e.target.checked)}
-                    className="rounded text-[#205f64] focus:ring-[#205f64]"
-                  />
-                  <span>Add this follow-up as a task on my Home page task list</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={handleSaveFollowUp}
-                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shadow-xs transition"
-                >
-                  Save Follow-Up
-                </button>
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={syncToHomeTasks}
+                      onChange={e => setSyncToHomeTasks(e.target.checked)}
+                      className="rounded text-[#205f64] focus:ring-[#205f64]"
+                    />
+                    <span>Sync to Home tasks</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveFollowUp}
+                    className="px-3.5 py-1.5 bg-[#205f64] hover:bg-[#18484c] text-white rounded-lg font-bold text-xs shadow-xs transition"
+                  >
+                    Save Follow-Up
+                  </button>
+                </div>
               </div>
 
-              {/* Notes & Activity History */}
-              <div className="space-y-3 border-t border-slate-100 pt-4">
-                <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">Activity Log & Notes</h4>
+              {/* Notes & Activity Log */}
+              <div className="space-y-2 border-t border-slate-100 pt-3">
+                <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider">Activity Notes</h4>
                 
-                {/* Add Note Input */}
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Type a quick call note or update..."
+                    placeholder="Add a call note..."
                     value={newNoteText}
                     onChange={e => setNewNoteText(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleAddNote(); }}
-                    className="flex-1 p-2 border border-slate-300 rounded-lg text-xs outline-none focus:border-[#205f64]"
+                    className="flex-1 p-2 border border-slate-200 rounded-lg text-xs outline-none focus:border-[#205f64]"
                   />
                   <button
                     type="button"
@@ -1001,14 +984,13 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                   </button>
                 </div>
 
-                {/* Notes list */}
-                <div className="space-y-2 mt-2">
+                <div className="space-y-1.5 mt-2 max-h-44 overflow-y-auto">
                   {(!selectedLead.notes || selectedLead.notes.length === 0) ? (
-                    <p className="text-slate-400 text-xs text-center py-3">No activity logged yet.</p>
+                    <p className="text-slate-400 text-xs text-center py-2">No notes yet.</p>
                   ) : (
                     selectedLead.notes.slice().reverse().map(note => (
-                      <div key={note.id} className="p-2.5 bg-slate-50 border border-slate-200/70 rounded-lg text-xs">
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                      <div key={note.id} className="p-2 bg-slate-50 border border-slate-200/60 rounded-lg text-xs">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
                           <span className="font-bold text-slate-600">{note.author.split('@')[0]}</span>
                           <span>{note.date}</span>
                         </div>
@@ -1021,7 +1003,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
             </div>
 
             {/* Drawer Footer */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="p-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               {isAdminOrManager && (
                 <button
                   type="button"
@@ -1034,9 +1016,9 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedLeadId(null)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg text-xs transition ml-auto"
+                className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg text-xs transition ml-auto"
               >
-                Close Drawer
+                Close
               </button>
             </div>
           </div>
