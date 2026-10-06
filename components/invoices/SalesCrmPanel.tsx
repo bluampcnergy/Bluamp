@@ -301,17 +301,6 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
     });
   }, [leads, isAdminOrManager, filterRep, currentUser?.username, searchQuery]);
 
-  // Aggregate metrics
-  const metrics = useMemo(() => {
-    const totalPipelineValue = filteredLeads.filter(l => l.stage !== 'lost').reduce((sum, l) => sum + (l.estimatedValue || 0), 0);
-    const wonValue = filteredLeads.filter(l => l.stage === 'won').reduce((sum, l) => sum + (l.estimatedValue || 0), 0);
-    const activeDeals = filteredLeads.filter(l => l.stage !== 'won' && l.stage !== 'lost').length;
-    const todayStr = new Date().toISOString().split('T')[0];
-    const followUpsDueToday = filteredLeads.filter(l => l.nextFollowUpDate === todayStr && l.stage !== 'won' && l.stage !== 'lost').length;
-
-    return { totalPipelineValue, wonValue, activeDeals, followUpsDueToday };
-  }, [filteredLeads]);
-
   // Move deal to new stage
   const handleUpdateStage = (leadId: string, newStage: LeadStage) => {
     if (newStage === 'lost') {
@@ -572,32 +561,13 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
           </p>
         </div>
 
-        {/* Metrics Pills */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="px-3.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Active Deals</span>
-            <span className="text-sm font-black text-slate-800">{metrics.activeDeals}</span>
-          </div>
-          <div className="px-3.5 py-1.5 bg-blue-50/70 border border-blue-200 rounded-xl text-center">
-            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block">Pipeline Value</span>
-            <span className="text-sm font-black text-blue-900">{formatINR(metrics.totalPipelineValue)}</span>
-          </div>
-          <div className="px-3.5 py-1.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest block">Won / Paid</span>
-            <span className="text-sm font-black text-emerald-900">{formatINR(metrics.wonValue)}</span>
-          </div>
-          <div className="px-3.5 py-1.5 bg-amber-50/70 border border-amber-200 rounded-xl text-center">
-            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest block">Due Today</span>
-            <span className="text-sm font-black text-amber-800">{metrics.followUpsDueToday}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-4 py-2 bg-[#205f64] hover:bg-[#18484c] text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95 ml-auto lg:ml-0"
-          >
-            <PlusCircle size={15} /> New Lead
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsAddModalOpen(true)}
+          className="px-4 py-2.5 bg-[#205f64] hover:bg-[#18484c] text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95 shrink-0"
+        >
+          <PlusCircle size={15} /> New Lead
+        </button>
       </div>
 
       {/* 2. FILTER & CONTROLS BAR */}
@@ -658,7 +628,6 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
           <div className="flex gap-3.5 min-w-[1550px] items-start">
             {STAGES.map(stage => {
               const stageLeads = filteredLeads.filter(l => l.stage === stage.id);
-              const stageValue = stageLeads.reduce((s, l) => s + (l.estimatedValue || 0), 0);
               const todayStr = new Date().toISOString().split('T')[0];
 
               return (
@@ -668,10 +637,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                 >
                   {/* Column Header */}
                   <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 mb-2.5">
-                    <div>
-                      <h3 className={`text-xs font-black ${stage.color} tracking-tight`}>{stage.title}</h3>
-                      <span className="text-[10px] font-bold text-slate-500">{formatINR(stageValue)}</span>
-                    </div>
+                    <h3 className={`text-xs font-black ${stage.color} tracking-tight`}>{stage.title}</h3>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${stage.badge}`}>
                       {stageLeads.length}
                     </span>
@@ -727,13 +693,10 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                               </p>
                             )}
 
-                            {/* Amount & Assignee */}
-                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-                              <span className="text-xs font-black text-slate-800 font-mono">
-                                {formatINR(lead.estimatedValue)}
-                              </span>
-                              <span className="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[80px]" title={lead.assignedTo}>
-                                {lead.assignedTo?.split('@')[0] || 'Unassigned'}
+                            {/* Assignee */}
+                            <div className="flex items-center justify-end mt-2 pt-2 border-t border-slate-100">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase truncate" title={lead.assignedTo}>
+                                👤 {lead.assignedTo?.split('@')[0] || 'Unassigned'}
                               </span>
                             </div>
 
@@ -782,7 +745,6 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                 <th className="p-3">Company</th>
                 <th className="p-3">Contact</th>
                 <th className="p-3">Stage</th>
-                <th className="p-3 text-right">Value (₹)</th>
                 <th className="p-3">Assigned To</th>
                 <th className="p-3">Next Follow-Up</th>
                 <th className="p-3 text-center">Action</th>
@@ -791,7 +753,7 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredLeads.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-400">No leads found.</td>
+                  <td colSpan={7} className="p-8 text-center text-slate-400">No leads found.</td>
                 </tr>
               ) : (
                 filteredLeads.map(lead => {
@@ -818,9 +780,6 @@ export const SalesCrmPanel: React.FC<SalesCrmPanelProps> = ({
                             <option key={s.id} value={s.id}>{s.title}</option>
                           ))}
                         </select>
-                      </td>
-                      <td className="p-3 text-right font-black font-mono text-slate-900">
-                        {formatINR(lead.estimatedValue)}
                       </td>
                       <td className="p-3 font-semibold text-slate-600">
                         {lead.assignedTo?.split('@')[0] || 'Unassigned'}
