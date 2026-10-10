@@ -1,16 +1,18 @@
-
 import { createClient } from '@supabase/supabase-js';
+import { getActiveBrand } from './config/brandConfig';
 
 // Ultra-safe environment variable access
-const getEnv = (key: string) => {
+const getEnv = (key: string): string | undefined => {
   try {
     // Check if import.meta exists and has env
-    if (import.meta && (import.meta as any).env) {
-      return (import.meta as any).env[key];
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const val = (import.meta as any).env[key];
+      if (val) return val;
     }
     // Fallback for some process.env environments
     if (typeof process !== 'undefined' && process.env) {
-      return process.env[key];
+      const val = process.env[key];
+      if (val) return val;
     }
   } catch (e) {
     return undefined;
@@ -18,8 +20,9 @@ const getEnv = (key: string) => {
   return undefined;
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || "https://supabase.cnergy.co.in";
-const supabaseKey = getEnv('VITE_SUPABASE_ANON_KEY') || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE";
+const brand = getActiveBrand();
+const supabaseUrl = getEnv('VITE_SUPABASE_URL') || getEnv('SUPABASE_URL') || brand.defaultSupabaseUrl;
+const supabaseKey = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('SUPABASE_KEY') || brand.defaultSupabaseKey;
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn('Supabase credentials missing. App may not function correctly.');

@@ -22,6 +22,7 @@ export type View =
   | 'finance_costing'
   | 'finance_maker'
   | 'finance_ledger'
+  | 'finance_crm'
   | 'supplies'
   | 'help'
   | 'webmail'
@@ -550,3 +551,54 @@ export interface MobileActionPreview {
   status: 'pending' | 'executing' | 'success' | 'failed';
   resultMessage?: string;
 }
+
+// --- Sales CRM / Customer Pipeline Types ---
+
+export type LeadStage =
+  | 'new_lead'
+  | 'follow_up'
+  | 'quotation_sent'
+  | 'negotiation'
+  | 'proforma_issued'
+  | 'won'
+  | 'lost';
+
+export type LeadLostReason =
+  | 'pricing'
+  | 'competitor'
+  | 'specs_mismatch'
+  | 'client_delayed'
+  | 'unresponsive'
+  | 'other';
+
+export interface LeadNote {
+  id: string;
+  text: string;
+  author: string;
+  date: string;
+}
+
+export interface Lead {
+  id: string;
+  dealNumber: string;
+  companyName: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  gstin?: string;
+  address?: string;
+  estimatedValue: number;
+  productInterest?: string;
+  stage: LeadStage;
+  lostReason?: LeadLostReason;
+  lostNotes?: string;
+  assignedTo: string;
+  assignedBy?: string;
+  nextFollowUpDate?: string;
+  nextFollowUpTime?: string;
+  nextFollowUpNote?: string;
+  notes?: LeadNote[];
+  createdAt: string;
+  updatedAt: string;
+}
+

@@ -1,7 +1,10 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { applyBrandTheme } from './config/brandConfig';
+
+// Apply brand CSS tokens, document title, and colors immediately
+applyBrandTheme();
 
 // Global guard: Prevent mousewheel & touchpad scrolling from inadvertently changing numeric input values anywhere in the app
 if (typeof window !== 'undefined') {
@@ -48,4 +51,3 @@ root.render(
     <App />
   </React.StrictMode>
 );
-

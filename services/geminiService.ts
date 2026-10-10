@@ -127,7 +127,7 @@ export const extractInvoiceData = async (
         4. **METADATA**:
            - Dates: YYYY-MM-DD.
            - Money: Numbers only (no symbols).
-           - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy" or document is from a vendor/supplier, 'purchase'. Default 'purchase'.
+           - Source Type: If issuer is "Bluamp Energy" or "Datlion Cnergy", 'sales'. If receiver is "Bluamp Energy" or "Datlion Cnergy" or document is from a vendor/supplier, 'purchase'. Default 'purchase'.
            - Document Type: If titled or labeled "Delivery Challan" or document number starts with "DCh", 'delivery_challan'. Default 'invoice'.
            - ITC: Default 'set_off' for purchases unless blocked.`;
 
@@ -162,7 +162,7 @@ export const extractInvoiceData = async (
             customTitle.includes('challan');
 
         const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
-        const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+        const isOurCompany = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
         return {
           ...parsedData,

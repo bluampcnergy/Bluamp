@@ -8,14 +8,41 @@
     <meta name="theme-color" content="#8EBF45" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Cnergy Voice" />
+    <meta name="apple-mobile-web-app-title" content="Plant OS" />
     <link rel="manifest" href="/manifest.json" />
-    <title>Plant Inventory</title>
+    <title>Plant Management OS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lexend:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                dark: 'var(--brand-dark, #0D0D0D)',
+                primary: 'var(--brand-primary, #8EBF45)',
+                primaryHover: 'var(--brand-primary-hover, #7cb037)',
+                secondary: 'var(--brand-secondary, #658C3E)',
+                focus: 'var(--brand-focus, #527a23)',
+                accent: 'var(--brand-accent, #A8BF75)',
+                header: 'var(--brand-header-bg, #0D0D0D)',
+                footer: 'var(--brand-footer-bg, #0D0D0D)',
+                canvas: 'var(--brand-canvas, #F8FAFC)',
+                text: 'var(--brand-text, #1E293B)',
+              }
+            },
+            fontFamily: {
+              brand: ['Lexend', 'sans-serif'],
+              body: ['Inter', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <link rel="stylesheet" href="/index.css" />
   <script type="importmap">
 {
   "imports": {
@@ -34,31 +61,34 @@
 }
 </script>
 <style>
+  :root {
+    --brand-dark: #0D0D0D;
+    --brand-primary: #8EBF45;
+    --brand-primary-hover: #7cb037;
+    --brand-secondary: #658C3E;
+    --brand-focus: #527a23;
+    --brand-accent: #A8BF75;
+    --brand-header-bg: #0D0D0D;
+    --brand-footer-bg: #0D0D0D;
+    --brand-canvas: #F8FAFC;
+    --brand-text: #1E293B;
+  }
   body {
     font-family: 'Inter', sans-serif;
-    color: #404040;
-    background-color: #F9FAFB;
+    color: var(--brand-text);
+    background-color: var(--brand-canvas);
   }
   h1, h2, h3, h4, .font-brand {
     font-family: 'Lexend', sans-serif;
-    color: #0D0D0D;
   }
-  .bg-brand-primary { background-color: #8EBF45; }
-  .bg-brand-secondary { background-color: #658C3E; }
-  .bg-brand-dark { background-color: #0D0D0D; }
-  .text-brand-primary { color: #8EBF45; }
-  .text-brand-dark { color: #0D0D0D; }
-  .border-brand-accent { border-color: #A8BF75; }
+  .bg-brand-primary { background-color: var(--brand-primary); }
+  .bg-brand-secondary { background-color: var(--brand-secondary); }
+  .bg-brand-dark { background-color: var(--brand-dark); }
+  .text-brand-primary { color: var(--brand-primary); }
+  .text-brand-secondary { color: var(--brand-secondary); }
+  .text-brand-dark { color: var(--brand-dark); }
+  .border-brand-accent { border-color: var(--brand-accent); }
   
-  /* Shared Industrial Table Styling */
-  .plant-table th {
-    font-family: 'Lexend', sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-
   /* Disable spin buttons and appearance quirks on all numeric inputs */
   input[type=number] {
     -moz-appearance: textfield;

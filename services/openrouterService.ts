@@ -46,7 +46,7 @@ CRITICAL RULES:
 4. **METADATA**:
    - Dates: YYYY-MM-DD.
    - Money: Numbers only (no symbols).
-   - Source Type: If issuer is "Datlion Cnergy", 'sales'. If receiver is "Datlion Cnergy" or vendor bill, 'purchase'. Default 'purchase'.
+   - Source Type: If issuer is "Bluamp Energy" or "Datlion Cnergy", 'sales'. If receiver is "Bluamp Energy" or "Datlion Cnergy" or vendor bill, 'purchase'. Default 'purchase'.
    - Document Type: If titled "Delivery Challan" or starts with "DCh", 'delivery_challan'. Default 'invoice'.
    - ITC: Default 'set_off' for purchases unless blocked.
 
@@ -205,7 +205,7 @@ Return a JSON object matching this schema exactly:
         customTitle.includes('challan');
 
     const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
-    const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+    const isOurCompany = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
     return {
       ...EMPTY_INVOICE,
@@ -278,6 +278,8 @@ export const generateTextResponseOpenRouter = async (
   }
 };
 
+import { getActiveBrand } from '../config/brandConfig';
+
 export const generateRFQTextOpenRouter = async (params: {
   product: string;
   specification?: string;
@@ -286,7 +288,8 @@ export const generateRFQTextOpenRouter = async (params: {
   quantity?: number;
   uom?: string;
 }): Promise<string> => {
-  const prompt = `Write a professional, polite Request for Quotation (RFQ) email body from Datlion Cnergy to vendor "${params.supplierName || 'Vendor'}" (Attention: ${params.contactName || 'Sales/Procurement Team'}).
+  const brand = getActiveBrand();
+  const prompt = `Write a professional, polite Request for Quotation (RFQ) email body from ${brand.companyName} to vendor "${params.supplierName || 'Vendor'}" (Attention: ${params.contactName || 'Sales/Procurement Team'}).
 Product: ${params.product}
 Specification / Particulars: ${params.specification || 'Standard Datasheet Spec'}
 Quantity Required: ${params.quantity ? `${params.quantity} ${params.uom || 'qty'}` : 'Bulk Procurement Quantity'}
@@ -305,7 +308,7 @@ Request formal unit pricing (excl & incl GST), bulk tier discounts, lead time/de
   // Robust Fallback Template
   return `Dear ${params.contactName || 'Sales Team'} (${params.supplierName || 'Supplier'}),
 
-We at Datlion Cnergy would like to request an official Request for Quotation (RFQ) for the following item:
+We at ${brand.companyName} would like to request an official Request for Quotation (RFQ) for the following item:
 
 • Product: ${params.product}
 • Specification / Particulars: ${params.specification || 'As per standard specification'}
@@ -321,10 +324,10 @@ Looking forward to your prompt response.
 
 Best regards,
 Procurement Team
-Datlion Cnergy`;
+${brand.companyName}`;
 };
 
 export const CNERGY_EMAIL_SIGNATURE_URL = "https://supabase.cnergy.co.in/storage/v1/object/public/Logo/Email_signature_3%20(1).png";
-export const CNERGY_EMAIL_SIGNATURE_HTML = `<br/><br/><div class="cnergy-signature" style="margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;"><img src="${CNERGY_EMAIL_SIGNATURE_URL}" alt="Datlion Cnergy Signature" style="max-width:500px;width:100%;height:auto;display:block;border-radius:4px;" /></div>`;
+export const CNERGY_EMAIL_SIGNATURE_HTML = `<br/><br/><div class="cnergy-signature" style="margin-top:20px;padding-top:10px;border-top:1px solid #e2e8f0;"><img src="${CNERGY_EMAIL_SIGNATURE_URL}" alt="Company Signature" style="max-width:500px;width:100%;height:auto;display:block;border-radius:4px;" /></div>`;
 
 

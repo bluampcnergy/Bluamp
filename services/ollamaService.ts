@@ -117,7 +117,7 @@ export const extractInvoiceDataLocal = async (
     
     Structure requirements:
     - "document_type": "invoice", "delivery_challan", "receipt", "credit_note"
-    - "source_type": "sales" (if issuer is Datlion Cnergy) or "purchase" (if receiver is Datlion Cnergy or vendor bill). Default "purchase".
+    - "source_type": "sales" (if issuer is Bluamp Energy or Datlion Cnergy) or "purchase" (if receiver is Bluamp Energy / Datlion Cnergy or vendor bill). Default "purchase".
     - "issuer_details": { name, gstin, address, email, phone, contact_person }
     - "receiver_details": { name, gstin, address, email, phone, contact_person }
     - "invoice_metadata": { invoice_number, invoice_date (YYYY-MM-DD), input_tax_credit ("set_off" or "non_set_off") }
@@ -205,7 +205,7 @@ export const extractInvoiceDataLocal = async (
         customTitle.includes('challan');
 
     const issuerName = (parsedData.issuer_details?.name || '').toLowerCase();
-    const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+    const isOurCompany = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
     return {
       ...EMPTY_INVOICE, 

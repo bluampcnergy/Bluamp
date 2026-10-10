@@ -7,6 +7,8 @@ import { getTaxMode, safeRender, amountToWords, getCurrencySymbol } from '../../
 import { Printer, Download, X } from './Icons';
 import { QRCodeSVG } from 'qrcode.react';
 import { BatteryComparisonTable } from './BatteryComparisonTable';
+import { TechnicalBatterySizingPrintView, DEFAULT_BATTERY_SIZING, calculateBatterySizing } from './TechnicalBatterySizingSheet';
+import { getActiveBrand } from '../../config/brandConfig';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -24,6 +26,7 @@ interface InvoicePrintViewProps {
 const ITEMS_PER_PAGE = 10;
 
 const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, onClose, autoMailTarget, onMailSent, onError, singleCopy = false, hiddenRender = false }) => {
+    const brand = getActiveBrand();
     const [logo, setLogo] = useState<string | null>(null);
     const [stamp, setStamp] = useState<string | null>(null);
     const [signature, setSignature] = useState<string | null>(null);
@@ -78,6 +81,8 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                 showTotalsTable: ui.showTotalsTable ?? true,
                 showTaxTable: ui.showTaxTable !== undefined ? ui.showTaxTable : (isQuoteOrProforma ? false : hasTaxes),
                 showBatteryComparisonTable: ui.showBatteryComparisonTable !== undefined ? ui.showBatteryComparisonTable : isQuoteOrProforma,
+                showBatterySizingSheet: ui.showBatterySizingSheet !== undefined ? Boolean(ui.showBatterySizingSheet) : false,
+                batterySizingData: ui.batterySizingData ? calculateBatterySizing(ui.batterySizingData) : DEFAULT_BATTERY_SIZING,
                 billedToLabel: ui.billedToLabel || prev.billedToLabel,
                 shippedToLabel: ui.shippedToLabel || prev.shippedToLabel,
                 visibleColumns: ui.visibleColumns || {
@@ -150,10 +155,11 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
             };
 
             const pdfBase64DataUri = await html2pdf().set(opt).from(element).outputPdf('datauristring');
+            const brand = getActiveBrand();
             
             const htmlContent = `
                 <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px; padding: 20px;">
-                    <h2 style="color: #658C3E;">Datlion Cnergy</h2>
+                    <h2 style="color: ${brand.theme.primary};">${brand.companyName}</h2>
                     <p>Hello,</p>
                     <p>Please find the details and attached PDF for your recent document below:</p>
                     <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -163,7 +169,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                         <p style="margin: 5px 0; font-size: 1.1em;"><strong>Total Amount:</strong> ₹${(invoice.totals?.grand_total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
                     </div>
                     <p>If you have any questions, please reply to this email.</p>
-                    <p style="color: #666; font-size: 0.9em;">Best regards,<br/>Datlion Cnergy Team</p>
+                    <p style="color: #666; font-size: 0.9em;">Best regards,<br/>${brand.companyName} Team</p>
                 </div>
             `;
 
@@ -172,7 +178,7 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     to: autoMailTarget,
-                    subject: `Document ${invoice.invoice_metadata?.invoice_number || ''} from Datlion Cnergy`,
+                    subject: `Document ${invoice.invoice_metadata?.invoice_number || ''} from ${brand.companyName}`,
                     html: htmlContent,
                     attachmentBase64: pdfBase64DataUri,
                     attachmentName: `${invoice.invoice_metadata?.invoice_number || 'document'}.pdf`
@@ -540,6 +546,18 @@ const InvoicePrintView: React.FC<InvoicePrintViewProps> = ({ invoice, invoices, 
                             </div>
                                             );
                                         })}
+
+                                        {/* Page 2: Technical Battery Sizing Sheet */}
+                                        {(config as any).showBatterySizingSheet && (
+                                            <div className="invoice-page relative" style={{ pageBreakBefore: 'always' }}>
+                                                <TechnicalBatterySizingPrintView
+                                                    data={(config as any).batterySizingData || DEFAULT_BATTERY_SIZING}
+                                                    invoiceNumber={doc.invoice_metadata?.invoice_number || ''}
+                                                    companyName={doc.issuer_details?.name || brand.companyName.toUpperCase()}
+                                                    logoUrl={logo || undefined}
+                                                />
+                                            </div>
+                                        )}
                                     </React.Fragment>
                                 ))}
                             </React.Fragment>

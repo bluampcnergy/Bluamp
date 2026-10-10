@@ -9,7 +9,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ImportIcon } from '../icons/ImportIcon';
 import AiChatPanel from './AiChatPanel';
 import { BatteryComparisonTable } from './BatteryComparisonTable';
+import { TechnicalBatterySizingSheet, TechnicalBatterySizingPrintView, BatterySizingData, DEFAULT_BATTERY_SIZING, calculateBatterySizing } from './TechnicalBatterySizingSheet';
 import { SearchableSupplierDropdown } from '../SearchableSupplierDropdown';
+import { getActiveBrand } from '../../config/brandConfig';
 
 interface InvoiceMakerProps {
     currentUser: { username: string; role?: 'admin' | 'user' | 'billing' | 'dashboard_user' } | null;
@@ -31,6 +33,8 @@ type ExtendedConfig = InvoiceTemplate['config'] & {
     showTaxTable?: boolean;
     showSubtotalDiscount?: boolean;
     showBatteryComparisonTable?: boolean;
+    showBatterySizingSheet?: boolean;
+    batterySizingData?: BatterySizingData;
     visibleColumns?: {
         index: boolean;
         description: boolean;
@@ -156,6 +160,7 @@ const saveSequenceCacheToStorage = (currentFy: string, counts: Record<string, nu
 };
 
 const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, companyProfiles = [], initialData, priceList = [], finishedGoods = [], recipes = [], addLogEntry, setInvoiceDraft }) => {
+    const brand = getActiveBrand();
     const currentFyStr = useMemo(() => getCurrentFyStr(new Date()), []);
 
     // Refs for instant, race-condition-free document number generation
@@ -322,6 +327,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 showTotalsTable: savedUi.showTotalsTable ?? true,
                 showTaxTable: savedUi.showTaxTable ?? false,
                 showBatteryComparisonTable: savedUi.showBatteryComparisonTable !== undefined ? Boolean(savedUi.showBatteryComparisonTable) : (docType === 'quotation' || docType === 'proforma'),
+                showBatterySizingSheet: savedUi.showBatterySizingSheet !== undefined ? Boolean(savedUi.showBatterySizingSheet) : true,
+                batterySizingData: savedUi.batterySizingData ? calculateBatterySizing(savedUi.batterySizingData) : DEFAULT_BATTERY_SIZING,
                 showSubtotalDiscount: savedUi.showSubtotalDiscount !== undefined ? Boolean(savedUi.showSubtotalDiscount) : false
             };
         }
@@ -343,6 +350,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             showTotalsTable: true,
             showTaxTable: (docType === 'quotation' || docType === 'proforma') ? false : hasTaxes,
             showBatteryComparisonTable: (docType === 'quotation' || docType === 'proforma'),
+            showBatterySizingSheet: true,
+            batterySizingData: DEFAULT_BATTERY_SIZING,
             showSubtotalDiscount: false
         };
     });
@@ -376,6 +385,27 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
         const title = (initialData?.invoice_metadata?.ui_config?.customTitle || (initialData?.invoice_metadata as any)?.custom_title || (initialData?.invoice_metadata as any)?.title || draft?.customTitle || '').toLowerCase();
         return docType === 'quotation' || docType === 'proforma' || title.includes('quotation') || title.includes('proforma') || title.includes('quote');
     });
+
+    // Technical Battery Sizing Sheet State
+    const [showBatterySizingSheet, setShowBatterySizingSheet] = useState<boolean>(() => {
+        if (initialData?.invoice_metadata?.ui_config?.showBatterySizingSheet !== undefined) {
+            return Boolean(initialData.invoice_metadata.ui_config.showBatterySizingSheet);
+        }
+        if (draft?.config?.showBatterySizingSheet !== undefined) {
+            return Boolean(draft.config.showBatterySizingSheet);
+        }
+        return true;
+    });
+
+    const [batterySizingData, setBatterySizingData] = useState<BatterySizingData>(() => {
+        const savedData = initialData?.invoice_metadata?.ui_config?.batterySizingData || (draft?.config as any)?.batterySizingData;
+        if (savedData) {
+            return calculateBatterySizing(savedData);
+        }
+        return DEFAULT_BATTERY_SIZING;
+    });
+
+    const [batterySizingViewMode, setBatterySizingViewMode] = useState<'edit' | 'preview'>('edit');
 
     const recalcDocTotals = (items: InvoiceItem[], discVal = subtotalDiscountValue, discType = subtotalDiscountType) => {
         return recalculateInvoiceTotals(items, discVal, discType);
@@ -696,6 +726,15 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             : isTargetQuoteOrProforma;
         setShowBatteryComparisonTable(restoredComparisonTable);
 
+        const restoredSizingSheet = savedUi?.showBatterySizingSheet !== undefined
+            ? Boolean(savedUi.showBatterySizingSheet)
+            : true;
+        setShowBatterySizingSheet(restoredSizingSheet);
+        const restoredSizingData = savedUi?.batterySizingData
+            ? calculateBatterySizing(savedUi.batterySizingData)
+            : DEFAULT_BATTERY_SIZING;
+        setBatterySizingData(restoredSizingData);
+
         const restoredSubtotalDiscount = savedUi?.showSubtotalDiscount !== undefined 
             ? Boolean(savedUi.showSubtotalDiscount) 
             : Boolean(loadedData.totals?.subtotal_discount && loadedData.totals.subtotal_discount > 0);
@@ -713,6 +752,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             showTotalsTable: savedUi?.showTotalsTable ?? true,
             showTaxTable: savedUi?.showTaxTable !== undefined ? savedUi.showTaxTable : hasTaxes, // Only default true if taxes actually exist!
             showBatteryComparisonTable: restoredComparisonTable,
+            showBatterySizingSheet: restoredSizingSheet,
+            batterySizingData: restoredSizingData,
             showSubtotalDiscount: restoredSubtotalDiscount,
             billedToLabel: savedUi?.billedToLabel || 'Billed To',
             shippedToLabel: savedUi?.shippedToLabel || 'Shipped To'
@@ -811,22 +852,26 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                 }
             }
             
-            // Default Customer (Receiver) and Shipped To to Datlion
-            const datlionProfile = companyProfiles.find(c => c.name?.toUpperCase()?.includes('DATLION CNERGY'));
-            if (datlionProfile) {
-                loadCompanyProfile('receiver', datlionProfile.name);
+            // Default Customer (Receiver) and Shipped To to our company profile
+            const ourProfile = companyProfiles.find(c => 
+                c.name?.toUpperCase()?.includes(brand.companyName.toUpperCase()) || 
+                c.name?.toUpperCase()?.includes('BLUAMP') || 
+                c.name?.toUpperCase()?.includes('DATLION')
+            );
+            if (ourProfile) {
+                loadCompanyProfile('receiver', ourProfile.name);
             } else {
-                updateParty('receiver', 'name', 'DATLION CNERGY PRIVATE LIMITED');
+                updateParty('receiver', 'name', brand.legalName.toUpperCase());
             }
             
             setDoc(prev => ({
                 ...prev,
                 shipped_to_details: {
-                    name: datlionProfile?.name || 'DATLION CNERGY PRIVATE LIMITED',
-                    address: datlionProfile?.shippingAddress || '',
-                    gstin: datlionProfile?.gstNumber || '',
-                    phone: datlionProfile?.phoneNumber || '',
-                    email: datlionProfile?.email || ''
+                    name: ourProfile?.name || brand.legalName.toUpperCase(),
+                    address: ourProfile?.shippingAddress || '',
+                    gstin: ourProfile?.gstNumber || '',
+                    phone: ourProfile?.phoneNumber || '',
+                    email: ourProfile?.email || ''
                 }
             }));
         } else {
@@ -1503,6 +1548,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         ...config,
                         showSubtotalDiscount,
                         showBatteryComparisonTable,
+                        showBatterySizingSheet,
+                        batterySizingData,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1594,6 +1641,8 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         ...config,
                         showSubtotalDiscount,
                         showBatteryComparisonTable,
+                        showBatterySizingSheet,
+                        batterySizingData,
                         customTitle,
                         selectedTemplateId,
                         printMode,
@@ -1981,6 +2030,37 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                             <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="text-xs w-full" />
                             {logo && <button onClick={removeLogo} className="text-red-500 hover:bg-red-50 p-1 rounded" title="Remove Logo"><Trash2 size={14} /></button>}
                         </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            <span className="text-[10px] text-slate-400 font-semibold self-center">Quick Logo:</span>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-color.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-[#205f64] hover:text-white text-slate-700 transition"
+                            >
+                                🎨 Color
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-black.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-black hover:text-white text-slate-700 transition"
+                            >
+                                ⬛ B&W Black
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-logo-grayscale.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-slate-600 hover:text-white text-slate-700 transition"
+                            >
+                                🔘 Grayscale
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setLogo('/logos/bluamp-symbol-color.png')}
+                                className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-[#205f64] hover:text-white text-slate-700 transition"
+                            >
+                                🌀 Icon
+                            </button>
+                        </div>
                     </div>
                     <div>
                         <label className="text-xs text-slate-500 mb-1 block">Logo Size ({config.logoSize || 64}px)</label>
@@ -2121,6 +2201,23 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 setConfig(prev => ({ ...prev, showBatteryComparisonTable: val }));
                             }}
                             className="rounded border-gray-300 text-[#8EBF45] focus:ring-[#8EBF45]"
+                        />
+                    </label>
+
+                    <label className="flex items-center justify-between text-xs text-slate-700 cursor-pointer select-none p-1 rounded hover:bg-slate-50 transition-colors">
+                        <span className="flex items-center gap-1.5 font-medium">
+                            <span>🔋</span> Technical Battery Sizing (Page 2)
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">Joint Sheet</span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={showBatterySizingSheet}
+                            onChange={e => {
+                                const val = e.target.checked;
+                                setShowBatterySizingSheet(val);
+                                setConfig(prev => ({ ...prev, showBatterySizingSheet: val }));
+                            }}
+                            className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                         />
                     </label>
                 </div>
@@ -2377,10 +2474,68 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
             </div>
 
             {/* Preview Area */}
-            <div className="w-full lg:w-2/3 bg-slate-200 overflow-y-auto p-8 h-full">
+            <div className="w-full lg:w-2/3 bg-slate-200 overflow-y-auto p-4 sm:p-8 h-full">
+                {/* 📄 Document Pages Bar */}
+                <div className="max-w-[21cm] mx-auto mb-4 bg-white rounded-xl border border-slate-200 p-3 shadow-sm flex flex-wrap items-center justify-between gap-3 no-print">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-slate-700 flex items-center gap-1.5">
+                            <span>📄</span> Document Pages:
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                document.getElementById('screen-invoice-page-1')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-100 text-slate-800 hover:bg-slate-200 transition-all border border-slate-200"
+                        >
+                            Page 1: {customTitle || (docType === 'debit_note' ? 'DEBIT NOTE' : docType === 'quotation' ? 'QUOTATION' : docType === 'proforma' ? 'PROFORMA INVOICE' : docType === 'credit_note' ? 'CREDIT NOTE' : docType === 'delivery_challan' ? 'DELIVERY CHALLAN' : docType === 'po' ? 'PURCHASE ORDER' : 'TAX INVOICE')}
+                        </button>
+                        {showBatterySizingSheet ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    document.getElementById('battery-sizing-sheet-editor')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg font-bold bg-[#00875a] text-white shadow-sm flex items-center gap-1.5 hover:bg-[#00734c] transition-all"
+                            >
+                                <span>🔋</span> Page 2: Technical Battery Sizing ✓ (Active)
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowBatterySizingSheet(true);
+                                    setConfig(prev => ({ ...prev, showBatterySizingSheet: true }));
+                                    setTimeout(() => {
+                                        document.getElementById('battery-sizing-sheet-editor')?.scrollIntoView({ behavior: 'smooth' });
+                                    }, 100);
+                                }}
+                                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-white border border-dashed border-emerald-500 text-emerald-700 hover:bg-emerald-50 transition-all flex items-center gap-1.5"
+                            >
+                                <span>🔋</span> + Add Page 2: Technical Battery Sizing
+                            </button>
+                        )}
+                        {showBatterySizingSheet && (
+                            <a
+                                href="#battery-sizing-sheet-editor"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    document.getElementById('battery-sizing-sheet-editor')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="text-xs text-[#00875a] hover:underline font-semibold ml-1 cursor-pointer"
+                            >
+                                Jump to Sheet Editor ↓
+                            </a>
+                        )}
+                    </div>
+                    <div className="text-[11px] font-medium bg-slate-100 text-slate-600 px-3 py-1 rounded-full border border-slate-200">
+                        {showBatterySizingSheet ? '2 Pages Total (Invoice + Sizing)' : '1 Page Total (Invoice Only)'}
+                    </div>
+                </div>
+
                 <div id="print-area" className={`mx-auto bg-white shadow-2xl min-h-[29.7cm] w-[21cm] ${config.font}`}>
                     {/* === SCREEN EDITING VIEW === */}
-                    <div className="screen-only p-8 relative flex flex-col min-h-[29.7cm]">
+                    <div id="screen-invoice-page-1" className="screen-only p-8 relative flex flex-col min-h-[29.7cm]">
                         {/* Header */}
                         <div className="flex justify-between items-start mb-4 border-b pb-4">
                             <div className="flex items-start gap-4 flex-1">
@@ -2925,6 +3080,28 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                         <div className="mt-auto pt-2 text-center text-[10px] text-slate-400">{safeRender(config.footerText)}</div>
                     </div>{/* end screen-only */}
 
+                    {/* === TECHNICAL BATTERY SIZING SHEET (PAGE 2 IN SCREEN VIEW) === */}
+                    {showBatterySizingSheet && (
+                        <div id="battery-sizing-sheet-editor" className="screen-only border-t-8 border-slate-200 bg-slate-50/60 p-4 sm:p-8">
+                            <TechnicalBatterySizingSheet
+                                data={batterySizingData}
+                                onChange={(updated) => {
+                                    setBatterySizingData(updated);
+                                    setConfig(prev => ({ ...prev, batterySizingData: updated }));
+                                }}
+                                onRemove={() => {
+                                    setShowBatterySizingSheet(false);
+                                    setConfig(prev => ({ ...prev, showBatterySizingSheet: false }));
+                                }}
+                                invoiceNumber={doc.invoice_metadata.invoice_number}
+                                companyName={doc.issuer_details.name || brand.companyName.toUpperCase()}
+                                logoUrl={logo || undefined}
+                                viewMode={batterySizingViewMode}
+                                onViewModeChange={setBatterySizingViewMode}
+                            />
+                        </div>
+                    )}
+
                     {/* === PRINT-ONLY PAGINATED VIEW === */}
                     <div className="print-only" style={{ display: 'none' }}>
                         {(printMode === 'single' ? [''] : ['ORIGINAL FOR RECIPIENT', 'DUPLICATE FOR TRANSPORTER']).map((copyLabel, copyIdx) => (
@@ -3192,6 +3369,18 @@ const InvoiceMaker: React.FC<InvoiceMakerProps> = ({ currentUser, username, comp
                                 </div>
                             );
                         })}
+
+                        {/* Page 2: Technical Battery Sizing Sheet for Print/PDF */}
+                        {showBatterySizingSheet && (
+                            <div className="invoice-page relative" style={{ pageBreakBefore: 'always' }}>
+                                <TechnicalBatterySizingPrintView
+                                    data={batterySizingData}
+                                    invoiceNumber={doc.invoice_metadata.invoice_number}
+                                    companyName={doc.issuer_details.name || brand.companyName.toUpperCase()}
+                                    logoUrl={logo || undefined}
+                                />
+                            </div>
+                        )}
                             </React.Fragment>
                         ))}
                     </div>{/* end print-only */}

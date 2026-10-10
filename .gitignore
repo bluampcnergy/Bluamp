@@ -30,3 +30,6 @@ dist-ssr
 .env*.local
 .vercel
 .env*
+video/
+recordings/
+out/

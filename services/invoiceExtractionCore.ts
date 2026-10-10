@@ -117,10 +117,10 @@ Your task is to analyze invoice images or PDF documents and produce a strict, va
 CRITICAL EXTRACTION RULES:
 
 1. **DOCUMENT & SOURCE TYPE CLASSIFICATION**:
-   - Company Name: "Datlion Cnergy" / "Datlion Cnergy Private Limited"
+   - Company Name: "Bluamp Energy" / "Bluamp" / "Datlion Cnergy" / "Datlion Cnergy Private Limited"
    - If the document is titled or labeled "Delivery Challan", "Challan", "Dispatch Challan", "Transport Challan", or doc number starts with "DCh" -> set 'document_type' to 'delivery_challan'.
-   - If the ISSUER is "Datlion Cnergy" -> 'sales'.
-   - If the RECEIVER / BUYER is "Datlion Cnergy" (or any supplier bill sent to Datlion Cnergy) -> 'purchase' (Expense).
+   - If the ISSUER is "Bluamp Energy" or "Datlion Cnergy" -> 'sales'.
+   - If the RECEIVER / BUYER is "Bluamp Energy" or "Datlion Cnergy" (or any supplier bill sent to us) -> 'purchase' (Expense).
    - IMPORTANT: ALL imported / scanned supplier bills and inward delivery challans default strictly to 'purchase'.
    - If unsure, default to 'purchase'.
 
@@ -202,7 +202,7 @@ export async function extractInvoiceFromBufferWithGemini(
     (parsed.invoice_metadata?.custom_title || '').toLowerCase().includes('challan');
   
   const issuerName = (parsed.issuer_details?.name || '').toLowerCase();
-  const isOurCompany = issuerName.includes('datlion') || issuerName.includes('cnergy');
+  const isOurCompany = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
   parsed.document_type = isChallan ? 'delivery_challan' : (parsed.document_type || 'invoice');
   parsed.source_type = isOurCompany ? 'sales' : 'purchase';

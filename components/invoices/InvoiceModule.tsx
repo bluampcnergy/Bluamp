@@ -6,7 +6,7 @@ import InventoryPanel from './InventoryPanel';
 import { extractInvoiceData } from '../../services/geminiService';
 import { extractInvoiceDataLocal, testOllamaConnection } from '../../services/ollamaService';
 import { extractInvoiceDataOpenRouter, testOpenRouterConnection } from '../../services/openrouterService';
-import { ExtractedInvoice, EMPTY_INVOICE, User, CompanyProfile, PriceListItem, FinishedGood, Recipe, ReceivedGood } from '../../types';
+import { ExtractedInvoice, EMPTY_INVOICE, User, CompanyProfile, PriceListItem, FinishedGood, Recipe, ReceivedGood, EmployeeTask } from '../../types';
 import { Loader2, Save, RotateCcw, AlertCircle, CheckCircle, SettingsIcon, CloudLightning, AlertTriangle, FileText, Cpu, Trash2, Plus, RefreshCw } from './Icons';
 import { supabase } from '../../supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -18,6 +18,7 @@ const InvoiceMaker = lazy(() => import('./InvoiceMaker'));
 const PriceList = lazy(() => import('./PriceList'));
 const BomCostCalculator = lazy(() => import('./BomCostCalculator'));
 const LedgerPanel = lazy(() => import('./LedgerPanel'));
+const SalesCrmPanel = lazy(() => import('./SalesCrmPanel'));
 
 // Handle ESM import where the actual library might be under 'default'
 const pdfjs = (pdfjsLib as any).default || pdfjsLib;
@@ -27,7 +28,7 @@ if (pdfjs.GlobalWorkerOptions) {
     pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
 }
 
-type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices' | 'costing' | 'ledger';
+type ActiveTab = 'upload' | 'dashboard' | 'expenses' | 'gst' | 'maker' | 'prices' | 'costing' | 'ledger' | 'crm';
 type AIProvider = 'gemini' | 'ollama' | 'openrouter';
 
 // Batch Job Interface
@@ -91,9 +92,12 @@ interface InvoiceModuleProps {
     setRecipes?: React.Dispatch<React.SetStateAction<Recipe[]>>;
     receivedGoods?: ReceivedGood[];
     addLogEntry?: (action: string, details: string) => void;
+    employeeTasks?: EmployeeTask[];
+    setEmployeeTasks?: React.Dispatch<React.SetStateAction<EmployeeTask[]>>;
+    users?: User[];
 }
 
-const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, setInvoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], setRecipes, receivedGoods = [], addLogEntry }) => {
+const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfiles = [], invoiceDraft, setInvoiceDraft, activeTab, setView, finishedGoods = [], recipes = [], setRecipes, receivedGoods = [], addLogEntry, employeeTasks = [], setEmployeeTasks, users = [] }) => {
     // Batch Queue State
     const [batchQueue, setBatchQueue] = useState<BatchJob[]>([]);
     const [activeJobId, setActiveJobId] = useState<string | null>(null); // Job currently being reviewed
@@ -243,9 +247,9 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
                 customTitle.includes('challan');
 
             const issuerName = (extracted.issuer_details?.name || '').toLowerCase();
-            const isIssuedByUs = issuerName.includes('datlion') || issuerName.includes('cnergy');
+            const isIssuedByUs = issuerName.includes('bluamp') || issuerName.includes('datlion') || issuerName.includes('cnergy');
 
-            // Default all imported/scanned files strictly to purchase unless explicitly issued by Datlion Cnergy
+            // Default all imported/scanned files strictly to purchase unless explicitly issued by Bluamp / Datlion Cnergy
             const finalSourceType = isIssuedByUs ? 'sales' : 'purchase';
             const finalDocType = isChallan
                 ? (isIssuedByUs ? 'generated_delivery_challan' : 'delivery_challan')
@@ -1183,6 +1187,18 @@ const InvoiceModule: React.FC<InvoiceModuleProps> = ({ currentUser, companyProfi
 
                 {activeTab === 'ledger' && (
                     <LedgerPanel currentUser={currentUser} companyProfiles={companyProfiles} />
+                )}
+
+                {activeTab === 'crm' && (
+                    <SalesCrmPanel 
+                        currentUser={currentUser} 
+                        users={users}
+                        companyProfiles={companyProfiles}
+                        employeeTasks={employeeTasks}
+                        setEmployeeTasks={setEmployeeTasks}
+                        addLogEntry={addLogEntry}
+                        onNavigateToInvoiceMaker={() => setView?.('finance_maker')}
+                    />
                 )}
             </Suspense>
         </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { getActiveBrand } from '../../config/brandConfig';
 
 interface BatteryComparisonTableProps {
     printMode?: boolean;
@@ -11,6 +12,7 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
     customLithiumPrice,
     customLeadAcidPrice
 }) => {
+    const brand = getActiveBrand();
     const lithiumPrice = customLithiumPrice || 17700;
     const leadAcidPrice = customLeadAcidPrice || 15000;
     const leadAcid10YearTotal = leadAcidPrice * 4; // 1 initial + 3 replacements
@@ -23,7 +25,7 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold">
                         <th className="py-0.5 px-2 w-[22%]">Comparison</th>
                         <th className="py-0.5 px-2 w-[39%] bg-emerald-50/70 text-emerald-900 border-x border-emerald-100">
-                            <span className="font-bold">⚡ DC Energy's 12.8V 100Ah Lithium</span>{' '}
+                            <span className="font-bold">⚡ {brand.companyName}'s 12.8V 100Ah Lithium</span>{' '}
                             <span className="text-[8px] bg-emerald-600 text-white px-1 py-0.2 rounded font-bold">Recommended</span>
                         </th>
                         <th className="py-0.5 px-2 w-[39%] text-slate-600">12V 150Ah Lead-Acid (Tubular)</th>
@@ -81,7 +83,7 @@ export const BatteryComparisonTable: React.FC<BatteryComparisonTableProps> = ({
             {/* 1 Text Line Below */}
             <div className="bg-emerald-50/80 border-t border-emerald-100 px-2 py-0.5 text-[8.5px] print:text-[8px] text-emerald-900 font-medium flex items-center justify-between">
                 <span>
-                    <strong>💡 Bottom Line:</strong> DC Energy's 100Ah Lithium delivers <strong>+28% more usable backup time</strong> than 150Ah Lead-Acid, zero acid fumes/maintenance, and saves <strong>₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+</strong> over 10 years.
+                    <strong>💡 Bottom Line:</strong> {brand.companyName}'s 100Ah Lithium delivers <strong>+28% more usable backup time</strong> than 150Ah Lead-Acid, zero acid fumes/maintenance, and saves <strong>₹{savings.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}+</strong> over 10 years.
                 </span>
             </div>
         </div>

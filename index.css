@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700;800&display=swap');
+
+:root {
+  /* Default: Datlion Cnergy Theme Tokens */
+  --brand-dark: #0D0D0D;
+  --brand-primary: #8EBF45;
+  --brand-primary-hover: #7cb037;
+  --brand-secondary: #658C3E;
+  --brand-focus: #527a23;
+  --brand-accent: #A8BF75;
+  --brand-header-bg: #0D0D0D;
+  --brand-footer-bg: #0D0D0D;
+  --brand-canvas: #F8FAFC;
+  --brand-text: #1E293B;
+  --brand-text-muted: #64748B;
+  --font-brand: 'Lexend', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--brand-text);
+  background-color: var(--brand-canvas);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, .font-brand {
+  font-family: var(--font-brand);
+}
+
+/* Gradient text utility */
+.bluamp-logo-text {
+  background: linear-gradient(to right, var(--brand-secondary), var(--brand-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Dynamic Brand Utility Classes */
+.bg-brand-primary { background-color: var(--brand-primary); }
+.bg-brand-secondary { background-color: var(--brand-secondary); }
+.bg-brand-dark { background-color: var(--brand-dark); }
+.bg-brand-focus { background-color: var(--brand-focus); }
+.bg-brand-accent { background-color: var(--brand-accent); }
+.bg-brand-canvas { background-color: var(--brand-canvas); }
+
+.text-brand-primary { color: var(--brand-primary); }
+.text-brand-secondary { color: var(--brand-secondary); }
+.text-brand-dark { color: var(--brand-dark); }
+.text-brand-focus { color: var(--brand-focus); }
+.text-brand-accent { color: var(--brand-accent); }
+.text-brand-text { color: var(--brand-text); }
+
+.border-brand-primary { border-color: var(--brand-primary); }
+.border-brand-secondary { border-color: var(--brand-secondary); }
+.border-brand-accent { border-color: var(--brand-accent); }
+
+/* Shared Industrial Table Styling */
+.plant-table th {
+  font-family: var(--font-brand);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--brand-dark);
+  background-color: #F1F5F9;
+}
+.plant-table td {
+  font-family: var(--font-body);
+  color: var(--brand-text);
+}
+
+/* Scrollbar Hide Utility */
+.scrollbar-hide,
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scrollbar-hide::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}

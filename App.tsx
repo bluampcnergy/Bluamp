@@ -29,6 +29,17 @@ import { useSupabase } from './hooks/useSupabase';
 import { supabase } from './supabaseClient';
 import type { ReceivedGood, Recipe, WIPItem, FinishedGood, RepairItem, User, LogEntry, TestResult, CompanyProfile, ExtractedInvoice, View, StorageRoom, StorageUnit, StorageItem, SupplyRecord, EmployeeTask } from './types';
 import { DUMMY_RECEIVED_GOODS, DUMMY_RECIPES, DUMMY_WIP_ITEMS, DUMMY_FINISHED_GOODS, DUMMY_COMPANY_PROFILES } from './dummyData';
+import { getActiveBrand } from './config/brandConfig';
+
+const brand = getActiveBrand();
+
+const isAdminEmail = (email?: string): boolean => {
+  if (!email) return false;
+  const normalized = email.toLowerCase();
+  return normalized === brand.defaultAdminEmail.toLowerCase() || 
+         normalized === 'datlioncnergy@gmail.com' || 
+         normalized === 'bluampcnergy@gmail.com';
+};
 
 const DUMMY_EMPLOYEE_TASKS: EmployeeTask[] = [
   {
@@ -73,7 +84,7 @@ const DUMMY_EMPLOYEE_TASKS: EmployeeTask[] = [
   },
   {
     id: 'task-5',
-    assigned_to: 'datlioncnergy@gmail.com',
+    assigned_to: brand.defaultAdminEmail,
     title: 'Audit daily rack storage map & update bin tags',
     description: 'Ensure finished goods in Rack A2 match physical serial tags.',
     completed: false,
@@ -190,7 +201,7 @@ const App: React.FC = () => {
 
     // Ensure admin role is preserved — password is managed in the database only
     setUsers(prevUsers => {
-        const ADMIN_USERNAME = 'datlioncnergy@gmail.com';
+        const ADMIN_USERNAME = brand.defaultAdminEmail;
         const existingUsers = [...prevUsers];
         const adminIndex = existingUsers.findIndex(u => u.username === ADMIN_USERNAME);
 
@@ -305,7 +316,7 @@ const App: React.FC = () => {
             console.warn('Direct app_users role fetch failed:', e);
           }
         }
-        if (!role && username.toLowerCase() === 'datlioncnergy@gmail.com') {
+        if (!role && isAdminEmail(username)) {
           role = 'admin';
         }
         const finalRole = role || 'user';
@@ -345,13 +356,13 @@ const App: React.FC = () => {
 
         if (signInError) {
             // Even if Supabase auth fails, allow legacy login with app_users table password
-            const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+            const finalRole = legacyUser.role || (isAdminEmail(username) ? 'admin' : 'user');
             setCurrentUser({ username, role: finalRole, password });
             addLogEntry('User Logged In', `User '${username}' (${finalRole}) logged in via app_users table.`);
             return null;
         }
 
-        const finalRole = legacyUser.role || (username.toLowerCase() === 'datlioncnergy@gmail.com' ? 'admin' : 'user');
+        const finalRole = legacyUser.role || (isAdminEmail(username) ? 'admin' : 'user');
         setCurrentUser({ username, role: finalRole, password });
         addLogEntry('User Migrated', `Legacy user '${username}' (${finalRole}) seamlessly logged in.`);
         return null;
@@ -426,7 +437,7 @@ const App: React.FC = () => {
     if (currentUser?.role !== 'admin') {
       return 'Permission denied.';
     }
-    if (usernameToDelete === 'datlioncnergy@gmail.com') {
+    if (isAdminEmail(usernameToDelete)) {
       return 'The default admin account cannot be deleted.';
     }
     if (usernameToDelete === currentUser.username) {
@@ -497,7 +508,7 @@ const App: React.FC = () => {
             if (currentUser?.role !== 'admin') {
                 return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins Only (BOM Costing is restricted)</div>;
             }
-        } else if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses') {
+        } else if (currentUser?.role !== 'admin' && currentUser?.role !== 'billing' && tab !== 'maker' && tab !== 'expenses' && tab !== 'crm') {
             return <div className="text-center p-8 text-red-600 font-semibold">Access Denied: Director Admins and Billing Users Only</div>;
         }
         return <InvoiceModule 
@@ -512,6 +523,9 @@ const App: React.FC = () => {
             setRecipes={setRecipes}
             receivedGoods={receivedGoods}
             addLogEntry={addLogEntry}
+            employeeTasks={employeeTasks}
+            setEmployeeTasks={setEmployeeTasks}
+            users={users}
         />;
     }
 
@@ -526,8 +540,8 @@ const App: React.FC = () => {
                 Your account role (Dashboard Data Employee) has direct database access for tools (Invoice Maker, Operations, Supplies) but is restricted from viewing the Summary Dashboard UI.
               </p>
               <div className="flex gap-3">
-                <button onClick={() => setView('wip')} className="px-4 py-2 bg-[#8EBF45] text-[#0D0D0D] font-bold rounded-lg text-xs uppercase hover:bg-[#7cb037]">Go to Operations (WIP)</button>
-                <button onClick={() => setView('finance_maker')} className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg text-xs uppercase hover:bg-slate-700">Go to Invoice Maker</button>
+                <button onClick={() => setView('wip')} className="px-4 py-2 bg-brand-primary text-white font-bold rounded-lg text-xs uppercase hover:opacity-90 transition">Go to Operations (WIP)</button>
+                <button onClick={() => setView('finance_maker')} className="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg text-xs uppercase hover:bg-slate-700 transition">Go to Invoice Maker</button>
               </div>
             </div>
           );
@@ -832,7 +846,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans pb-12">
+    <div className="min-h-screen bg-gray-100 font-sans pb-12 overflow-x-hidden">
       <Header 
         currentView={view} 
         setView={setView} 
@@ -847,6 +861,7 @@ const App: React.FC = () => {
       <Footer 
         receivedGoods={receivedGoods} 
         finishedGoods={finishedGoods} 
+        setView={setView}
       />
     </div>
   );
