@@ -2,9 +2,9 @@
 $ErrorActionPreference = "Stop"
 
 # Configuration
-$ProjectDir = "d:\AI\Docker\welcome-to-docker\Projects\DC_Inventory_190526"
-$Token = "sbp_4884b979edf7e10ed243d218bae18298b762b2f4"
-$ProjectRef = "supabase.cnergy.co.in"
+$ProjectDir = $PSScriptRoot ? (Split-Path -Parent $PSScriptRoot) : "d:\Projects\DC_Inventory_190526"
+$Token = $env:SUPABASE_ACCESS_TOKEN
+$ProjectRef = $env:SUPABASE_PROJECT_REF ? $env:SUPABASE_PROJECT_REF : "supabase.cnergy.co.in"
 
 Set-Location $ProjectDir
 $env:SUPABASE_ACCESS_TOKEN = $Token

@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const ACCESS_TOKEN = 'sbp_4884b979edf7e10ed243d218bae18298b762b2f4';
-const PROJECT_REF = 'supabase.cnergy.co.in';
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN || '';
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || 'supabase.cnergy.co.in';
 
 async function fetchMetadata() {
   const exportDir = path.join(__dirname, '..', 'supabase', 'metadata');
